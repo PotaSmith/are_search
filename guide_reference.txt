@@ -1,0 +1,1050 @@
+
+================================================================
+AreSearch リファレンス
+================================================================
+
+このファイルは、AreSearch の補足設定・操作リファレンスを扱う。
+導入手順は guide_setup.txt、運用操作は guide_operations.txt を参照する。
+
+
+# 1. 設定
+================================================================
+
+## 1-1. イニシャライザ任意設定
+----------------------------------------------------------------
+
+以下は任意設定。
+未設定の場合はデフォルト値が使われる。
+変更する場合は config/initializers/are_search.rb の AreSearch.setup の後に書く。
+
+    AreSearch.sync_request_delay             = 120
+    AreSearch.max_retry_count                = 100
+    AreSearch.sync_request_process_hang_wait = 1800
+    AreSearch.max_force_attempt_count        = 5
+    AreSearch.index_settings                 = { max_result_window: 10_000 }
+    AreSearch.lock_dir                       = Rails.root.join("tmp", "are_search").to_s
+    AreSearch.index_operation_enabled        = false
+    AreSearch.validate_es_data               = true
+    AreSearch.after_commit_mode              = :direct
+    AreSearch.default_aggs_size              = 200
+
+## 1-2. sync_request_delay
+----------------------------------------------------------------
+
+run_sync_requests rake タスクの通常同期対象にするまでの猶予秒数。
+
+    AreSearch.sync_request_delay = 120
+
+processing_token が nil で、この秒数以上 updated_at が古い are_search_sync_requests の行が、通常同期対象になる。
+デフォルトは 120 秒。
+
+processing_token が残っている処理中行は、通常同期対象にはならない。
+処理中行の回収は sync_request_process_hang_wait / max_force_attempt_count の設定で扱う。
+
+
+## 1-3. max_retry_count
+----------------------------------------------------------------
+
+run_sync_requests rake タスクが通常同期を試みる retry_count の上限。
+
+    AreSearch.max_retry_count = 100
+
+retry_count がこの値以上の行は、通常同期の対象から除外される。
+SyncJob 側の retry_on と、processing_token が残った行の強制同期には影響しない。
+デフォルトは 100 回。
+
+
+## 1-4. sync_request_process_hang_wait
+----------------------------------------------------------------
+
+processing_token が残った sync request を、強制同期対象にするまでの猶予秒数。
+
+    AreSearch.sync_request_process_hang_wait = 1800
+
+processing_token が nil ではなく、processing_at がこの秒数以上古い行が、run_sync_requests の強制同期対象になる。
+デフォルトは 1800 秒。
+
+この設定は、同期処理が processing_token を立てた後にプロセス停止・ジョブ停止・固着などで戻ってこない場合の回収に使う。
+通常の再同期対象を決める sync_request_delay とは別の設定。
+
+
+## 1-5. max_force_attempt_count
+----------------------------------------------------------------
+
+run_sync_requests rake タスクが強制同期を試みる force_attempt_count の上限。
+
+    AreSearch.max_force_attempt_count = 5
+
+force_attempt_count がこの値以上の行は、強制同期の対象から除外される。
+デフォルトは 5 回。
+
+強制同期は、processing_token が残ったままの sync request に対して Elasticsearch への反映を再実行する処理。
+強制同期では retry_count は増やさず、force_attempt_count を増やす。
+
+
+## 1-6. index_settings / max_result_window
+----------------------------------------------------------------
+
+AreSearch.index_settings は、Elasticsearch に作成する index の settings.index に渡す設定。
+
+    AreSearch.index_settings = {
+        max_result_window: 10_000,
+    }
+
+デフォルトは以下。
+
+    { max_result_window: 10_000 }
+
+max_result_window は、AreSearch の通常検索で扱うページング可能件数の上限。
+Elasticsearch の index.max_result_window の既定値に合わせている。
+
+この値は reindex で新しい物理インデックスを作成するとき、
+settings.index.max_result_window として Elasticsearch に渡される。
+
+通常検索では、page / per_page から作る from / size をこの範囲に収める。
+from + size が max_result_window を超える場合は、最後のページの size を縮める。
+from が max_result_window 以上の場合は、from を max_result_window に丸め、size を 0 にする。
+
+total_count は max_result_window では丸めない。
+SearchResult.records.total_count には、Elasticsearch が返した hits.total.value から、
+現在ページで DB 復元できなかった hit 数を差し引いた値を使う。
+Elasticsearch が返した元の hits.total.value は result.records.es_total_count から取得できる。
+
+この補正は、現在ページで観測できた欠落だけを反映する。
+全ページを DB 側で再検証するものではないため、表示可能な総件数を厳密に保証するものではない。
+
+モデルごとに変更したい場合は、モデル側で are_search_es_index_settings を定義する。
+未定義の場合は AreSearch.index_settings が使われる。
+
+    def self.are_search_es_index_settings(target_name)
+        case target_name
+        when :default
+            AreSearch.index_settings.merge(max_result_window: 100_000)
+        else
+            AreSearch.index_settings
+        end
+    end
+
+複数 target 検索では、対象 index target の are_search_es_index_settings[:max_result_window] の最小値を使う。
+これは複数 index を同時に検索する場合、低い window の index に合わせるため。
+
+max_result_window の変更は、既存の物理インデックスには自動反映されない。
+設定変更後に反映するには reindex を実行し、新しい物理インデックスを作成する。
+
+
+## 1-7. lock_dir
+----------------------------------------------------------------
+
+ロックファイル類のベースディレクトリ。
+
+    AreSearch.lock_dir = Rails.root.join("tmp", "are_search").to_s
+
+配下に以下のディレクトリが作られる。
+
+    sync_locks/
+        run_sync_requests rake タスクの多重起動防止ロック
+
+    index_locks/
+        初期 index 作成、reindex、clean up の多重起動防止ロック
+
+index 操作中、または marker 削除が完了しなかった状態を示す marker は
+are_search_index_markers テーブルに保存される。
+lock_dir には保存されない。
+
+デフォルトは以下。
+
+    Rails.root.join("tmp", "are_search").to_s
+
+
+## 1-8. index_operation_enabled
+----------------------------------------------------------------
+
+このプロセスで index 操作を実行してよいかを制御する。
+
+    AreSearch.index_operation_enabled = false
+
+デフォルトは false。
+
+false のままでは、reindex / clean up / 初期 index 作成は実行できない。
+また、物理インデックスの手動削除、manual marker の作成・削除、
+operation に関係ない marker 強制削除も実行できない。
+実行しようとした場合は AreSearch::IndexOperationViolation を送出する。
+
+この設定は、reindex 等の flock が必要な index 操作と、
+index 操作の可否に影響する marker 管理操作を実行できるマシンを1台に固定するために使う。
+index 操作を許可するマシンだけ true にする。
+
+検索、sync、run_sync_requests、check_index_status には影響しない。
+
+
+## 1-9. validate_es_data
+----------------------------------------------------------------
+
+保存時に are_search_es_data と are_search_es_mappings の整合性チェックを行うかを制御する。
+
+    AreSearch.validate_es_data = true
+
+デフォルトは true。
+
+false にすると、保存時の validate が無効になる。
+are_search_es_data の中で重い処理を行っている場合など、保存のパフォーマンスに影響が出るときに使う。
+
+false にした場合、are_search_es_data の不整合は保存時には検出されない。
+after_commit_mode を :job にしていた場合、SyncJob の失敗として検出されるため発覚が遅れる点に注意する。
+
+
+## 1-10. after_commit_mode
+----------------------------------------------------------------
+
+after_commit での Elasticsearch 同期方法を制御する。
+
+    AreSearch.after_commit_mode = :direct
+
+指定できる値は以下。
+
+    :job
+        after_commit で SyncJob をキューイングする。
+
+    :direct
+        after_commit で直接 Elasticsearch へ同期する。
+        デフォルト。
+
+    :none
+        after_commit では同期しない。
+        run_sync_requests に回収を任せる。
+
+Job worker が動いていない場合、:job で投入された同期は実行されない。
+この場合も sync request は残るため、run_sync_requests で回収できる。
+
+
+## 1-11. default_aggs_size
+----------------------------------------------------------------
+
+aggs の terms aggregation で取得する bucket 数のデフォルト値。
+
+    AreSearch.default_aggs_size = 200
+
+デフォルトは 200。
+
+aggs にフィールド名だけを指定した場合、この値が terms の size に使われる。
+
+    aggs: [:status, :category]
+
+個別に size を変えたい場合は、検索時の aggs でフィールドごとに指定する。
+
+    aggs: [
+        :status,
+        { category: { size: 50 } },
+    ]
+
+この場合、category の size は 50 になり、それ以外は default_aggs_size が使われる。
+
+
+## 1-12. analyzer_settings
+----------------------------------------------------------------
+
+Elasticsearch に作成する index のアナライザー設定を変更する。
+
+    AreSearch.analyzer_settings = {
+        filter: {
+            cjk_bigram_unigram: {
+                type: "cjk_bigram",
+                output_unigrams: true,
+            },
+        },
+        analyzer: {
+            cjk_index_analyzer: {
+                type: "custom",
+                tokenizer: "standard",
+                filter: %w[cjk_width lowercase cjk_bigram_unigram],
+            },
+            cjk_search_analyzer: {
+                type: "custom",
+                tokenizer: "standard",
+                filter: %w[cjk_width lowercase cjk_bigram],
+            },
+        },
+    }.freeze
+
+デフォルトは CJK bigram + unigram 構成。
+cjk_index_analyzer / cjk_search_analyzer が定義されている。
+
+変更する場合は、モデルの are_search_es_mappings で参照しているアナライザー名が
+すべて含まれるよう設定すること。
+存在しないアナライザー名を参照した状態で reindex すると Elasticsearch 側のエラーになる。
+
+
+## 1-13. マッピング型とアナライザーの選び方
+----------------------------------------------------------------
+
+日本語の全文検索対象には cjk_index_analyzer / cjk_search_analyzer を使う。
+絞り込みや集計だけに使うフィールドは keyword 型にする。
+combined_fields クエリの検索対象にできるのは text 型だけ。
+
+
+# 2. データ定義
+================================================================
+
+## 2-1. data / mappings の整合性チェック
+----------------------------------------------------------------
+
+AreSearch::Searchable を include すると validation が追加される。
+保存時に are_search_es_data と are_search_es_mappings の整合性をチェックする。
+
+チェック内容。
+
+    mappings にあるキーが data に存在するか
+    data にあるキーが mappings に定義されているか
+    値が mapping の型に合っているか
+
+mappings は3層目まで Symbol キーで指定する。
+これは検索側が mappings.dig(:properties, field_name) や field_def[:type] で参照するため。
+
+    mappings
+      :properties
+        :title
+          :type
+
+data はトップレベルだけ Symbol キーで指定する。
+トップレベル key は mappings[:properties] 配下の field key とそのまま比較する。
+
+data の値として入る Hash の内部 key は検証しない。
+object / nested / join field など、Elasticsearch の _source として渡す内部構造まで
+AreSearch の field 比較ルールで縛らないため。
+
+不整合がある場合、errors.add(:base, ...) され、保存は失敗する。
+ログには具体的な違反内容が debug 出力される。
+
+are_search_es_data の呼び出し中に例外が出た場合は rescue しない。
+typo や実装ミスを隠さず、そのまま例外として見せる。
+
+
+## 2-2. validate_es_data = false にした場合の挙動
+----------------------------------------------------------------
+
+AreSearch.validate_es_data = false にした場合、are_search_es_data の不整合は保存時には検出されない。
+
+AreSearch.after_commit_mode = :job の場合、不整合は SyncJob の失敗として検出されるため発覚が遅れる。
+AreSearch.after_commit_mode = :direct の場合、不整合は after_commit での直接同期の失敗として検出される。
+いずれの場合も、sync request の last_error に失敗内容が記録される。
+
+
+# 3. index target と検索用途の分離
+================================================================
+
+## 3-1. index target とは
+----------------------------------------------------------------
+
+index target は、1つの ActiveRecord モデルに対して複数の Elasticsearch index を持つための単位。
+
+AreSearch では、モデルそのものではなく index target を検索・index 操作・同期の単位として扱う。
+
+たとえば Article に通常検索用の index target を定義する場合、以下のように取得する。
+
+    article_index = Article.are_search_index_target(:default)
+
+この index target に対して検索、reindex、clean up、delete などを実行する。
+
+    article_index.are_search_es_search(
+        "Rails",
+        fields: [:title, :body],
+    )
+
+    article_index.are_search_es_reindex
+
+    article_index.are_search_es_clean_up
+
+    article_index.are_search_es_delete!(article.id)
+
+index target は、単に Elasticsearch index 名を分けるための仕組みではない。
+以下の単位を分けるための仕組みである。
+
+    index 名
+    mappings
+    index settings
+    data
+    reindex
+    sync request
+    clean up
+    index marker
+
+同じ ActiveRecord モデルでも、target_name が違えば別の Elasticsearch index として扱われる。
+そのため、同じ Article を通常検索用、類似検索用、autocomplete 用などに分けられる。
+
+
+## 3-2. 検索用途ごとに target を分ける
+----------------------------------------------------------------
+
+検索用途が違う場合、同じモデルでも同じ index にまとめない方がよいことがある。
+
+たとえば Article に対して、以下のような index target を定義できる。
+
+    Article.are_search_index_target(:default)
+    Article.are_search_index_target(:more_like_this)
+    Article.are_search_index_target(:autocomplete)
+
+:default は通常検索用。
+ユーザーが入力した検索語に対して取りこぼしを減らすことを優先する。
+
+日本語の全文検索では、入力語が短い、表記ゆれがある、分かち書きが外れる、といった問題がある。
+そのため、通常検索では ngram / bigram 系の analyzer を使いたくなることが多い。
+
+:more_like_this は類似検索用。
+通常検索とは違い、入力語を拾うことより、文書を特徴づける語を拾うことが重要になる。
+
+通常検索用の細かい ngram をそのまま more_like_this に使うと、類似判定の根拠が細かくなりすぎることがある。
+そのため、more_like_this 用には分かち書きや形態素解析寄りの analyzer を試したくなる。
+
+:autocomplete は入力補完用。
+入力途中の文字列から候補を出すため、通常検索とも more_like_this とも違う設計になりやすい。
+
+日本語の autocomplete では、単純な prefix だけでは弱い。
+title そのものに加えて、分かち書き済み語、読み、略称、正規化済み文字列などを別データとして持たせたい場合がある。
+
+このような用途を1つの index に詰め込むと、通常検索、類似検索、autocomplete の都合が混ざりやすい。
+index target を分ければ、それぞれの検索用途に合わせて mappings、index settings、are_search_es_data を変えられる。
+
+
+## 3-3. 複数 target の定義例
+----------------------------------------------------------------
+
+複数の index target を使う場合、are_search_es_mappings は target_name ごとに mappings を返す。
+
+    class Article < ApplicationRecord
+        include AreSearch::Searchable
+
+        def self.are_search_es_mappings
+            {
+                default: {
+                    properties: {
+                        id:    { type: "long" },
+                        title: { type: "text", analyzer: "cjk_index_analyzer", search_analyzer: "cjk_search_analyzer" },
+                        body:  { type: "text", analyzer: "cjk_index_analyzer", search_analyzer: "cjk_search_analyzer" },
+                    },
+                },
+                more_like_this: {
+                    properties: {
+                        id:    { type: "long" },
+                        title: { type: "text", analyzer: "ja_word_index_analyzer", search_analyzer: "ja_word_search_analyzer" },
+                        body:  { type: "text", analyzer: "ja_word_index_analyzer", search_analyzer: "ja_word_search_analyzer" },
+                    },
+                },
+                autocomplete: {
+                    properties: {
+                        id:          { type: "long" },
+                        title:       { type: "keyword" },
+                        title_words: { type: "text", analyzer: "autocomplete_index_analyzer", search_analyzer: "autocomplete_search_analyzer" },
+                        title_yomi:  { type: "text", analyzer: "autocomplete_index_analyzer", search_analyzer: "autocomplete_search_analyzer" },
+                    },
+                },
+            }
+        end
+
+        def are_search_es_data(target_name)
+            case target_name
+            when :default
+                {
+                    id:    id,
+                    title: title,
+                    body:  body,
+                }
+            when :more_like_this
+                {
+                    id:    id,
+                    title: title,
+                    body:  body,
+                }
+            when :autocomplete
+                {
+                    id:          id,
+                    title:       title,
+                    title_words: are_search_title_words,
+                    title_yomi:  are_search_title_yomi,
+                }
+            else
+                {}
+            end
+        end
+    end
+
+この例では、同じ Article でも target ごとに mappings と data が違う。
+
+:default は通常検索用なので title と body を検索対象にする。
+:more_like_this は類似検索用なので、同じ title / body でも別 analyzer を使う。
+:autocomplete は候補生成用なので、本文ではなく候補として使うデータを中心に持つ。
+
+are_search_es_mappings[target_name] の properties と are_search_es_data(target_name) のキーは揃える。
+target ごとに別 index になるため、target ごとに整合性を考える。
+
+
+## 3-4. target ごとの reindex
+----------------------------------------------------------------
+
+複数 target を定義している場合、reindex は target ごとに実行する。
+
+    Article.are_search_index_target(:default).are_search_es_reindex
+    Article.are_search_index_target(:more_like_this).are_search_es_reindex
+    Article.are_search_index_target(:autocomplete).are_search_es_reindex
+
+ある target の analyzer や mappings を変更した場合、その target だけ reindex すればよい。
+
+    Article.are_search_index_target(:autocomplete).are_search_es_reindex
+
+この操作は :autocomplete の index に対して行われる。
+:default や :more_like_this の index は作り直されない。
+
+max_result_window などの index settings も target ごとに変えられる。
+変更後の設定を既存 index に反映するには、対象 target の reindex を実行する。
+
+
+## 3-5. 実験用 target と sync 遅延の隔離
+----------------------------------------------------------------
+
+index target を分けることには、検索設計だけでなく運用上の意味もある。
+
+1つの index しかない状態で analyzer や mappings を試すために reindex を繰り返すと、その index の sync が遅れる。
+reindex 中の更新は sync request に残るが、対象 index が index 操作中である間は、通常更新の Elasticsearch 反映も遅れやすくなる。
+
+たとえば通常検索用 index が1つだけの状態で autocomplete の実験を行うとする。
+autocomplete 用の analyzer を変えるたびに同じ index を reindex すると、通常検索で使っている index の同期にも影響する。
+
+index target を分けておけば、実験用 target だけを reindex できる。
+
+    Article.are_search_index_target(:autocomplete_test).are_search_es_reindex
+
+この操作は :autocomplete_test の index に対して行われる。
+通常検索用の :default target とは別 index なので、autocomplete の調整で reindex を繰り返しても、通常検索用 index の sync 遅延を増やさずに済む。
+
+more_like_this の analyzer を試す場合も同じ。
+
+    Article.are_search_index_target(:more_like_this_test).are_search_es_reindex
+
+日本語検索では、通常検索、類似検索、autocomplete で適した analyzer や data 構造が変わりやすい。
+最初から正解を決め打ちするより、実データで試しながら調整することが多い。
+
+index target を分けることで、本番検索用 target を安定運用したまま、実験用 target で analyzer / mappings / data を変更して試せる。
+
+つまり index target は、検索用途を分けるための仕組みであり、本番検索と実験用検索を運用上分離するための仕組みでもある。
+
+
+## 3-6. sync request と target
+----------------------------------------------------------------
+
+レコード保存・削除時の sync request も index target ごとに記録される。
+
+sync request には index_target_name と es_index_name が保存される。
+同じ ActiveRecord モデル、同じレコードであっても、target が違えば別の sync request になる。
+
+たとえば Article に :default と :autocomplete がある場合、同じ Article レコードの更新でも、それぞれの target に対する同期要求が別々に残る。
+
+これにより、target ごとに Elasticsearch への反映を管理できる。
+一方で、複数 target を定義すると、1回の DB 更新で target 数ぶんの同期対象が発生する。
+
+target を増やす場合は、検索用途として分ける意味があるか、reindex や sync の運用単位として分ける意味があるかを考えて定義する。
+
+
+# 4. 同期の仕組み
+================================================================
+
+## 4-1. コールバックと sync request の記録
+----------------------------------------------------------------
+
+AreSearch::Searchable を include すると以下のコールバックが自動登録される。
+モデル側で手動登録する必要はない。
+
+    after_save
+    after_touch
+    after_destroy
+    after_commit
+
+after_save、after_touch、after_destroy で sync request を記録し、
+after_commit で Elasticsearch または SyncJob をキューイングする。
+
+
+## 4-2. are_search_sync_requests テーブル
+----------------------------------------------------------------
+
+are_search_sync_requests は、DB の変更を Elasticsearch へ非同期反映するための保留テーブル。
+レコード保存・削除時にこのテーブルへ同期対象が記録される。
+
+同期対象のキーは以下。
+
+    ar_model_class_name
+    index_target_name
+    ar_instance_key
+    es_index_name
+
+es_index_name は、Job worker や rake タスクが現在の AreSearch 設定で処理してよい同期要求かを判断するために使う。
+
+同じ es_index_name / ar_model_class_name / ar_instance_key の行は 1 行に集約される。
+es_index_name には target_name が含まれるため、同じモデルでも target が違えば別行になる。
+同じレコードに対する変更が重なった場合は upsert され、request_sequence が更新される。
+
+request_sequence は sync request の世代番号。
+同期処理が開始された後に同じ行が更新された場合、古い処理が新しい sync request を削除しないようにするために使う。
+
+processing_token / processing_at は、現在その sync request を処理している同期処理を示す。
+通常同期は processing_token が nil の行だけを対象にする。
+
+force_attempted / force_attempted_at / force_attempt_count は、processing_token が残った行に対して run_sync_requests の強制同期が動いたかを見るための情報。
+強制同期は sync request の削除や processing_token の解除を行わず、Elasticsearch への反映と force 系カラムの更新だけを行う。
+
+retry_count / last_error は、通常同期で例外が発生した場合や、index 操作中などで同期できなかった理由を見るための情報。
+
+
+## 4-3. 非同期同期の流れ（after_commit_mode = :job）
+----------------------------------------------------------------
+
+AreSearch は、レコード保存・削除を Elasticsearch へ即時反映しない。
+まず are_search_sync_requests に同期対象を記録し、SyncJob が Elasticsearch を更新する。
+
+流れ。
+
+    1. after_save / after_touch / after_destroy で sync request を upsert する
+    2. upsert 時に request_sequence を更新する
+    3. after_commit で processing_token 付きの AreSearch::SyncJob をキューイングする
+    4. SyncJob が sync request を取得する
+    5. sync request に processing_token / processing_at を記録する
+    6. DB から対象レコードを再取得する
+    7. レコードが存在すれば Elasticsearch へ index する
+    8. レコードが存在しなければ Elasticsearch から delete する
+    9. 成功したら、同じ request_sequence の sync request を削除する
+   10. 失敗したら retry_count と last_error を更新して sync request を残す
+   11. 最後に processing_token / processing_at を解除する
+
+この方式では、DB commit と Elasticsearch 反映の間に時間差がある。
+commit 直後の検索では、最新状態がまだ反映されていない可能性がある。
+
+同期処理中に同じレコードが再更新されると、sync request は同じ行のまま request_sequence だけ更新される。
+古い request_sequence の処理は、成功しても新しい sync request を削除しない。
+
+run_sync_requests は、現在の Searchable モデル名に属する sync request を拾い、target_name / es_index_name の整合性は RecordSync 側で確認する。
+
+
+## 4-4. SyncJob の内部動作
+----------------------------------------------------------------
+
+SyncJob は、AreSearch.after_commit_mode = :job の場合に使用される。
+AreSearch.after_commit_mode = :direct の場合は、after_commit 時に直接更新される。
+AreSearch.after_commit_mode = :none の場合は、after_commit では同期せず、run_sync_requests に回収を任せる。
+
+SyncJob は以下の引数で実行される。
+
+    database_name
+    ar_model_class_name
+    target_name
+    ar_instance_key
+    es_index_name
+    processing_token
+
+database_name は Job 作成時の接続先 DB 名。
+Job worker の接続先 database_name と一致しない場合、この Job では処理しない。
+この場合、sync request は更新しない。
+正しい DB に接続しているとは限らないため、last_error を安全に書けない。
+
+target_name は Job 作成時の index target 名。
+es_index_name は Job 作成時の同期先 index alias 名。
+現在のモデルから target_name に対応する index target が取得できない場合、この Job では処理せず、
+sync request の last_error に "index_target not found" を記録する。
+現在の index target の es_index_name と一致しない場合、この Job では処理せず、
+sync request の last_error に "es_index_name not match" を記録する。
+
+database_name が一致し、target_name / es_index_name が現在の index target と合う場合だけ、同期処理を実行する。
+
+内部では対象モデルを constantize し、Job 作成時の target_name / es_index_name / processing_token とともに
+AreSearch::RecordSync.sync を呼ぶ。
+
+    AreSearch::RecordSync.sync(ar_model_class_name, target_name, ar_instance_key, es_index_name, processing_token, reraise: true)
+
+processing_token は、同じ sync request を別の処理が同時に処理しないために使う。
+processing_token が空の場合、RecordSync.sync は false を返す。
+
+一時的な失敗は retry_on でリトライする。
+対象は以下。
+
+    Elastic::Transport::Transport::ServerError
+    Faraday::Error
+
+attempts は 3。
+初回実行を含むため、リトライは2回。
+
+データ起因の失敗は retry_on の対象外。
+sync request に失敗内容を残し、run_sync_requests 側の再同期に委ねる。
+
+
+## 4-5. are_search_es_sync
+----------------------------------------------------------------
+
+sync request 1件分の同期を実行する。
+
+    Article.are_search_index_target(:default).are_search_es_sync(ar_instance_key)
+
+内部では SecureRandom.uuid で processing_token を作成し、AreSearch::RecordSync.sync に渡す。
+
+index 操作中のマーカーがある場合は同期しない。
+SyncRequest は消さず、last_error に "index marked" を記録する。
+retry_count は増やさない。
+
+index が存在しない場合も同期しない。
+SyncRequest は消さず、last_error に "index not found" を記録する。
+retry_count は増やさない。
+
+index 操作中でない場合は DB から ar_instance_key で再取得する。
+
+    レコードが存在する場合
+        are_search_es_sync! で Elasticsearch へ index する
+
+    レコードが存在しない場合
+        are_search_es_delete! で Elasticsearch から delete する
+
+成功したら、同じ request_sequence の sync request を削除する。
+ただし Job / direct 同期で force_attempted が true になっている場合は削除しない。
+これは、途中で強制同期が割り込んだ行を通常処理の成功扱いで消してしまわないため。
+
+失敗したら retry_count を増やし、last_error を更新する。
+
+reraise: true を指定すると、失敗時に例外を再送出する。
+SyncJob の retry_on を効かせるために使う。
+
+    Article.are_search_index_target(:default).are_search_es_sync(ar_instance_key, reraise: true)
+
+reraise: false の場合は例外を握りつぶして false を返す。
+run_sync_requests rake タスクでは、1件の失敗で全体を止めないためこちらを使う。
+
+
+## 4-6. sync request の状態の見方
+----------------------------------------------------------------
+
+are_search_sync_requests は、SyncJob が正常に反映できなかった場合や、
+ジョブ基盤が動いていなかった場合の回収点になる。
+
+retry_count / last_error / processing_token / force_attempt_count は、sync request がどこまで処理されたかを見るための情報。
+
+    processing_token = nil
+    retry_count = 0
+    last_error = nil
+
+        sync request は作成されたが、まだ有効な同期処理まで到達していない。
+
+        Job worker が起動していない、queue が処理されていない、
+        Job が実行前に失われた、または Job worker の接続先 database_name が
+        Job 作成時と異なったため破棄された可能性がある。
+
+        database_name が一致しない場合、SyncJob は sync request を更新しない。
+        正しい DB に接続しているとは限らないため、last_error を安全に書けない。
+
+    processing_token が存在する
+
+        SyncJob / direct sync / run_sync_requests のいずれかが、その行を処理中として取得した状態。
+        processing_at が更新される。
+
+        processing_at が AreSearch.sync_request_process_hang_wait より古い場合、
+        run_sync_requests の強制同期候補になる。
+
+    retry_count = 0
+    last_error = "index marked"
+
+        index 操作中のため同期をスキップした。
+        reindex、初期 index 作成、clean up、または未削除 marker が残っている可能性がある。
+        retry_count は増やさない。
+        index 操作終了後、run_sync_requests で再同期される。
+
+    retry_count = 0
+    last_error = "index_target not found" / "index_target_name not match" / "es_index_name not match"
+
+        SyncJob または run_sync_requests が起動したが、sync request に記録された target_name / es_index_name と
+        現在のモデル定義から復元した index target が一致しなかった。
+        target を削除した、target 名を変更した、index 名生成に関わる設定を変更した場合などに起きる。
+        sync request は削除せず、last_error を残して人間が判断できる状態にする。
+
+    retry_count = 0
+    last_error = "index not found"
+
+        同期先 index alias が存在しなかった。
+        初回 reindex が未実行、または index / alias が削除された可能性がある。
+
+    retry_count > 0
+
+        are_search_es_sync の同期処理まで到達したが、例外が発生した。
+        last_error に失敗内容が記録される。
+        retry_count が AreSearch.max_retry_count 未満であれば、
+        run_sync_requests の通常同期対象になる。
+
+    force_attempt_count > 0
+
+        processing_token が残った行に対して、run_sync_requests の強制同期が実行された。
+        強制同期では retry_count は増えない。
+        force_attempted / force_attempted_at に実行済みの痕跡が残る。
+
+        force_attempt_count が AreSearch.max_force_attempt_count 以上になると、
+        それ以上の強制同期対象から除外される。
+
+アプリ側では、この状態を使って監視や通知を追加できる。
+
+例。
+
+    processing_token = nil、retry_count = 0、last_error = nil の行が一定時間残っている
+        Job worker または queue の異常として通知する。
+
+    processing_token が存在し、processing_at が古い行が残っている
+        同期処理の固着、ジョブプロセス停止、ジョブ実行中の異常終了を疑う。
+        run_sync_requests の強制同期対象になる。
+
+    last_error = "index marked" の行が長時間残っている
+        index marker の残留を疑い、check_index_status を確認する。
+
+    retry_count が増え続ける
+        are_search_es_data、mapping、Elasticsearch 接続、データ内容の不整合を確認する。
+
+    force_attempt_count が増え続ける
+        processing_token が解除されない処理停止・固着を確認する。
+
+
+## 4-7. コールバックを経由しない操作
+----------------------------------------------------------------
+
+AreSearch の同期は ActiveRecord のコールバックを起点にしている。
+そのため、コールバックを経由しない操作では sync request が記録されない。
+
+代表例。
+
+    update_all
+    delete_all
+    insert_all
+    upsert_all
+
+これらを実行した場合、Elasticsearch 側は自動更新されない。
+必要に応じて以下のどちらかを行う。
+
+対象レコードごとに同期する。
+
+    Article.are_search_index_target(:default).are_search_es_sync(ar_instance_key)
+
+または全件を再構築する。
+
+    Article.are_search_index_target(:default).are_search_es_reindex
+
+大量更新の場合は reindex の方が分かりやすい。
+一部更新で対象 ID が明確な場合は are_search_es_sync を使う。
+
+
+# 5. インデックス管理
+================================================================
+
+## 5-1. alias と物理インデックス
+----------------------------------------------------------------
+
+AreSearch は alias と物理インデックスを分けて扱う。
+
+アプリ側が通常参照するのは alias 名。
+
+    {index_prefix}_{table_name}_{target_name}
+
+例。
+
+    myapp_production_articles_default
+
+実体となる物理インデックス名は、alias 名にタイムスタンプを付けたもの。
+
+    myapp_production_articles_default_2024_01_01_12_00_00_000000
+
+検索、index、delete、sync などの通常操作は alias 名を使う。
+reindex では新しい物理インデックスを作り、投入が成功した場合だけ alias を切り替える。
+
+
+## 5-2. ロックの種類
+----------------------------------------------------------------
+
+AreSearch は3種類のロックを使う。
+ロックはすべて alias 単位で管理される。
+Article のロックが Document に影響することはない。
+
+index flock
+    ファイル: {lock_dir}/index_locks/{es_index_name}.lock
+    取得者:   reindex / clean up / 初期 index 作成を実行したプロセス
+    性質:     プロセスが終了すれば OS が自動で解放する
+
+index marker
+    テーブル: are_search_index_markers
+    取得者:   reindex / clean up / 初期 index 作成を実行したプロセス
+    性質:     index 操作の終了時に ensure で削除を試みる。
+              marker 削除に到達できない場合、または marker 削除自体が失敗した場合は残る
+
+sync flock
+    ファイル: {lock_dir}/sync_locks/sync.lock
+    取得者:   run_sync_requests を実行したプロセス
+    性質:     プロセスが終了すれば OS が自動で解放する
+
+
+## 5-3. 操作ごとの阻害条件
+----------------------------------------------------------------
+
+index 操作中は、同期や clean up が不用意に動かないように止まる。
+
+検索
+    基本的に阻害されない。
+    manual marker / reindex marker / clean_up marker が存在しても、検索処理は自動停止しない。
+    alias が存在していれば、通常の reindex 中は旧 index を検索できる。
+
+    ただし、Elasticsearch サーバ停止中に検索を実行すれば、Elasticsearch クライアントの例外が発生する。
+    ES 停止中や計画メンテナンス中に検索画面を止めるかどうかはアプリ側で判断する。
+
+    アプリ側で検索前に marker を確認したい場合は以下を使う。
+
+        AreSearch::SearchBase.index_marked?([Article.are_search_index_target(:default), Comment.are_search_index_target(:default)])
+
+    この判定は marker がある場合は、are_search_index_markers だけを見るため、Elasticsearch には接続しない。
+
+sync / SyncJob
+    index marker がある場合に阻害される。
+    are_search_es_sync は SyncRequest を消さない。
+    sync request に last_error: "index marked" を記録する。
+    retry_count は増やさない。
+    index 操作終了後、run_sync_requests rake タスクで拾われる。
+
+are_search_es_reindex / are_search_es_clean_up / 初期 index 作成
+    AreSearch.index_operation_enabled が false の場合は AreSearch::IndexOperationViolation を送出する。
+    index flock が取れない場合、または index marker がある場合に阻害される。
+    どちらか一方でも該当すれば false を返す。
+    are_search_es_clean_up は何もせず false を返す。
+
+manual marker 操作 / delete_force!
+    AreSearch.index_operation_enabled が false の場合は AreSearch::IndexOperationViolation を送出する。
+    mark_index! / mark_all は既存 marker がある場合は上書きしない。
+    unmark_index! / unmark_all は operation = manual の marker だけを削除する。
+    delete_force! は operation に関係なく marker を削除する。
+
+物理インデックスの手動削除
+    AreSearch.index_operation_enabled が false の場合は AreSearch::IndexOperationViolation を送出する。
+    index flock や index marker は取得しない。
+
+run_sync_requests
+    sync flock が取れない場合に阻害される。
+    タスク自体がスキップされる。
+    通常同期は processing_token が nil の行だけを対象にする。
+    強制同期は processing_token が残り、processing_at が古い行だけを対象にする。
+
+are_search_es_sync! / are_search_es_delete!
+    何にも阻害されない。
+
+
+## 5-4. index marker
+----------------------------------------------------------------
+
+marker は index 操作中、または前回の index 操作で marker 削除が完了しなかった可能性を示す DB 行。
+
+marker の保存先。
+
+    are_search_index_markers
+
+reindex、初期 index 作成、clean up の実行中に marker を作成する。
+index 操作の終了時には、正常・例外のどちらでも ensure により marker 削除を試みる。
+通常例外だけで marker が残ることは基本的にない。
+
+marker が残るのは、プロセス強制終了、VM / コンテナ停止、DB 障害、
+marker 削除処理自体の失敗など、marker 削除が完了できなかった場合。
+
+marker が残っている場合、以下は true を返す。
+
+    Article.are_search_index_target(:default).are_search_es_index_marked?
+
+判定は are_search_index_markers に es_index_name の行があるかどうかで行う。
+flock は取らない。
+
+marker が残っている間、sync / clean up / reindex / 初期 index 作成は実行されない。
+sync の判定は marker の有無だけで行う。
+flock は index 操作許可マシン内の同時実行防止に使う。
+
+marker が残った場合、AreSearch は index 操作中扱いを継続する。
+Elasticsearch の alias と物理インデックスの状態を確認し、必要なら不要な作成途中インデックスを削除してから marker 行を手動削除する。
+
+marker 削除後、必要に応じて reindex を再実行する。
+
+manual marker は、計画メンテナンスなどで明示的に index 操作中扱いにするための marker。
+operation には manual が入る。
+
+    AreSearch.mark_index!(Article.are_search_index_target(:default).are_search_es_index_name)
+    AreSearch.unmark_index!(Article.are_search_index_target(:default).are_search_es_index_name)
+
+全 Searchable index を対象にする場合は以下を使う。
+
+    bundle exec rake are_search:mark_all
+    bundle exec rake are_search:unmark_all
+
+unmark_index! / unmark_all が削除するのは operation = manual の marker だけ。
+reindex / clean_up の marker は削除しない。
+異常終了で残った marker を消す操作と、計画メンテナンス用の manual marker 解除は分けて扱う。
+
+operation に関係なく marker を削除する低レベル操作もある。
+
+    AreSearch::IndexMarker.delete_force!(Article.are_search_index_target(:default).are_search_es_index_name)
+
+delete_force! は AreSearch.index_operation_enabled = true のプロセスでのみ実行できる。
+実行中の reindex / clean_up marker も削除できるため、
+check_index_status で marker / lock / alias / physical index を確認した後だけ使う。
+
+
+## 5-5. max_retry_count / max_force_attempt_count と SyncJob retry_on の関係
+----------------------------------------------------------------
+
+AreSearch.max_retry_count は run_sync_requests rake タスクが通常同期を試みる上限であり、
+SyncJob 側の retry_on には影響しない。
+
+AreSearch.max_force_attempt_count は、processing_token が残った行に対して
+run_sync_requests が強制同期を試みる上限。
+通常同期の retry_count には影響しない。
+
+SyncJob の retry_on は attempts: 3 で固定されており、
+max_retry_count / max_force_attempt_count の設定値に関わらず最大2回リトライする。
+
+
+# 6. 低レベル操作
+================================================================
+
+sync request や SyncJob を通さず、直接 Elasticsearch を更新する操作。
+通常運用では使わない。
+
+
+## 6-1. are_search_es_sync!
+----------------------------------------------------------------
+
+このレコードの現在状態を指定 target の Elasticsearch index へ反映する。
+
+    article_index = Article.are_search_index_target(:default)
+
+    article.are_search_es_sync!(article_index)
+
+destroyed? の場合、または are_search_es_indexable?(target_name) が true ではない場合は delete を実行する。
+Elasticsearch クライアントの例外はそのまま伝播する。
+
+
+## 6-2. are_search_es_delete!
+----------------------------------------------------------------
+
+指定した ar_instance_key のドキュメントを Elasticsearch から削除する。
+
+    Article.are_search_index_target(:default).are_search_es_delete!(ar_instance_key)
+
+対象が存在しない場合の NotFound は無視する。
+それ以外の例外は伝播する。
+
+
+## 6-3. 物理インデックスの手動削除
+----------------------------------------------------------------
+
+物理インデックス名を直接指定して削除する。
+
+    AreSearch::IndexManager.es_delete_index!(
+        "myapp_production_articles_20231201090000"
+    )
+
+index flock や index marker は取得しない。
+ただし AreSearch.index_operation_enabled = true のプロセスでのみ実行できる。
+現在 alias が指しているインデックスも、指定すれば削除できる。
+Elasticsearch クライアントの例外はそのまま伝播する。
+
+通常運用では clean up を使う。
+
+
+
+

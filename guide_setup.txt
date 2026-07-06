@@ -1,0 +1,406 @@
+
+================================================================
+AreSearch セットアップガイド
+================================================================
+
+このファイルは、AreSearch を Rails アプリに組み込んで、最初の検索が動くところまでの基本操作を扱う。
+管理操作は guide_operations.txt、概念・内部動作は guide_reference.txt を参照する。
+
+
+# 1. インストール
+================================================================
+
+Gemfile に追加する。
+
+    gem 'are_search', path: '/path/to/are_search'
+
+bundle install を実行する。
+
+    bundle install
+
+インストーラを実行する。
+
+    rails generate are_search:install
+
+これで以下が生成される。
+
+    config/initializers/are_search.rb
+    db/migrate/xxxxxxxxxxxxxx_create_are_search_tables.rb
+    lib/tasks/are_search_retry_alert.rake
+
+migration を実行する。
+
+    rails db:migrate
+
+------ 注意 ------
+are_search_sync_requests と are_search_index_markers は必ずデータのあるデータベースと同じデータベースに作成すること。
+are_search_sync_requests はデータベースのトランザクションを期待しているため、別のデータベースに作成すると同期に失敗する可能性がある。
+are_search_index_markers は全プロセス共通の index marker として使うため、同じデータベースに作成する。
+
+
+# 2. イニシャライザ
+================================================================
+
+config/initializers/are_search.rb を環境に合わせて編集する。
+
+    AreSearch.setup(
+        index_prefix: "#{ConfVars.get(:are_search, :index_prefix)}_#{Rails.env}"
+    ) do
+        Elasticsearch::Client.new(
+            url:      ConfVars.get(:are_search, :url),
+            user:     ConfVars.get(:are_search, :user),
+            password: ConfVars.get(:are_search, :password),
+            adapter: :net_http,
+            transport_options: {
+                request: {
+                    open_timeout: 2,
+                    timeout:      10,
+                },
+                ssl: { verify: false },
+            },
+            ca_fingerprint: ConfVars.get(:are_search, :ca_fingerprint),
+            log: Rails.env.development?,
+            logger: logger,
+        )
+    end
+
+index_prefix は AreSearch が作る index / alias 名の先頭に付く文字列。
+
+alias 名は index target ごとに以下の形式になる。
+
+    {index_prefix}_{table_name}_{target_name}
+
+例:
+
+    index_prefix: myapp_production
+    table_name:   articles
+    target_name:  default
+
+    myapp_production_articles_default
+
+env の区別が必要な場合は index_prefix に含める。
+
+    index_prefix: "myapp_#{Rails.env}"
+
+検索、index、delete、sync など、アプリ側の通常操作はこの alias 名を参照する。
+実体となる物理インデックス名は alias 名にタイムスタンプを付けた形式になる。
+
+    myapp_production_articles_default_2024_01_01_12_00_00_000000
+
+setup ブロックは Elasticsearch::Client のインスタンスを返すこと。
+ブロックはスレッドごとに一度だけ評価され、Thread.current に保持される。
+
+
+設定の詳細は guide_reference.txt を参照する。
+
+Elasticsearch::Client.newのパラメータについては、以下を参照のこと。
+https://www.elastic.co/docs/reference/elasticsearch/clients/ruby/basic-config
+https://www.elastic.co/docs/reference/elasticsearch/clients/ruby/advanced-config
+
+
+# 3. モデルへの組み込み
+================================================================
+
+検索対象にしたいモデルへ AreSearch::Searchable を include する。
+
+    class Article < ApplicationRecord
+        include AreSearch::Searchable
+    end
+
+
+# 4. are_search_es_mappings と are_search_es_data
+================================================================
+
+クラスメソッドとして are_search_es_mappings を実装する。
+Elasticsearch に作る mapping を target_name ごとに返す。
+
+    class Article < ApplicationRecord
+        include AreSearch::Searchable
+
+        def self.are_search_es_mappings
+            {
+                default: {
+                    properties: {
+                        id:         { type: 'long' },
+                        user_id:    { type: 'long' },
+                        updated_at: { type: 'date' },
+                        title:      { type: 'text', analyzer: 'cjk_index_analyzer', search_analyzer: 'cjk_search_analyzer' },
+                        body:       { type: 'text', analyzer: 'cjk_index_analyzer', search_analyzer: 'cjk_search_analyzer' },
+                        status:     { type: 'keyword' },
+                    },
+                },
+            }
+        end
+    end
+
+インスタンスメソッドとして are_search_es_data を実装する。
+target_name を受け取り、Elasticsearch に投入する Hash を返す。
+
+    class Article < ApplicationRecord
+        include AreSearch::Searchable
+
+        def are_search_es_data(target_name)
+            case target_name
+            when :default
+                {
+                    id:         id,
+                    user_id:    user_id,
+                    updated_at: updated_at,
+                    title:      title&.gsub(/[^[:print:]]/, ' '),
+                    body:       body&.gsub(/[^[:print:]]/, ' '),
+                    status:     status,
+                }
+            else
+                {}
+            end
+        end
+    end
+
+制御文字を含む可能性がある文字列は、Elasticsearch 側で壊れないように除去しておく。
+
+    title&.gsub(/[^[:print:]]/, ' ')
+
+are_search_es_mappings[target_name] の properties と are_search_es_data(target_name) のキーは揃える。
+不整合があれば 保存時に validation error になる。
+
+
+# 5. 初回 reindex
+================================================================
+
+モデルの実装が終わったら、アプリの restart 前に reindex を実行する。
+
+    Article.are_search_index_target(:default).are_search_es_reindex
+
+reindexするまでは検索結果は空になる。
+複数 target を定義している場合は、target ごとに reindex を実行する。
+
+
+# 6. 最初の検索
+================================================================
+
+単一 target の検索。
+
+    article_index = Article.are_search_index_target(:default)
+
+    result = article_index.are_search_es_search(
+        "Rails",
+        fields: [:title, :body],
+    )
+
+    result.records.each do |article|
+        puts article.title
+    end
+
+ページネーションを付ける。
+
+    article_index = Article.are_search_index_target(:default)
+
+    result = article_index.are_search_es_search(
+        "Rails",
+        fields:   [:title, :body],
+        page:     params[:page],
+        per_page: 20,
+    )
+
+    @articles = result.records
+    @total    = result.records.total_count
+
+
+# 7. 動作確認
+================================================================
+
+Searchable を include している全モデルをチェックする。
+
+    bundle exec rake are_search:check_all_models
+
+チェックされる内容は以下。
+
+    after_save / after_destroy / after_touch / after_commit の登録状態
+    are_search_es_data の実装有無
+    are_search_es_mappings の実装有無
+    Rails のコールバック順序
+
+正常な場合は以下のように出力される。
+
+    全モデル正常
+
+
+# 8. 同期の監視
+================================================================
+
+sync request が処理されずに残り続ける場合、検索結果が古いままになる。
+run_sync_requests で定期的に再同期し、それでも解消しない場合は alert_retry_exceeded で検知する。
+
+## 8-1. run_sync_requests
+----------------------------------------------------------------
+
+ジョブ失敗、ジョブシステム障害、index 操作中のスキップなどで sync request が残ることがある。
+残った行は rake タスクで再同期できる。
+
+    bundle exec rake are_search:run_sync_requests
+
+対象になる行。
+
+通常同期。
+
+    processing_token が nil
+    updated_at が AreSearch.sync_request_delay 秒以上古い
+    retry_count が AreSearch.max_retry_count 未満
+
+強制同期。
+
+    processing_token が nil ではない
+    processing_at が AreSearch.sync_request_process_hang_wait 秒以上古い
+    force_attempt_count が AreSearch.max_force_attempt_count 未満
+
+強制同期は、処理中のまま返ってこない sync request の Elasticsearch 反映を回収するための処理。
+force_attempt_count を増やし、force_attempted / force_attempted_at を記録する。
+
+多重起動防止のため flock を使う。
+ロックファイルは以下。
+
+    {lock_dir}/sync_locks/sync.lock
+
+別プロセスが実行中の場合はスキップする。
+
+
+## 8-2. sync request 停止候補の通知
+----------------------------------------------------------------
+
+インストーラで以下のサンプルタスクが生成される。
+
+    lib/tasks/are_search_retry_alert.rake
+
+実行例。
+
+    bundle exec rake are_search:alert_retry_exceeded
+
+sync request の停止候補を検出し、管理者へメール通知するサンプル。
+検出対象は以下。
+
+    retry_count が ALERT_RETRY_THRESHOLD に到達した行
+    force_attempt_count が ALERT_FORCE_RETRY_THRESHOLD に到達した行
+    last_error があり、updated_at が ALERT_STUCK_ERROR_WAIT 秒以上古い行
+
+last_error がある行の長期残留は、同期が解消されない状態の検知に使う。
+index marked が続く場合は index marker の残留、index not found が続く場合は初回 reindex 未実行や alias 削除、その他の error が続く場合はデータ内容や Elasticsearch 接続を確認する。
+
+宛先や送信元、しきい値はタスク内の定数を環境に合わせて変更する。
+
+    ALERT_MAIL_TO
+    ALERT_MAIL_FROM
+    ALERT_RETRY_THRESHOLD
+    ALERT_FORCE_RETRY_THRESHOLD
+    ALERT_STUCK_ERROR_WAIT
+
+メール送信は利用側 Rails アプリの ActionMailer 設定を使う。
+
+このタスクは cron や systemd timer などで定期実行する想定。
+
+
+## 8-3. cron サンプル
+----------------------------------------------------------------
+
+#!/bin/bash
+
+set -u
+
+cd /home/____user____/____app____ || exit 1
+
+export RAILS_ENV=production
+export PATH="/home/____user____/.rbenv/shims:/home/____user____/.rbenv/bin:/usr/local/bin:/usr/bin:/bin"
+
+bundle exec rake are_search:run_sync_requests
+bundle exec rake are_search:alert_retry_exceeded
+
+
+crontab では以下のように設定する。
+
+
+*/5 * * * * /home/____user____/____app____/script/are_search_run_sync_requests.sh >> /home/____user____/____app____/log/are_search_run_sync_requests.log 2>&1
+
+必要に応じて分割を検討してください。
+
+
+# 9. セットアップ後に読むもの
+================================================================
+
+検索の書き方を知りたい場合。
+
+    guide_usage.txt
+
+reindex、同期、clean up、systemd などの運用を知りたい場合。
+
+    guide_operations.txt
+
+
+
+# 10. [補足] Solid Queue の起動（同じDBを使用する場合）
+================================================================
+
+AreSearch の同期ジョブを動かすには、利用側アプリで ActiveJob のキュー実行環境が必要。
+Solid Queue のドキュメントは別DBを使用する事がデフォルト。
+何かしらの事情で、メインのDBと同じDB内でSolid Queue を使う場合の例。
+
+初期セットアップ例。
+
+    bundle install
+    rails solid_queue:install
+    rails g migration add_solid_queue_tables
+
+queue_schema.rb の中身を migration へ移す運用の場合。
+
+    db/queue_schema.rb の中身を migration へコピー
+    rails db:migrate
+    db/queue_schema.rb を削除
+
+開発環境での起動例。
+
+    bundle exec bin/jobs
+
+mac で fork 周りの問題が出る場合。
+
+    OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES bundle exec bin/jobs
+
+PostgreSQL の GSSENC 問題が出る場合。
+
+    PGGSSENCMODE=disable bundle exec bin/jobs
+
+database.yml に設定する場合。
+
+    gssencmode: 'disable'
+
+
+# 11. [補足] systemd サンプル
+================================================================
+
+Solid Queue を systemd で起動する例。
+____user____、____group____、____app____ は利用側アプリに合わせて変更する。
+
+[Unit]
+Description=____app____ solid_queue
+After=network.target
+
+[Service]
+Type=simple
+User=____user____
+Group=____group____
+WorkingDirectory=/home/____user____/____app____
+Environment=RAILS_ENV=production
+Environment="LANG=ja_JP.UTF-8"
+Environment="HOME=/home/____user____"
+ExecStart=/home/____user____/.rbenv/shims/bundle exec bin/jobs
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target
+
+ジョブの安全性は systemd だけでは決まらない。
+途中停止や再実行に耐えるかは、ジョブ処理と sync request の設計で決まる。
+
+
+
