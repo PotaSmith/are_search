@@ -120,6 +120,9 @@ Elasticsearch に作る mapping を target_name ごとに返す。
         def self.are_search_es_mappings
             {
                 default: {
+                    index_settings: {
+                        max_result_window: 2_000,
+                    },
                     properties: {
                         id:         { type: 'long' },
                         user_id:    { type: 'long' },
@@ -401,6 +404,7 @@ WantedBy=multi-user.target
 
 ジョブの安全性は systemd だけでは決まらない。
 途中停止や再実行に耐えるかは、ジョブ処理と sync request の設計で決まる。
+
 
 
 

@@ -1,4 +1,3 @@
-
 # frozen_string_literal: true
 
 module AreSearch
@@ -82,24 +81,9 @@ module AreSearch
 
         # モデルごとの最小の max_result_window を計算
         def resolve_model_max_result_window(index_target)
-            model_index_settings = index_target.are_search_es_index_settings || {}
-            value = model_index_settings[:max_result_window].to_i
-            value = model_index_settings["max_result_window"].to_i if value == 0
+            model_index_settings = index_target.are_search_es_index_settings
 
-            global_index_settings = AreSearch.index_settings || {}
-            value = global_index_settings[:max_result_window].to_i if value == 0
-            value = global_index_settings["max_result_window"].to_i if value == 0
-
-            value = AreSearch::MAX_RESULT_WINDOW if value == 0
-
-            max_result_window = value
-
-            unless max_result_window > 0
-                raise ArgumentError,
-                    "#{index_target.model_class.name} #{index_target.target_name} are_search_es_index_settings[:max_result_window] は正の整数で指定してください: #{value.inspect}"
-            end
-
-            max_result_window
+            model_index_settings[:max_result_window]
         end
 
         def resolve_paging_params(index_targets, from, size)
@@ -314,5 +298,7 @@ module AreSearch
         end
     end
 end
+
+
 
 

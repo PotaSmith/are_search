@@ -18,6 +18,9 @@ module AreSearch
         #   def self.are_search_es_mappings
         #       {
         #           default: {
+        #              index_settings: {
+        #                  max_result_window: 2_000,
+        #              },
         #              properties: {
         #                  name:        { type: 'text',    analyzer: 'cjk_index_analyzer', search_analyzer: 'cjk_search_analyzer' },
         #                  documents:   { type: 'text',    analyzer: 'cjk_index_analyzer', search_analyzer: 'cjk_search_analyzer', store: true },
@@ -81,7 +84,7 @@ module AreSearch
                 next if are_search_es_indexable?(index_target.target_name) != true
                 next unless AreSearch.validate_es_data
 
-                mappings = self.class.are_search_es_mappings[index_target.target_name]
+                mappings = index_target.are_search_es_mappings
                 data     = are_search_es_data(index_target.target_name)
 
                 violations = AreSearch::EsDataValidator.validate(mappings, data)
@@ -199,13 +202,6 @@ module AreSearch
                 are_search_index_target_map[target_name.to_sym]
             end
 
-            # Elasticsearch の index設定
-            # 必要に応じてオーバーライドすること
-            #
-            # index作成時の max_result_window サイズの指定など
-            def are_search_es_index_settings(target_name)
-                AreSearch.index_settings
-            end
 
             # テスト用
             def are_search_reset_index_targets!
@@ -244,7 +240,12 @@ module AreSearch
                 end
 
                 if mappings.key?(:properties)
-                    errors << "#{name}.are_search_es_mappings は target_name ごとの Hash で定義してください"
+                    errors << "#{name}.are_search_es_mappings のトップレベルに properties は指定できません。target_nameを指定してください"
+                    return errors
+                end
+
+                if mappings.key?(:index_settings)
+                    errors << "#{name}.are_search_es_mappings のトップレベルに index_settings は指定できません。target_nameを指定してください"
                     return errors
                 end
 
@@ -258,8 +259,28 @@ module AreSearch
                         next
                     end
 
+                    unless target_mappings.key?(:index_settings)
+                        errors << "#{name}.are_search_es_mappings[#{target_name.inspect}] に :index_settings がありません"
+                    end
+
                     unless target_mappings.key?(:properties)
                         errors << "#{name}.are_search_es_mappings[#{target_name.inspect}] に :properties がありません"
+                    end
+
+                    if target_mappings.key?(:index_settings) && target_mappings[:index_settings].instance_of?(Hash) == false
+                        errors << "#{name}.are_search_es_mappings[#{target_name.inspect}][:index_settings] は Hash で指定してください"
+                    end
+
+                    if target_mappings.key?(:index_settings) && target_mappings[:index_settings].instance_of?(Hash)
+                        max_result_window = target_mappings[:index_settings][:max_result_window]
+
+                        unless max_result_window.instance_of?(Integer) && max_result_window > 0
+                            errors << "#{name}.are_search_es_mappings[#{target_name.inspect}][:index_settings][:max_result_window] は正の整数で指定してください"
+                        end
+                    end
+
+                    if target_mappings.key?(:properties) && target_mappings[:properties].instance_of?(Hash) == false
+                        errors << "#{name}.are_search_es_mappings[#{target_name.inspect}][:properties] は Hash で指定してください"
                     end
 
                     violations = AreSearch::EsDataValidator.validate_mapping_symbol_keys(target_mappings)
@@ -274,3 +295,5 @@ module AreSearch
         end
     end
 end
+
+

@@ -25,12 +25,6 @@ require_relative "are_search/railtie" if defined?(Rails::Railtie)
 
 module AreSearch
 
-    MAX_RESULT_WINDOW = 10_000
-
-    INDEX_SETTINGS = {
-        max_result_window: MAX_RESULT_WINDOW,
-    }.freeze
-
     # CJK Bigram + Unigram アナライザ設定
     # Solrの CJKBigramFilterFactory outputUnigrams="true" と等価
     ANALYZER_SETTINGS = {
@@ -65,7 +59,6 @@ module AreSearch
     class IndexLockUnavailable < Error; end
     class IndexMarkerUnavailable < Error; end
 
-    @index_settings = INDEX_SETTINGS
     @analyzer_settings = ANALYZER_SETTINGS
     @client_block = nil
     @index_prefix = nil
@@ -83,14 +76,6 @@ module AreSearch
 
     @validate_es_data  = true
 
-
-    def self.index_settings
-        @index_settings
-    end
-
-    def self.index_settings=(value)
-        @index_settings = value
-    end
 
     def self.analyzer_settings
         @analyzer_settings
@@ -421,3 +406,5 @@ module AreSearch
         errors.empty? ? puts("全モデル正常") : puts(errors.join("\n"))
     end
 end
+
+

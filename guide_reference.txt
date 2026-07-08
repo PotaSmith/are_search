@@ -21,7 +21,6 @@ AreSearch リファレンス
     AreSearch.max_retry_count                = 100
     AreSearch.sync_request_process_hang_wait = 1800
     AreSearch.max_force_attempt_count        = 5
-    AreSearch.index_settings                 = { max_result_window: 10_000 }
     AreSearch.lock_dir                       = Rails.root.join("tmp", "are_search").to_s
     AreSearch.index_operation_enabled        = false
     AreSearch.validate_es_data               = true
@@ -85,21 +84,34 @@ force_attempt_count がこの値以上の行は、強制同期の対象から除
 ## 1-6. index_settings / max_result_window
 ----------------------------------------------------------------
 
-AreSearch.index_settings は、Elasticsearch に作成する index の settings.index に渡す設定。
+index_settings は、Elasticsearch に作成する index の settings.index に渡す設定。
+AreSearch 全体のグローバル設定ではなく、are_search_es_mappings の target ごとに定義する。
 
-    AreSearch.index_settings = {
-        max_result_window: 10_000,
-    }
+    def self.are_search_es_mappings
+        {
+            default: {
+                index_settings: {
+                    max_result_window: 2_000,
+                },
+                properties: {
+                    id:    { type: "long" },
+                    title: { type: "text" },
+                },
+            },
+        }
+    end
 
-デフォルトは以下。
-
-    { max_result_window: 10_000 }
+:index_settings は各 target で必須。
+:index_settings[:max_result_window] は正の Integer で指定する。
 
 max_result_window は、AreSearch の通常検索で扱うページング可能件数の上限。
-Elasticsearch の index.max_result_window の既定値に合わせている。
-
 この値は reindex で新しい物理インデックスを作成するとき、
 settings.index.max_result_window として Elasticsearch に渡される。
+
+index_settings には max_result_window 以外の Elasticsearch index 設定も書ける。
+AreSearch が値の意味まで検査するのは max_result_window だけ。
+それ以外の値は Elasticsearch 側の validation に委ねる。
+ただし Hash の key は Symbol で指定する。
 
 通常検索では、page / per_page から作る from / size をこの範囲に収める。
 from + size が max_result_window を超える場合は、最後のページの size を縮める。
@@ -113,23 +125,11 @@ Elasticsearch が返した元の hits.total.value は result.records.es_total_co
 この補正は、現在ページで観測できた欠落だけを反映する。
 全ページを DB 側で再検証するものではないため、表示可能な総件数を厳密に保証するものではない。
 
-モデルごとに変更したい場合は、モデル側で are_search_es_index_settings を定義する。
-未定義の場合は AreSearch.index_settings が使われる。
-
-    def self.are_search_es_index_settings(target_name)
-        case target_name
-        when :default
-            AreSearch.index_settings.merge(max_result_window: 100_000)
-        else
-            AreSearch.index_settings
-        end
-    end
-
-複数 target 検索では、対象 index target の are_search_es_index_settings[:max_result_window] の最小値を使う。
+複数 target 検索では、対象 index target の index_settings[:max_result_window] の最小値を使う。
 これは複数 index を同時に検索する場合、低い window の index に合わせるため。
 
 max_result_window の変更は、既存の物理インデックスには自動反映されない。
-設定変更後に反映するには reindex を実行し、新しい物理インデックスを作成する。
+設定変更後に反映するには対象 target の reindex を実行し、新しい物理インデックスを作成する。
 
 
 ## 1-7. lock_dir
@@ -416,6 +416,9 @@ index target を分ければ、それぞれの検索用途に合わせて mappin
         def self.are_search_es_mappings
             {
                 default: {
+                    index_settings: {
+                        max_result_window: 2_000,
+                    },
                     properties: {
                         id:    { type: "long" },
                         title: { type: "text", analyzer: "cjk_index_analyzer", search_analyzer: "cjk_search_analyzer" },
@@ -423,6 +426,9 @@ index target を分ければ、それぞれの検索用途に合わせて mappin
                     },
                 },
                 more_like_this: {
+                    index_settings: {
+                        max_result_window: 2_000,
+                    },
                     properties: {
                         id:    { type: "long" },
                         title: { type: "text", analyzer: "ja_word_index_analyzer", search_analyzer: "ja_word_search_analyzer" },
@@ -430,6 +436,9 @@ index target を分ければ、それぞれの検索用途に合わせて mappin
                     },
                 },
                 autocomplete: {
+                    index_settings: {
+                        max_result_window: 2_000,
+                    },
                     properties: {
                         id:          { type: "long" },
                         title:       { type: "keyword" },
@@ -1044,6 +1053,7 @@ index flock や index marker は取得しない。
 Elasticsearch クライアントの例外はそのまま伝播する。
 
 通常運用では clean up を使う。
+
 
 
 

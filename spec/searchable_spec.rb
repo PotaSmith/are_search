@@ -67,6 +67,9 @@ RSpec.describe AreSearch::Searchable do
             def self.are_search_es_mappings
                 {
                     default: {
+                        index_settings: {
+                            max_result_window: 2_000,
+                        },
                         properties: {
                             title: { type: "text" },
                         },
@@ -113,17 +116,168 @@ RSpec.describe AreSearch::Searchable do
             expect(targets.first.are_search_es_index_name).to eq("test_articles_default")
         end
 
-        it "target_name ごとの Hash ではない mappings はエラーにする" do
+        it "properties がトップレベルにあればエラーにする" do
             model_class = build_searchable_class
             model_class.include(described_class)
 
             allow(model_class)
                 .to receive(:are_search_es_mappings)
-                .and_return(properties: { title: { type: "text" } })
+                .and_return(
+                    properties: {
+                        title: { type: "text" },
+                    },
+                )
 
             expect do
                 model_class.are_search_index_targets
-            end.to raise_error(ArgumentError, /target_name ごとの Hash/)
+            end.to raise_error(
+                ArgumentError,
+                /トップレベルに properties は指定できません/,
+            )
+        end
+
+        it "index_settings がトップレベルにあればエラーにする" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            allow(model_class)
+                .to receive(:are_search_es_mappings)
+                .and_return(
+                    index_settings: {
+                        max_result_window: 2_000,
+                    },
+                )
+
+            expect do
+                model_class.are_search_index_targets
+            end.to raise_error(
+                ArgumentError,
+                /トップレベルに index_settings は指定できません/,
+            )
+        end
+
+        it "target に properties が無ければエラーにする" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            allow(model_class)
+                .to receive(:are_search_es_mappings)
+                .and_return(
+                    default: {
+                        index_settings: {
+                            max_result_window: 2_000,
+                        },
+                        dynamic: false,
+                    },
+                )
+
+            expect do
+                model_class.are_search_index_targets
+            end.to raise_error(ArgumentError, /:properties がありません/)
+        end
+
+        it "target に index_settings が無ければエラーにする" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            allow(model_class)
+                .to receive(:are_search_es_mappings)
+                .and_return(
+                    default: {
+                        properties: {
+                            title: { type: "text" },
+                        },
+                    },
+                )
+
+            expect do
+                model_class.are_search_index_targets
+            end.to raise_error(ArgumentError, /:index_settings がありません/)
+        end
+
+        it "properties 以外の mappings トップレベルキーも許可する" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            allow(model_class)
+                .to receive(:are_search_es_mappings)
+                .and_return(
+                    default: {
+                        index_settings: {
+                            max_result_window: 2_000,
+                        },
+                        dynamic: false,
+                        properties: {
+                            title: { type: "text" },
+                        },
+                    },
+                )
+
+            expect(model_class.are_search_index_targets.size).to eq(1)
+        end
+
+        it "index_settings が Hash でなければエラーにする" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            allow(model_class)
+                .to receive(:are_search_es_mappings)
+                .and_return(
+                    default: {
+                        index_settings: "invalid",
+                        properties: {
+                            title: { type: "text" },
+                        },
+                    },
+                )
+
+            expect do
+                model_class.are_search_index_targets
+            end.to raise_error(ArgumentError, /\[:index_settings\] は Hash/)
+        end
+
+        it "index_settings の max_result_window が正の整数でなければエラーにする" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            allow(model_class)
+                .to receive(:are_search_es_mappings)
+                .and_return(
+                    default: {
+                        index_settings: {
+                            max_result_window: 0,
+                        },
+                        properties: {
+                            title: { type: "text" },
+                        },
+                    },
+                )
+
+            expect do
+                model_class.are_search_index_targets
+            end.to raise_error(ArgumentError, /\[:max_result_window\] は正の整数/)
+        end
+
+        it "mappings と index_settings の key が Symbol でなければエラーにする" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            allow(model_class)
+                .to receive(:are_search_es_mappings)
+                .and_return(
+                    default: {
+                        "index_settings" => {
+                            max_result_window: 2_000,
+                        },
+                        properties: {
+                            "title" => { type: "text" },
+                        },
+                    },
+                )
+
+            expect do
+                model_class.are_search_index_targets
+            end.to raise_error(ArgumentError, /key は Symbol/)
         end
     end
 
@@ -487,3 +641,4 @@ RSpec.describe AreSearch::Searchable do
         end
     end
 end
+

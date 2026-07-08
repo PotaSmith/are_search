@@ -16,7 +16,6 @@ RSpec.describe AreSearch, "configuration" do
         original_after_commit_mode = described_class.after_commit_mode
         original_index_operation_enabled = described_class.index_operation_enabled
         original_analyzer_settings = described_class.analyzer_settings
-        original_index_settings = described_class.index_settings
         original_thread_client = Thread.current.thread_variable_get(:are_search_es_client)
 
         described_class.instance_variable_set(:@client_block, nil)
@@ -37,7 +36,6 @@ RSpec.describe AreSearch, "configuration" do
         described_class.after_commit_mode = original_after_commit_mode
         described_class.index_operation_enabled = original_index_operation_enabled
         described_class.analyzer_settings = original_analyzer_settings
-        described_class.index_settings = original_index_settings
         Thread.current.thread_variable_set(:are_search_es_client, original_thread_client)
     end
 
@@ -84,8 +82,6 @@ RSpec.describe AreSearch, "configuration" do
 
     it "任意設定を変更できる" do
         analyzer_settings = { analyzer: {} }
-        index_settings = { max_result_window: 50_000, refresh_interval: "1s" }
-
         described_class.sync_request_delay = 30
         described_class.max_retry_count = 7
         described_class.sync_request_process_hang_wait = 600
@@ -95,7 +91,6 @@ RSpec.describe AreSearch, "configuration" do
         described_class.after_commit_mode = :job
         described_class.index_operation_enabled = false
         described_class.analyzer_settings = analyzer_settings
-        described_class.index_settings = index_settings
         described_class.lock_dir = "/tmp/are_search_spec"
 
         expect(described_class.sync_request_delay).to eq(30)
@@ -107,7 +102,6 @@ RSpec.describe AreSearch, "configuration" do
         expect(described_class.after_commit_mode).to eq(:job)
         expect(described_class.index_operation_enabled).to eq(false)
         expect(described_class.analyzer_settings).to equal(analyzer_settings)
-        expect(described_class.index_settings).to equal(index_settings)
         expect(described_class.lock_dir).to eq("/tmp/are_search_spec")
     end
 
@@ -129,6 +123,7 @@ RSpec.describe AreSearch, "configuration" do
         expect(described_class.lock_dir).to eq("/app/root/tmp/are_search")
     end
 end
+
 
 
 

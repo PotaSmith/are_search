@@ -45,10 +45,10 @@ RSpec.describe AreSearch::SearchBase do
         }
     end
     let(:article_index_settings) do
-        { max_result_window: 10_000 }
+        { max_result_window: 2_000 }
     end
     let(:document_index_settings) do
-        { max_result_window: 10_000 }
+        { max_result_window: 2_000 }
     end
 
     describe ".check_index_exists?" do
@@ -235,14 +235,6 @@ RSpec.describe AreSearch::SearchBase do
     end
 
     describe ".resolve_max_result_window" do
-        around do |example|
-            original_index_settings = AreSearch.index_settings
-
-            example.run
-        ensure
-            AreSearch.index_settings = original_index_settings
-        end
-
         it "複数 index target では最小の max_result_window を返す" do
             allow(article_index_target)
                 .to receive(:are_search_es_index_settings)
@@ -257,38 +249,14 @@ RSpec.describe AreSearch::SearchBase do
             expect(result).to eq(5_000)
         end
 
-        it "target 側に max_result_window が無ければ AreSearch.index_settings を使う" do
-            AreSearch.index_settings = { max_result_window: 7_000 }
-
+        it "index target の index_settings から max_result_window を読む" do
             allow(article_index_target)
                 .to receive(:are_search_es_index_settings)
-                .and_return(refresh_interval: "1s")
-
-            result = described_class.resolve_max_result_window([article_index_target])
-
-            expect(result).to eq(7_000)
-        end
-
-        it "文字列キーの max_result_window も解決する" do
-            allow(article_index_target)
-                .to receive(:are_search_es_index_settings)
-                .and_return("max_result_window" => "6000")
+                .and_return(max_result_window: 6_000, refresh_interval: "1s")
 
             result = described_class.resolve_max_result_window([article_index_target])
 
             expect(result).to eq(6_000)
-        end
-
-        it "target 側と全体設定に無ければ定数を使う" do
-            AreSearch.index_settings = {}
-
-            allow(article_index_target)
-                .to receive(:are_search_es_index_settings)
-                .and_return({})
-
-            result = described_class.resolve_max_result_window([article_index_target])
-
-            expect(result).to eq(AreSearch::MAX_RESULT_WINDOW)
         end
     end
 
@@ -296,7 +264,7 @@ RSpec.describe AreSearch::SearchBase do
         it "from + size が max_result_window 内ならそのまま返す" do
             allow(article_index_target)
                 .to receive(:are_search_es_index_settings)
-                .and_return(max_result_window: 10_000)
+                .and_return(max_result_window: 2_000)
 
             result = described_class.resolve_paging_params([article_index_target], 100, 25)
 
@@ -306,37 +274,37 @@ RSpec.describe AreSearch::SearchBase do
         it "from + size が max_result_window を超える場合は size を縮める" do
             allow(article_index_target)
                 .to receive(:are_search_es_index_settings)
-                .and_return(max_result_window: 10_000)
+                .and_return(max_result_window: 2_000)
 
-            result = described_class.resolve_paging_params([article_index_target], 9_980, 50)
+            result = described_class.resolve_paging_params([article_index_target], 1_980, 50)
 
-            expect(result).to eq([9_980, 20])
+            expect(result).to eq([1_980, 20])
         end
 
         it "from が max_result_window と同じ場合は取得範囲を空にする" do
             allow(article_index_target)
                 .to receive(:are_search_es_index_settings)
-                .and_return(max_result_window: 10_000)
+                .and_return(max_result_window: 2_000)
 
-            result = described_class.resolve_paging_params([article_index_target], 10_000, 50)
+            result = described_class.resolve_paging_params([article_index_target], 2_000, 50)
 
-            expect(result).to eq([10_000, 0])
+            expect(result).to eq([2_000, 0])
         end
 
         it "from が max_result_window を超える場合は from も丸める" do
             allow(article_index_target)
                 .to receive(:are_search_es_index_settings)
-                .and_return(max_result_window: 10_000)
+                .and_return(max_result_window: 2_000)
 
             result = described_class.resolve_paging_params([article_index_target], 12_000, 50)
 
-            expect(result).to eq([10_000, 0])
+            expect(result).to eq([2_000, 0])
         end
 
         it "複数 index target では最小の max_result_window で補正する" do
             allow(article_index_target)
                 .to receive(:are_search_es_index_settings)
-                .and_return(max_result_window: 10_000)
+                .and_return(max_result_window: 8_000)
 
             allow(document_index_target)
                 .to receive(:are_search_es_index_settings)
@@ -425,3 +393,4 @@ RSpec.describe AreSearch::SearchBase do
         end
     end
 end
+

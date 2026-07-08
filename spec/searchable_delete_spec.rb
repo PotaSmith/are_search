@@ -12,15 +12,14 @@ RSpec.describe AreSearch::IndexTarget, "delete and sync aliases" do
             def self.are_search_es_mappings
                 {
                     default: {
+                        index_settings: {
+                            max_result_window: 2_000,
+                        },
                         properties: {
                             title: { type: "text" },
                         },
                     },
                 }
-            end
-
-            def self.are_search_es_index_settings(_target_name)
-                AreSearch.index_settings
             end
         end
     end
@@ -114,3 +113,4 @@ RSpec.describe AreSearch::IndexTarget, "delete and sync aliases" do
         end
     end
 end
+

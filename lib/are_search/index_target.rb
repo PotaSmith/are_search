@@ -19,14 +19,22 @@ module AreSearch
             [AreSearch.index_prefix, model_class.table_name, target_name].compact.join("_")
         end
 
-        # index作成時の max_result_window サイズの指定
+        # index作成時の index settings
         def are_search_es_index_settings
-            model_class.are_search_es_index_settings(target_name)
+            target_mappings[:index_settings]
         end
 
-        # index作成時の max_result_window サイズの指定
+        # Elasticsearch に渡す mappings
         def are_search_es_mappings
-            model_class.are_search_es_mappings[target_name]
+            mappings = {}
+
+            target_mappings.each do |key, value|
+                next if key == :index_settings
+
+                mappings[key] = value
+            end
+
+            mappings
         end
 
         # 初期index作成中、reindex 処理中、または異常終了の痕跡があるかを返す。
@@ -109,5 +117,13 @@ module AreSearch
         def are_search_es_sync(ar_instance_key, reraise: false)
             AreSearch::RecordSync.sync(model_class.name, target_name, ar_instance_key, are_search_es_index_name, SecureRandom.uuid, reraise: reraise)
         end
+
+        private
+
+        def target_mappings
+            model_class.are_search_es_mappings[target_name]
+        end
     end
 end
+
+
