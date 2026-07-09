@@ -20,7 +20,6 @@ Gem::Specification.new do |spec|
 
     spec.files = Dir[
         "lib/**/*",
-        "guide_*.txt",
         "LICENSE.txt",
         "README.md",
         "CHANGELOG.md",
