@@ -89,4 +89,3 @@ RSpec.describe AreSearch::SyncRequest do
         end
     end
 end
-

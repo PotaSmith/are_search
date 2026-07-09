@@ -1,4 +1,3 @@
-
 # frozen_string_literal: true
 
 module AreSearch
@@ -236,5 +235,3 @@ module AreSearch
         end
     end
 end
-
-

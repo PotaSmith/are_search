@@ -125,5 +125,3 @@ module AreSearch
         end
     end
 end
-
-

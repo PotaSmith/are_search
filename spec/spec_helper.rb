@@ -103,4 +103,3 @@ RSpec.configure do |config|
         AreSearch::IndexMarker.delete_all
     end
 end
-

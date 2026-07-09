@@ -293,8 +293,3 @@ RSpec.describe AreSearch::EsDataValidator do
         end
     end
 end
-
-
-
-
-

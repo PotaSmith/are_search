@@ -123,7 +123,3 @@ RSpec.describe AreSearch, "configuration" do
         expect(described_class.lock_dir).to eq("/app/root/tmp/are_search")
     end
 end
-
-
-
-

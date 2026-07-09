@@ -393,4 +393,3 @@ RSpec.describe AreSearch::SearchBase do
         end
     end
 end
-

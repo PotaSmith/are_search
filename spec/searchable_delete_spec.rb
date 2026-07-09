@@ -113,4 +113,3 @@ RSpec.describe AreSearch::IndexTarget, "delete and sync aliases" do
         end
     end
 end
-

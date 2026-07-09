@@ -1,62 +1,76 @@
 # AreSearch (Active Record Elastic SEARCH)
 
-AreSearch は、Rails アプリで Elasticsearch を扱うための小さな検索・同期雛形です。
+[English](./README.md) | [日本語](./README.ja.md)
 
-Elasticsearch を隠すための gem ではありません。
-Rails モデルから Elasticsearch への index、reindex、非同期同期、基本的な検索ヘルパーを提供します。
+AreSearch is a small search and synchronization template for using Elasticsearch in Rails applications.
 
-複雑な検索は、Elasticsearch の Query DSL を理解したうえで `RawSearch` で直接書く方針です。
+It is not a gem for hiding Elasticsearch.
+It provides Rails models with indexing, reindexing, asynchronous synchronization, and basic search helpers for Elasticsearch.
 
-## 方針
+For complex searches, the intended approach is to write Elasticsearch Query DSL directly with `RawSearch` after understanding the DSL.
 
-AreSearch は、以下を目的にしています。
+## Policy
 
-* Rails モデルと Elasticsearch index の対応を明示する
-* reindex と alias 切り替えの失敗を検知できる形にする
-* 動いている本番 index へ検索改善の reindex を直接かけない
-* IndexTarget により、新旧 index を並行同期して切り替え可能にする
-* DB 更新後の Elasticsearch 同期を `are_search_sync_requests` に残す
-* 検索処理を gem に閉じ込めすぎない
-* 面倒な同期部分は gem が面倒を見る
-* 必要になれば fork / clone してアプリ側に合わせて変更できる形にする
+AreSearch is designed for the following purposes.
 
-多機能な検索フレームワークは目指していません。
+* Make the relationship between Rails models and Elasticsearch indexes explicit
+* Make reindexing and alias switch failures detectable
+* Avoid reindexing a production index that is currently being used
+* Use IndexTarget to keep old and new indexes synchronized in parallel and switch between them
+* Leave Elasticsearch synchronization after DB updates in `are_search_sync_requests`
+* Avoid locking search logic too deeply inside the gem
+* Let the gem handle the tedious synchronization parts
+* Keep the code easy to fork or clone and adapt to each application when needed
 
-AreSearch は、同期や index 操作の異常を gem 内部に隠しません。
+AreSearch does not aim to be a feature-rich search framework.
 
-sync request、index marker、rake タスク、アラートメールを通じて、利用者が確認できる状態として残します。
-何が正常で、何が未処理・失敗・固着・index 操作中なのかを、アプリ運用者が判断できるようにします。
+AreSearch does not hide synchronization or index operation problems inside the gem.
+
+Through sync requests, index markers, rake tasks, and alert emails, it leaves visible state that users can inspect.
+It is designed so that application operators can determine what is normal, what is pending, what failed, what is stuck, and what is currently under index operation.
 
 
-## 使っている index を reindex しない
+## Do not reindex an index that is being used
 
-AreSearch は、動いている本番 index に検索改善の reindex を直接かける設計を避けます。
-tokenizer / analyzer / mappings を変える場合は、新しい IndexTarget を作り、旧 index と新 index を並行同期させます。
-切り替えるのは alias ではなく、まずアプリ側の検索入口です。問題があれば、同期され続けている旧 index に戻せます。
+AreSearch avoids directly reindexing a running production index for search improvements.
+When changing tokenizers, analyzers, or mappings, create a new IndexTarget and synchronize the old and new indexes in parallel.
+The first switch should be the application-side search entry point, not the alias. If there is a problem, you can return to the old index, which is still being synchronized.
 
 
 ## Installation
 
-Gemfile に追加します。
+Add this to your Gemfile.
 
 ```ruby
 gem "are_search", git: "https://github.com/PotaSmith/are_search.git", tag: "v0.1.2"
 ```
 
-または、ローカルで使う場合。
+To use the latest development version directly, specify `branch: "main"`.
+
+```ruby
+gem "are_search", git: "https://github.com/PotaSmith/are_search.git", branch: "main"
+```
+
+Or, for local development, use a local path.
 
 ```ruby
 gem "are_search", path: "/path/to/are_search"
 ```
 
-インストーラを実行します。
+Then run bundle install as usual.
+
+```bash
+bundle install
+```
+
+Run the installer.
 
 ```bash
 rails generate are_search:install
 rails db:migrate
 ```
 
-生成される主なファイルは以下です。
+The main generated files are as follows.
 
 ```text
 config/initializers/are_search.rb
@@ -66,7 +80,7 @@ lib/tasks/are_search_retry_alert.rake
 
 ## Usage
 
-モデルに `AreSearch::Searchable` を include します。
+Include `AreSearch::Searchable` in your model.
 
 ```ruby
 class Article < ApplicationRecord
@@ -104,8 +118,8 @@ class Article < ApplicationRecord
 end
 ```
 
-初回 reindex の前に、index 操作を実行する環境では `config/initializers/are_search.rb` で `AreSearch.index_operation_enabled = true` を設定します。
-そのうえで、index target を指定して初回 reindex を実行します。
+Before the initial reindex, set `AreSearch.index_operation_enabled = true` in `config/initializers/are_search.rb` for the environment that performs index operations.
+Then specify the index target and run the initial reindex.
 
 ```ruby
 article_index = Article.are_search_index_target(:default)
@@ -115,13 +129,13 @@ article_index.are_search_es_reindex
 
 
 
-検索します。
+Run a search.
 
 ```ruby
 article_index = Article.are_search_index_target(:default)
 
 result = article_index.are_search_es_search(
-    "検索ワード",
+    "search query",
     fields: [:title, :body],
 )
 
@@ -130,7 +144,7 @@ result.records.each do |article|
 end
 ```
 
-複雑な検索は `RawSearch` で Elasticsearch の body を直接渡します。
+For complex searches, pass an Elasticsearch body directly with `RawSearch`.
 
 ```ruby
 body = {
@@ -151,20 +165,20 @@ result = AreSearch::RawSearch.search(
 )
 ```
 
-## Guides
+## Guides (Japanese)
 
-詳しい使い方は以下を参照してください。
+See the following files for detailed usage.
 
 ```text
-guide_setup.txt       セットアップ、初回導入
-guide_usage.txt       検索オプション、検索結果の扱い
-guide_operations.txt  reindex、同期、clean up、運用
-guide_reference.txt   設定、内部動作、IndexTarget、同期の仕組み
+docs/guide_setup.txt       Setup and initial configuration
+docs/guide_usage.txt       Search options and search result handling
+docs/guide_operations.txt  Reindexing, synchronization, cleanup, and operations
+docs/guide_reference.txt   Settings, internal behavior, IndexTarget, and synchronization mechanism
 ```
 
 ## Development
 
-テストを実行します。
+Run the tests.
 
 ```bash
 bundle exec rspec
@@ -172,9 +186,9 @@ bundle exec rspec
 
 ## Contributing
 
-この gem は、汎用検索フレームワークというより、Rails アプリで Elasticsearch を安全に扱うための実務寄りの雛形です。
+This gem is more of a practical template for safely using Elasticsearch in Rails applications than a general-purpose search framework.
 
-利用するアプリに合わせて fork / clone して変更する使い方を想定しています。
+It is intended to be forked or cloned and adapted to each application.
 
 ## License
 

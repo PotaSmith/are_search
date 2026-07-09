@@ -406,5 +406,3 @@ module AreSearch
         errors.empty? ? puts("全モデル正常") : puts(errors.join("\n"))
     end
 end
-
-

@@ -1,4 +1,3 @@
-
 ================================================================
 AreSearch セットアップガイド
 ================================================================
@@ -171,6 +170,9 @@ are_search_es_mappings[target_name] の properties と are_search_es_data(target
 ================================================================
 
 モデルの実装が終わったら、アプリの restart 前に reindex を実行する。
+
+reindex は index 操作なので、実行するプロセスでは AreSearch.index_operation_enabled = true にする。
+生成された initializer ではサンプルとして true が書かれているため、index 操作を行わない環境では false に戻す。
 
     Article.are_search_index_target(:default).are_search_es_reindex
 
@@ -404,7 +406,3 @@ WantedBy=multi-user.target
 
 ジョブの安全性は systemd だけでは決まらない。
 途中停止や再実行に耐えるかは、ジョブ処理と sync request の設計で決まる。
-
-
-
-

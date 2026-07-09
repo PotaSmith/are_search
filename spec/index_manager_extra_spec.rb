@@ -100,5 +100,3 @@ RSpec.describe AreSearch::IndexManager, "extra cases" do
         expect(marker).to eq(nil)
     end
 end
-
-

@@ -641,4 +641,3 @@ RSpec.describe AreSearch::Searchable do
         end
     end
 end
-

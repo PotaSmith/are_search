@@ -225,4 +225,3 @@ RSpec.describe AreSearch::IndexMarker do
         end
     end
 end
-
