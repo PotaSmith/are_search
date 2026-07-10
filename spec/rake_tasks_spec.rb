@@ -56,12 +56,21 @@ RSpec.describe "are_search rake tasks" do
         Rake::Task.define_task(:environment)
         load File.expand_path("../lib/tasks/are_search.rake", __dir__)
 
+        stub_const("RakeUtils", AreSearch::RakeUtils)
+
         allow(Rails).to receive(:application).and_return(application)
         allow(ActiveRecord::Base).to receive(:descendants).and_return([article_model, document_model])
         allow(article_model).to receive(:include?).with(AreSearch::Searchable).and_return(true)
         allow(document_model).to receive(:include?).with(AreSearch::Searchable).and_return(true)
+        allow(article_model).to receive(:<).and_return(nil)
+        allow(document_model).to receive(:<).and_return(nil)
         allow(article_model).to receive(:are_search_index_target).with("default").and_return(article_index_target)
         allow(document_model).to receive(:are_search_index_target).with("default").and_return(document_index_target)
+
+        allow(RakeUtils)
+            .to receive(:searchable_index_target_for_reindex)
+            .and_return([article_index_target, document_index_target])
+
         stub_const("Article", article_model)
         stub_const("Document", document_model)
     end
@@ -406,6 +415,143 @@ RSpec.describe "are_search rake tasks" do
 
             expect(AreSearch::IndexMarker.find_by(id: manual_marker.id)).to eq(nil)
             expect(AreSearch::IndexMarker.find_by(id: reindex_marker.id)).not_to eq(nil)
+        end
+    end
+
+    describe "are_search:reindex_all_for_es_version_up" do
+        let(:indices) { double("indices") }
+        let(:client) { double("client", indices: indices) }
+
+        before do
+            allow(AreSearch).to receive(:client).and_return(client)
+            allow(AreSearch).to receive(:index_prefix).and_return("test")
+        end
+
+        it "sync request が残っている場合はエラーにする" do
+            create_sync_request
+
+            expect(indices).not_to receive(:get)
+            expect(article_index_target).not_to receive(:are_search_es_reindex)
+            expect(document_index_target).not_to receive(:are_search_es_reindex)
+
+            expect do
+                Rake::Task["are_search:reindex_all_for_es_version_up"].invoke
+            end.to raise_error(
+                AreSearch::Error,
+                "[AreSearch] are_search_sync_requests に 1 件残っているため reindex できません",
+            )
+        end
+
+        it "現在の alias に接続されていない index があればエラーにする" do
+            allow(indices)
+                .to receive(:get)
+                .with(index: "test_*")
+                .and_return(
+                    {
+                        "test_articles_default_2026_07_10_00_00_00_000000" => {},
+                        "test_documents_default_2026_07_10_00_00_00_000000" => {},
+                        "test_articles_default_2026_07_09_00_00_00_000000" => {},
+                    },
+                )
+
+            allow(AreSearch::IndexManager)
+                .to receive(:es_get_alias_physical_names)
+                .with("test_articles_default")
+                .and_return(["test_articles_default_2026_07_10_00_00_00_000000"])
+
+            allow(AreSearch::IndexManager)
+                .to receive(:es_get_alias_physical_names)
+                .with("test_documents_default")
+                .and_return(["test_documents_default_2026_07_10_00_00_00_000000"])
+
+            expect($stdin).not_to receive(:gets)
+            expect(article_index_target).not_to receive(:are_search_es_reindex)
+            expect(document_index_target).not_to receive(:are_search_es_reindex)
+
+            expect do
+                Rake::Task["are_search:reindex_all_for_es_version_up"].invoke
+            end.to raise_error(
+                AreSearch::Error,
+                /test_articles_default_2026_07_09_00_00_00_000000/,
+            )
+        end
+
+        it "確認で y 以外が入力された場合は reindex しない" do
+            allow(indices)
+                .to receive(:get)
+                .with(index: "test_*")
+                .and_return(
+                    {
+                        "test_articles_default_2026_07_10_00_00_00_000000" => {},
+                        "test_documents_default_2026_07_10_00_00_00_000000" => {},
+                    },
+                )
+
+            allow(AreSearch::IndexManager)
+                .to receive(:es_get_alias_physical_names)
+                .with("test_articles_default")
+                .and_return(["test_articles_default_2026_07_10_00_00_00_000000"])
+
+            allow(AreSearch::IndexManager)
+                .to receive(:es_get_alias_physical_names)
+                .with("test_documents_default")
+                .and_return(["test_documents_default_2026_07_10_00_00_00_000000"])
+
+            allow($stdin).to receive(:gets).and_return("n\n")
+
+            expect(article_index_target).not_to receive(:are_search_es_reindex)
+            expect(document_index_target).not_to receive(:are_search_es_reindex)
+
+            expect do
+                Rake::Task["are_search:reindex_all_for_es_version_up"].invoke
+            end.to output(
+                "以下の index を reindex します。\n" \
+                "\n" \
+                "  test_articles_default\n" \
+                "  test_documents_default\n" \
+                "\n" \
+                "実行しますか？ [y/N]: [AreSearch] reindex canceled.\n",
+            ).to_stdout
+        end
+
+        it "確認で y が入力された場合は全 index target を reindex する" do
+            allow(indices)
+                .to receive(:get)
+                .with(index: "test_*")
+                .and_return(
+                    {
+                        "test_articles_default_2026_07_10_00_00_00_000000" => {},
+                        "test_documents_default_2026_07_10_00_00_00_000000" => {},
+                    },
+                )
+
+            allow(AreSearch::IndexManager)
+                .to receive(:es_get_alias_physical_names)
+                .with("test_articles_default")
+                .and_return(["test_articles_default_2026_07_10_00_00_00_000000"])
+
+            allow(AreSearch::IndexManager)
+                .to receive(:es_get_alias_physical_names)
+                .with("test_documents_default")
+                .and_return(["test_documents_default_2026_07_10_00_00_00_000000"])
+
+            allow($stdin).to receive(:gets).and_return("y\n")
+
+            expect(article_index_target)
+                .to receive(:are_search_es_reindex)
+                .ordered
+                .and_return([])
+
+            expect(document_index_target)
+                .to receive(:are_search_es_reindex)
+                .ordered
+                .and_return([])
+
+            expect do
+                Rake::Task["are_search:reindex_all_for_es_version_up"].invoke
+            end.to output(
+                /reindex done: test_articles_default.*reindex done: test_documents_default/m,
+            ).to_stdout
         end
     end
 end

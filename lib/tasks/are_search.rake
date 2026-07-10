@@ -2,20 +2,15 @@
 
 require "fileutils"
 
-# bundle exec rake are_search:check_all_models
 # bundle exec rake are_search:run_sync_requests
-# bundle exec rake are_search:clean_up_all
-# bundle exec rake are_search:check_index_status
 # bundle exec rake are_search:mark_all
 # bundle exec rake are_search:unmark_all
+# bundle exec rake are_search:clean_up_all
+# bundle exec rake are_search:check_index_status
+# bundle exec rake are_search:reindex_all_for_es_version_up
+# bundle exec rake are_search:check_all_models
 
 namespace :are_search do
-    desc "AreSearch::Searchable を include している全モデルのコールバック順序・実装漏れをチェックする"
-    task check_all_models: :environment do
-        AreSearch.check_all_models!
-    end
-
-
     desc "AreSearch.sync_request_delay 秒以上未同期の are_search_sync_requests を再同期する"
     task run_sync_requests: :environment do
         puts "#{Time.zone.now.strftime('%Y-%m-%d %H:%M:%S')} [AreSearch] run_sync_requests を開始しました。"
@@ -129,7 +124,43 @@ namespace :are_search do
     end
 
 
-    desc "AreSearch::Searchable を include している全モデルの古い物理インデックスを削除する"
+    desc "AreSearch::Searchable を include している全モデルの index(STI重複なし) に manual marker を作成する"
+    task mark_all: :environment do
+        AreSearch.searchable_index_names.each do |es_index_name|
+            marker = AreSearch.mark_index!(es_index_name)
+
+            if marker
+                puts "[AreSearch] mark_all marked: #{es_index_name} marker_id=#{marker.id}"
+                next
+            end
+
+            existing_marker = AreSearch::IndexMarker.find_by(es_index_name: es_index_name)
+
+            if existing_marker
+                puts "[AreSearch] mark_all skipped: #{es_index_name} " \
+                    "existing_operation=#{existing_marker.operation} marker_id=#{existing_marker.id}"
+            else
+                puts "[AreSearch] mark_all skipped: #{es_index_name}"
+            end
+        end
+    end
+
+
+    desc "AreSearch::Searchable を include している全モデルの index(STI重複なし) の manual marker を削除する"
+    task unmark_all: :environment do
+        AreSearch.searchable_index_names.each do |es_index_name|
+            deleted_count = AreSearch.unmark_index!(es_index_name)
+
+            if deleted_count > 0
+                puts "[AreSearch] unmark_all deleted: #{es_index_name} count=#{deleted_count}"
+            else
+                puts "[AreSearch] unmark_all skipped: #{es_index_name} manual marker not found"
+            end
+        end
+    end
+
+
+    desc "AreSearch::Searchable を include している全モデルの index(STI重複なし) から古い物理インデックスを削除する"
     task clean_up_all: :environment do
         AreSearch.searchable_index_names.each do |es_index_name|
             begin
@@ -149,7 +180,7 @@ namespace :are_search do
     end
 
 
-    desc "AreSearch::Searchable を include している全モデルの index marker / lock / alias 状態を表示する"
+    desc "AreSearch::Searchable を include している全モデルの index(STI重複なし) の marker / lock / alias 状態を表示する"
     task check_index_status: :environment do
         es_index_names = AreSearch.searchable_index_names
 
@@ -241,34 +272,141 @@ namespace :are_search do
     end
 
 
-    desc "AreSearch::Searchable を include している全モデルの index(STI重複なし) に manual marker を作成する"
-    task mark_all: :environment do
-        results = AreSearch.mark_all!
+    desc "Elasticsearch のバージョンアップ前に全 Searchable index(STI重複なし) を reindex する"
+    task reindex_all_for_es_version_up: :environment do
+        sync_request_count = AreSearch::SyncRequest.count
 
-        results.each do |result|
-            marker = result[:marker]
+        if sync_request_count > 0
+            raise AreSearch::Error,
+                "[AreSearch] are_search_sync_requests に #{sync_request_count} 件残っているため reindex できません"
+        end
 
-            if result[:marked]
-                puts "[AreSearch] mark_all marked: #{result[:es_index_name]} marker_id=#{marker.id}"
-            elsif marker
-                puts "[AreSearch] mark_all skipped: #{result[:es_index_name]} existing_operation=#{marker.operation} marker_id=#{marker.id}"
-            else
-                puts "[AreSearch] mark_all skipped: #{result[:es_index_name]}"
+        index_targets = AreSearch::RakeUtils.searchable_index_target_for_reindex
+        searchable_index_names = index_targets.map(&:are_search_es_index_name)
+        actual_index_names = []
+
+        begin
+            response = AreSearch.client.indices.get(index: "#{AreSearch.index_prefix}_*")
+            actual_index_names = response.keys
+        rescue Elastic::Transport::Transport::Errors::NotFound
+            actual_index_names = []
+        end
+
+        current_physical_index_names = []
+        searchable_index_names.each do |es_index_name|
+            physical_index_names = AreSearch::IndexManager.es_get_alias_physical_names(es_index_name)
+            current_physical_index_names.concat(physical_index_names)
+        end
+
+        orphaned_index_names = actual_index_names - current_physical_index_names
+        orphaned_index_names.sort!
+
+        if orphaned_index_names.any?
+            message = "[AreSearch] 管理対象外または未接続の index が残っているため reindex できません:\n"
+            orphaned_index_names.each do |index_name|
+                message += "  #{index_name}\n"
             end
+
+            raise AreSearch::Error, message.rstrip
+        end
+
+        puts "以下の index を reindex します。"
+        puts ""
+        searchable_index_names.each do |es_index_name|
+            puts "  #{es_index_name}"
+        end
+        puts ""
+        print "実行しますか？ [y/N]: "
+
+        answer = $stdin.gets
+        if answer.nil?
+            answer = ""
+        end
+
+        unless answer.strip.downcase == "y"
+            puts "[AreSearch] reindex canceled."
+            next
+        end
+
+        index_targets.each do |index_target|
+            es_index_name = index_target.are_search_es_index_name
+            result = index_target.are_search_es_reindex
+
+            if result == false
+                raise AreSearch::Error, "[AreSearch] reindex が実行できませんでした: #{es_index_name}"
+            end
+
+            if result.any?
+                raise AreSearch::Error, "[AreSearch] reindex に失敗した ID があります: #{es_index_name} #{result.inspect}"
+            end
+
+            puts "[AreSearch] reindex done: #{es_index_name}"
         end
     end
 
 
-    desc "AreSearch::Searchable を include している全モデルの index(STI重複なし) の manual marker を削除する"
-    task unmark_all: :environment do
-        results = AreSearch.unmark_all!
+    desc "AreSearch::Searchable を include している全モデルのコールバック順序・実装漏れをチェックする"
+    task check_all_models: :environment do
+        Rails.application.eager_load!
+        errors = []
 
-        results.each do |result|
-            if result[:deleted_count] > 0
-                puts "[AreSearch] unmark_all deleted: #{result[:es_index_name]} count=#{result[:deleted_count]}"
-            else
-                puts "[AreSearch] unmark_all skipped: #{result[:es_index_name]} manual marker not found"
+        AreSearch::RakeUtils.check_callback_order(errors)
+
+        ActiveRecord::Base.descendants.select { |klass| klass.include?(AreSearch::Searchable) }.each do |klass|
+            save_callbacks = klass._save_callbacks.select { |cb| cb.kind == :after }.map(&:filter)
+
+            puts klass.name
+            puts "after_save    : #{save_callbacks.inspect}"
+
+            if save_callbacks.count(:are_search_enqueue_es_sync_request) == 0
+                errors << "#{klass.name}: after_save :are_search_enqueue_es_sync_request がありません"
             end
+
+            if save_callbacks.count(:are_search_enqueue_es_sync_request) > 1
+                errors << "#{klass.name}: after_save :are_search_enqueue_es_sync_request が重複しています。"
+            end
+
+            destroy_callbacks = klass._destroy_callbacks.select { |cb| cb.kind == :after }.map(&:filter)
+
+            puts "after_destroy : #{destroy_callbacks.inspect}"
+
+            if destroy_callbacks.count(:are_search_enqueue_es_sync_request) == 0
+                errors << "#{klass.name}: after_destroy :are_search_enqueue_es_sync_request がありません。"
+            end
+
+            if destroy_callbacks.count(:are_search_enqueue_es_sync_request) > 1
+                errors << "#{klass.name}: after_destroy :are_search_enqueue_es_sync_request が重複しています。"
+            end
+
+            touch_callbacks = klass._touch_callbacks.select { |cb| cb.kind == :after }.map(&:filter)
+
+            puts "after_touch   : #{touch_callbacks.inspect}"
+
+            if touch_callbacks.count(:are_search_enqueue_es_sync_request) == 0
+                errors << "#{klass.name}: after_touch :are_search_enqueue_es_sync_request がありません。"
+            end
+
+            if touch_callbacks.count(:are_search_enqueue_es_sync_request) > 1
+                errors << "#{klass.name}: after_touch :are_search_enqueue_es_sync_request が重複しています。"
+            end
+
+            commit_callbacks = klass._commit_callbacks.select { |cb| cb.kind == :after }.map(&:filter)
+
+            puts "after_commit  : #{commit_callbacks.inspect}"
+
+            if commit_callbacks.count(:are_search_after_commit) == 0
+                errors << "#{klass.name}: after_commit :are_search_after_commit がありません。"
+            end
+
+            if commit_callbacks.count(:are_search_after_commit) > 1
+                errors << "#{klass.name}: after_commit :are_search_after_commit が重複しています。"
+            end
+
+            AreSearch::RakeUtils.model_check(errors, klass)
         end
+
+        AreSearch::RakeUtils.validate_searchable_index_name_ownership(errors)
+
+        errors.empty? ? puts("全モデル正常") : puts(errors.join("\n"))
     end
 end
