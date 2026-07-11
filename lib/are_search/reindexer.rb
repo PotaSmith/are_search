@@ -8,7 +8,7 @@ module AreSearch
              AreSearch::IndexManager.es_reindex(
                 index_target.are_search_es_index_name,
                 index_target.are_search_es_index_settings,
-                index_target.are_search_es_mappings,
+                index_target.are_search_es_mappings_for_index,
             ) do |physical_es_index_name|
                 bulk_index_target(index_target, physical_es_index_name)
             end
@@ -21,7 +21,7 @@ module AreSearch
             bar        = ProgressBar.new(total) unless total == 0
             failed_ids = []
 
-            index_target.model_class.find_in_batches(batch_size: 500) do |batch|
+            index_target.model_class.find_in_batches(batch_size: AreSearch.batch_size) do |batch|
                 body = build_bulk_body(index_target, batch, physical_es_index_name)
                 bar&.increment!(batch.size)
 
@@ -46,7 +46,7 @@ module AreSearch
                 next if record.are_search_es_indexable?(index_target.target_name) != true
 
                 body << { index: { _index: physical_es_index_name, _id: record.id.to_s } }
-                body << record.are_search_es_data(index_target.target_name)
+                body << record.are_search_es_data_for_index!(index_target)
             end
 
             body

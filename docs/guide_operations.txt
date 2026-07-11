@@ -2,211 +2,72 @@
 AreSearch 運用ガイド
 ================================================================
 
-このファイルは、AreSearch の管理操作を扱う。
-導入手順は guide_setup.txt、概念・内部動作は guide_reference.txt を参照する。
+このファイルは、reindex、同期、clean up、状態確認、障害対応を扱う。
+導入手順は guide_setup.txt、設定は guide_reference.txt を参照する。
 
 
-# 1. 初期 index 作成
+# 1. index の準備状態
 ================================================================
 
-検索時に対象モデルの index が存在しない場合、AreSearch は index の存在を確認し
-なければ空を返す。
+対象 index が検索可能か確認する。
 
-そのためreindexを行ってindexを作成する。
+    ready = AreSearch::SearchBase.index_ready?(
+        [
+            Article.are_search_index_target(:default),
+            Comment.are_search_index_target(:default),
+        ]
+    )
 
-reindex 中も alias は旧インデックスを指し続けるため、同じ target の再構築自体は稼働中でも実行できる。
-ただし tokenizer / analyzer / mappings の検索改善を試す場合は、稼働中 target を直接作り直すのではなく、新しい IndexTarget を作って旧 target と並行同期してから検索入口を切り替える。
-
-## 1-1. インデックスが存在するかどうかのチェック
-----------------------------------------------------------------
-
-検索前に、対象 index が検索可能な状態かを確認する。
-
-    AreSearch::SearchBase.index_ready?([Article.are_search_index_target(:default), Comment.are_search_index_target(:default)])
-
-true の場合、対象 index target の index marker は存在せず、Elasticsearch 上の alias も存在する。
-false の場合、以下のいずれかの状態。
-
-    index marker が存在する
-    Elasticsearch 上に alias が存在しない
-    Elasticsearch への接続または状態確認に失敗した
-
-この判定は、先に are_search_index_markers を確認し、marker が無い場合だけ Elasticsearch の alias を確認する。
-そのため、manual marker を立てている間は Elasticsearch に接続せず false を返す。
-
-AreSearch の検索処理自体は marker によって自動停止しない。
-検索画面をメンテナンス表示に切り替えるかどうかは、アプリ側で index_ready? を使って判断する。
+marker が存在する、alias が存在しない、または状態確認に失敗した場合は false を返す。
+AreSearch の検索処理自体は marker では停止しないため、メンテナンス表示への切り替えはアプリ側で行う。
 
 
 # 2. reindex
 ================================================================
 
-全件を Elasticsearch に投入し直す。
-
-    Article.are_search_index_target(:default).are_search_es_reindex
-
-
-## 2-1. are_search_es_reindexの詳細
-----------------------------------------------------------------
-
-処理の流れ。
-
-    1. reindex 用 flock を取得する
-    2. index marker を作成する
-    3. 新しい物理インデックスを作成する
-    4. DB レコードを find_in_batches で読み込む
-    5. 新しい物理インデックスへ bulk 投入する
-    6. bulk 投入がすべて成功した場合だけ alias を切り替える
-    7. marker を削除する
-
-index 操作中も検索側の alias は旧インデックスを指し続ける。
-そのため、投入途中の空または不完全なインデックスが検索に使われることはない。
-
-新しい物理インデックスの作成時には、are_search_es_mappings の mappings と、
-AreSearch.analyzer_settings、are_search_es_index_settings が反映される。
-are_search_es_index_settings は settings.index として Elasticsearch に渡される。
-
-max_result_window を変更した場合も、既存の物理インデックスには自動反映されない。
-変更後の値を有効にするには reindex を実行し、新しい物理インデックスへ alias を切り替える。
-
-
-戻り値は以下。
-
-    Array<String>
-        bulk 投入に失敗した ID の配列。
-        空配列なら全件成功。
-
-    false
-        別プロセスが reindex 実行中で flock を取得できなかった。
-        または are_search_index_markers に marker が残っている。
-
-例。
-
     result = Article.are_search_index_target(:default).are_search_es_reindex
 
-    if result == false
-        puts "別プロセスが index 操作中"
-    elsif result.any?
-        puts "失敗: #{result.inspect}"
-    else
-        puts "成功"
-    end
+戻り値。
 
-bulk 投入に失敗した ID がある場合、alias は切り替えない。
-旧インデックスが検索に使われ続ける。
-この場合、作成済みの新しい物理インデックスは削除せず残す。
-標準出力と AreSearch.logger.error には、alias を切り替えなかったこと、
-作成した物理インデックス名、失敗 ID が出力される。
-必要に応じて失敗内容を確認した後、不要な物理インデックスを手動削除する。
+    [] または空の Array
+        成功。新しい物理 index へ alias が切り替わった。
+
+    ID の Array
+        bulk 投入に失敗した。alias は切り替わらない。
+
+    false
+        他の index 操作中、または marker が残っているため実行されなかった。
+
+reindex 中も、検索は切り替え前の alias を使用する。
+失敗時に作成された物理 index は残るため、原因確認後に clean up または手動削除する。
+
+mappings、analyzer、index_settings の変更を反映するには reindex が必要。
+DBから一度に読み込む件数は AreSearch.batch_size で設定する。
+
+検索改善を試す場合は、使用中 target を直接変更する方法だけでなく、新しい target を並行同期して検索入口を切り替える方法も選べる。
 
 
-## 2-2. marker が残った場合の対処
+## 2-1. Elasticsearch バージョンアップ前の全 reindex
 ----------------------------------------------------------------
-
-index 操作では、処理中に are_search_index_markers に marker を作成する。
-通常の例外では ensure により marker 削除を試みる。
-
-そのため、bulk 投入例外、alias 切り替え例外、古い index 削除例外などの
-通常例外だけで marker が残ることは基本的にない。
-
-marker が残るのは、プロセス強制終了、VM / コンテナ停止、DB 障害、
-marker 削除処理自体の失敗など、marker 削除が完了できなかった場合。
-marker がある間は sync / reindex / clean up / 初期 index 作成が阻害され続ける。
-
-以下の手順で対処する。
-
-    1. are_search_es_index_marked? で marker の有無を確認する
-    2. Elasticsearch の alias と物理インデックスの状態を確認する
-    3. 不完全な物理インデックスが残っていれば手動で削除する
-    4. are_search_index_markers の該当 marker を削除する
-    5. 必要に応じて reindex を再実行する
-
-marker の確認例。
-
-    marker = AreSearch::IndexMarker.find_by(
-        es_index_name: Article.are_search_index_target(:default).are_search_es_index_name,
-    )
-
-対象 index の marker を operation に関係なく削除する例。
-
-    AreSearch::IndexMarker.delete_force!(Article.are_search_index_target(:default).are_search_es_index_name)
-
-delete_force! は AreSearch.index_operation_enabled = true のプロセスでのみ実行できる。
-reindex / clean_up の marker も削除するため、実行中プロセスが存在しないこと、
-alias と物理インデックスの状態が問題ないことを確認した後だけ使う。
-
-最終手段として DB 行を直接削除する場合も、対象 id を明示して削除する。
-
-    AreSearch::IndexMarker
-        .where(id: marker.id)
-        .delete_all
-
-
-## 2-3. Elasticsearch バージョンアップ前の全 index reindex
-----------------------------------------------------------------
-
-Elasticsearch のメジャーバージョンアップやサーバ移行の前に、
-AreSearch が管理する全 index を現在の Elasticsearch 形式で作り直す。
 
     bundle exec rake are_search:reindex_all_for_es_version_up
 
-このタスクは、reindex を開始する前に以下を確認する。
+以下に問題がある場合は開始しない。
 
-    are_search_sync_requests にレコードが残っていないこと
-    AreSearch.index_prefix で始まる全物理 index が、
-    現在の searchable index の alias に接続されていること
+    are_search_sync_requests に未処理レコードが残っている
+    AreSearch.index_prefix 配下に alias 未接続の index がある
 
-同期待ちのレコードがある場合は、DB と Elasticsearch の内容が一致していると判断できないため中止する。
-
-alias に接続されていない物理 index がある場合も中止する。
-これには、過去の reindex で残った物理 index、失敗した reindex の物理 index、
-alias 名と同名の旧方式 index、現在の Searchable 定義に存在しない index が含まれる。
-
-事前チェックが完了すると、reindex 対象を表示して確認入力を待つ。
-
-    以下の index を reindex します。
-
-      myapp_production_articles_default
-      myapp_production_documents_default
-
-    実行しますか？ [y/N]:
-
-`y` または `Y` を入力した場合だけ実行する。
-空 Enter やそれ以外の入力では、reindex を行わず正常終了する。
-
-実行後は、各 index target を順番に reindex する。
-1つでも lock / marker により実行できない場合、または bulk 投入に失敗した ID がある場合は、
-そこでタスクを停止する。
+事前確認後、対象 index が表示される。
+`y` または `Y` を入力した場合だけ順番に reindex する。
+途中で失敗した場合は、その時点で停止する。
 
 
-# 3. インデックスのクリーンアップ
+# 3. clean up
 ================================================================
 
-reindex を繰り返すと古い物理インデックスが残る。
-不要になった物理インデックスは clean up で削除する。
+alias が指していない古い物理 index を削除する。
 
-
-## 3-1. 全モデルのインデックスのクリーンアップ
-----------------------------------------------------------------
-
-Searchable を include している全モデルの全 index target に対して clean up を実行する。
-
-    bundle exec rake are_search:clean_up_all
-
-各 index target ごとに are_search_es_clean_up を呼ぶ。
-index 操作中の index targetはスキップされる。
-
-各モデルの clean up 中に通常例外が発生した場合、そのモデルは failed として表示し、
-残りのモデルの clean up は継続される。
-
-ただし AreSearch.index_operation_enabled が false の場合は設定違反として例外を再送出し、
-タスク全体を停止する。
-
-
-## 3-2. モデル別のインデックスのクリーンアップ
-----------------------------------------------------------------
-
-current のみを残し、それ以外の物理インデックスをすべて削除する。
+単一 target。
 
     Article.are_search_index_target(:default).are_search_es_clean_up
 
@@ -216,330 +77,195 @@ current のみを残し、それ以外の物理インデックスをすべて削
         実行した。
 
     false
-        index 操作中のためスキップした。
-        index 操作中、または未削除 marker が残っている場合。
+        index 操作中、または marker が残っているためスキップした。
 
-削除した物理インデックス名は AreSearch.logger.info に記録される。
-削除対象は alias が指していない物理インデックス。
-current かどうかは alias の向きで判定する。
+全 target。
+
+    bundle exec rake are_search:clean_up_all
+
+現在 alias が指している物理 index は削除しない。
 
 
-# 4. インデックスの状況の確認
+# 4. index 状態の確認
 ================================================================
-
-Searchable を include している全モデルの全 index target について、index marker / flock / alias / 物理インデックス状態を確認する。
 
     bundle exec rake are_search:check_index_status
 
-確認する内容。
+各 index target について、主に以下を表示する。
 
     marker
-        index 操作中、または前回の index 操作で marker 削除が完了しなかった可能性を示す DB 行。
-        are_search_index_markers に es_index_name の行があるかを見る。
-        marker がある場合は id / operation / started_at / owner_host / owner_pid / message を表示する。
-
-    lock
-        現在 flock を取得しているプロセスがいるかを確認する。
-        LOCK_EX | LOCK_NB を試し、取得できれば free、取得できなければ locked と表示する。
-
+    flock
     alias
-        Elasticsearch 上で alias が存在するかを表示する。
-
-    current physical
-        alias が現在指している物理インデックス名を表示する。
-
-    physical indexes
-        alias 名に対応する物理インデックス一覧を表示する。
-        alias が指しているものは current、それ以外は unaliased と表示する。
-
+    current physical index
+    alias に接続されていない physical index
     legacy index
-        alias 名と同名の旧方式 index が残っているかを表示する。
-
     warning
-        alias missing / physical index missing / newest physical index is not current / marker exists などを表示する。
 
-このタスクは Elasticsearch に接続する。
-Elasticsearch の状態取得に失敗した場合でも、marker と lock の表示は行い、
-Elasticsearch 部分だけ failed として表示する。
-
-出力例。
-
-    [AreSearch] index status: myapp_production_articles_default
-        marker:    none  es_index_name=myapp_production_articles_default
-          lock:    free  /path/to/tmp/are_search/index_locks/myapp_production_articles_default.lock
-         alias:  exists  myapp_production_articles_default
-        current physical:
-            myapp_production_articles_default_2026_07_04_10_00_00_000000
-        physical indexes:
-            myapp_production_articles_default_2026_07_04_10_00_00_000000 current
-            myapp_production_articles_default_2026_07_03_10_00_00_000000 unaliased
-     legacy index:    none  myapp_production_articles_default
-        warning: none
-
-    [AreSearch] index status: myapp_production_documents_default
-        marker:  exists  id=10 operation=reindex started_at=2026-07-04 10:00:00 UTC owner_host=app-1 owner_pid=12345
-          lock:  locked  /path/to/tmp/are_search/index_locks/myapp_production_documents_default.lock
-         alias: missing  myapp_production_documents_default
-        current physical:
-            none
-        physical indexes:
-            none
-     legacy index:    none  myapp_production_documents_default
-        warning: alias missing
-        warning: physical index missing
-        warning: marker exists
-
-Elasticsearch 接続に失敗した場合の例。
-
-    [AreSearch] index status: myapp_production_articles_default
-        marker:    none  es_index_name=myapp_production_articles_default
-          lock:    free  /path/to/tmp/are_search/index_locks/myapp_production_articles_default.lock
-        elasticsearch: failed AreSearch::NotConfiguredError: AreSearch.setup が呼ばれていません
+reindex や clean up が実行できない場合、marker を削除する前にこのタスクで状態を確認する。
 
 
-## 4-1. 計画メンテナンス用 manual marker
-----------------------------------------------------------------
+# 5. manual marker
+================================================================
 
-計画メンテナンスなどで同期や index 操作を一時的に止めたい場合、manual marker を作成できる。
-manual marker は are_search_index_markers に operation = manual として保存される。
+計画メンテナンス中に sync と index 操作を止める場合に使用する。
+検索は自動停止しない。
 
-manual marker の作成・削除は AreSearch.index_operation_enabled = true のプロセスでのみ実行できる。
-manual marker がある間、sync / reindex / clean up / 初期 index 作成は実行されない。
-検索は alias が存在していれば通常どおり動く。
-
-つまり manual marker は検索停止フラグではない。
-検索画面を止めるかどうかはアプリ側の判断になる。
-
-検索前に marker の有無を見たい場合は、以下を使う。
-
-    AreSearch::SearchBase.index_marked?([Article.are_search_index_target(:default), Comment.are_search_index_target(:default)])
-
-この判定は DB の are_search_index_markers だけを見るため、
-Elasticsearch サーバ停止中でも確認できる。
-
-
-全 Searchable index に manual marker を作成する。
+全 target に作成する。
 
     bundle exec rake are_search:mark_all
 
-出力例。
-
-    [AreSearch] mark_all marked: myapp_production_articles_default marker_id=10
-    [AreSearch] mark_all skipped: myapp_production_documents_default existing_operation=reindex marker_id=11
-
-すでに marker がある index は上書きしない。
-existing_operation が manual 以外の場合は、実行中または残留中の index marker がある状態なので、
-check_index_status で状態を確認する。
-
-
-全 Searchable index の manual marker を削除する。
+全 target の manual marker を削除する。
 
     bundle exec rake are_search:unmark_all
 
-出力例。
+単一 target を操作する。
 
-    [AreSearch] unmark_all deleted: myapp_production_articles_default count=1
-    [AreSearch] unmark_all skipped: myapp_production_documents_default manual marker not found
+    es_index_name = Article
+        .are_search_index_target(:default)
+        .are_search_es_index_name
 
-unmark_all が削除するのは operation = manual の marker だけ。
-reindex / clean_up などの marker は削除しない。
-異常終了で残った marker を削除する前には、必ず check_index_status と Elasticsearch の alias / 物理インデックス状態を確認する。
+    AreSearch.mark_index!(es_index_name)
+    AreSearch.unmark_index!(es_index_name)
 
-
-rails console から単一 index を操作する場合。
-
-    AreSearch.mark_index!(Article.are_search_index_target(:default).are_search_es_index_name)
-    AreSearch.unmark_index!(Article.are_search_index_target(:default).are_search_es_index_name)
-
-この場合も、unmark_index! が削除するのは operation = manual の marker だけ。
-
-異常終了で残った marker を状態確認後に削除する場合は、対象を明示して削除する。
-
-    AreSearch::IndexMarker
-        .where(id: marker.id)
-        .delete_all
-
-または、対象 index の marker を operation に関係なく削除する。
-
-    AreSearch::IndexMarker.delete_force!(Article.are_search_index_target(:default).are_search_es_index_name)
-
-delete_force! は AreSearch.index_operation_enabled = true のプロセスでのみ実行できる。
-reindex / clean_up の marker も削除するため、実行中プロセスが存在しないこと、
-alias と物理インデックスの状態が問題ないことを確認した後だけ使う。
+mark 操作は既存 marker を上書きしない。
+unmark 操作が削除するのは manual marker だけ。
+これらの操作には AreSearch.index_operation_enabled = true が必要。
 
 
-# 5. 検索対象のモデルのチェック
+# 6. sync request の回収
 ================================================================
 
-Searchable を include している全モデルを一括チェックする。
+残っている sync request を再処理する。
+
+    bundle exec rake are_search:run_sync_requests
+
+このタスクは定期実行する。
+通常の再同期に加え、処理中のまま古くなった sync request の強制同期も行う。
+対象になるまでの時間と試行上限は以下で設定する。
+
+    AreSearch.sync_request_delay
+    AreSearch.max_retry_count
+    AreSearch.sync_request_process_hang_wait
+    AreSearch.max_force_attempt_count
+
+通知用の生成タスク。
+
+    bundle exec rake are_search:alert_retry_exceeded
+
+
+# 7. モデル設定の確認
+================================================================
 
     bundle exec rake are_search:check_all_models
 
-チェック内容。
-
-    after_save コールバック一覧
-    after_destroy コールバック一覧
-    after_touch コールバック一覧
-    after_commit コールバック一覧
-    are_search_es_data の実装有無
-    are_search_es_mappings の実装有無
-    Rails のコールバック順序
-
-エラーになる例。
-
-    are_search_enqueue_es_sync_request が登録されていない
-    are_search_enqueue_es_sync_request が重複登録されている
-    are_search_after_commit が登録されていない
-    are_search_after_commit が重複登録されている
-    are_search_es_data が実装されていない
-    are_search_es_mappings が実装されていない
-    Rails のコールバック順序が想定と違う
-
-正常なら以下を出力する。
+Searchable のコールバックと、are_search_es_mappings / are_search_es_data の定義を確認する。
+正常な場合は以下を出力する。
 
     全モデル正常
 
 
-# 6. 障害時の見方
+# 8. 障害時の確認順序
 ================================================================
 
-検索結果が古い場合。
+## 8-1. 検索結果が古い
+----------------------------------------------------------------
 
-    are_search_sync_requests に行が残っていないか確認する。
-    processing_token が残ったままの行がないか確認する。
-    processing_at が古い行があれば、ジョブ停止・プロセス停止・同期処理の固着を疑う。
-    SyncJob が動いているか確認する。（AreSearch.after_commit_mode = :job の場合）
-    run_sync_requests を実行する。
+    1. are_search_sync_requests にレコードが残っているか確認する
+    2. after_commit_mode = :job の場合は Job worker を確認する
+    3. bundle exec rake are_search:run_sync_requests を実行する
+    4. last_error と retry_count を確認する
 
-reindex 後も同期が動かない場合。
 
-    Article.are_search_index_target(:default).are_search_es_index_marked? を確認する。
-    are_search_index_markers に marker が残っていないか確認する。
-    are_search_sync_requests の last_error が "index marked" のまま残っていないか確認する。
+## 8-2. reindex または sync が動かない
+----------------------------------------------------------------
 
-bulk 更新後に検索結果が合わない場合。
+    1. bundle exec rake are_search:check_index_status を実行する
+    2. marker または lock が残っていないか確認する
+    3. alias と物理 index の状態を確認する
 
-    update_all / delete_all / insert_all / upsert_all を使っていないか確認する。
-    必要なら target の are_search_es_sync または are_search_es_reindex を実行する。
 
-古い物理インデックスが増えている場合。
+## 8-3. bulk 更新後に検索結果が合わない
+----------------------------------------------------------------
+
+update_all、delete_all、insert_all、upsert_all は ActiveRecord コールバックを通らない。
+対象レコードが存在する場合は直接同期し、削除済みの場合は直接削除する。
+件数が多い場合は reindex を使用する。
+
+    index_target = Article.are_search_index_target(:default)
+    article = Article.find(id)
+
+    article.are_search_es_sync!(index_target)
+
+    index_target.are_search_es_delete!(id)
+
+    index_target.are_search_es_reindex
+
+
+## 8-4. 古い物理 index が増えている
+----------------------------------------------------------------
 
     Article.are_search_index_target(:default).are_search_es_clean_up
 
-processing_token が残った sync request が増えている場合。
 
-    processing_at が AreSearch.sync_request_process_hang_wait より古いか確認する。
-    force_attempt_count が AreSearch.max_force_attempt_count に達していないか確認する。
-    run_sync_requests の終了ログに 強制 件数 が出ているか確認する。
-    force_attempt_count が増え続ける場合は、同期処理の固着またはジョブプロセス停止を確認する。
+# 9. marker の手動解除
+================================================================
+
+異常終了で marker が残った場合は、先に check_index_status で次を確認する。
+
+    index 操作中のプロセスが存在しない
+    alias が正しい物理 index を指している
+    不完全な物理 index を削除してよい
+
+確認後、対象 index の marker を削除する。
+
+    es_index_name = Article
+        .are_search_index_target(:default)
+        .are_search_es_index_name
+
+    AreSearch::IndexMarker.delete_force!(es_index_name)
+
+この操作は reindex / clean_up の marker も削除する。
+AreSearch.index_operation_enabled = true のプロセスでのみ実行する。
 
 
-# 6.1. インデックスの確認と手動削除（rails console）
-----------------------------------------------------------------
+# 10. 物理 index の手動削除
+================================================================
 
-全インデックスの確認:
+物理 index 名を確認する。
 
-    AreSearch.client.indices.get(index: "#{AreSearch.index_prefix}_*")
+    AreSearch.client.indices.get(
+        index: "#{AreSearch.index_prefix}_*"
+    )
 
-戻り値は { "物理インデックス名" => { "aliases" => { "alias名" => {} } } } の形。
-
-物理名を指定して削除する:
+物理 index を指定して削除する。
 
     AreSearch::IndexManager.es_delete_index!(
-        'myapp_production_articles_default_2026_07_04_10_00_00_000000'
+        "myapp_production_articles_default_2026_07_04_10_00_00_000000"
     )
 
-この操作は index flock や index marker を取得しない。
-ただし AreSearch.index_operation_enabled = true のプロセスでのみ実行できる。
-物理インデックスを削除すると alias は ES 側が自動的に削除する。
+この操作は lock や marker を取得しない。
+現在使用中の物理 index を誤って削除しないよう、事前に alias を確認する。
 
 
+# 11. processing_token の手動解除
+================================================================
 
-# 6.2. processing_token が残った sync request の手動解除（rails console）
-----------------------------------------------------------------
+run_sync_requests の強制同期後も processing_token が残り続ける場合の最終手段。
+Job が再開しないことを確認してから実行する。
 
-force_attempt により Elasticsearch への反映は済んでいるが、元の Job が戻らず
-processing_token だけが残る場合がある。
-
-この状態では、run_sync_requests の通常同期は processing_token があるため対象にできない。
-一方で force_attempt は sync request の削除や processing_token の解除は行わない。
-
-この操作は、同期済み扱いにする操作ではない。
-processing_token を外し、通常の run_sync_requests が再取得できる状態に戻すだけ。
-
-まず、対象候補を特定する。
-特定方法は状況によって異なる。
-
-processing_at が古い行を確認する例。
-
-    border_time = 1.hour.ago
-
-    sync_requests = AreSearch::SyncRequest
-        .where.not(processing_token: nil)
-        .where("processing_at < ?", border_time)
-        .order(:processing_at)
-
-    sync_requests.limit(20).pluck(
-        :id,
-        :ar_model_class_name,
-        :ar_instance_key,
-        :es_index_name,
-        :processing_at,
-        :force_attempted,
-        :force_attempted_at,
-        :force_attempt_count,
-        :retry_count,
-        :last_error,
-    )
-
-force_attempt が実行済みの行を確認する例。
-
-    sync_requests = AreSearch::SyncRequest
-        .where.not(processing_token: nil)
-        .where(force_attempted: true)
-        .where("force_attempt_count > 0")
-        .order(:processing_at)
-
-    sync_requests.limit(20).pluck(
-        :id,
-        :ar_model_class_name,
-        :ar_instance_key,
-        :es_index_name,
-        :processing_at,
-        :force_attempted_at,
-        :force_attempt_count,
-        :last_error,
-    )
-
-
-特定のモデルと ID から確認する例。
-
-    sync_request = AreSearch::SyncRequest.find_by(
-        ar_model_class_name: "Article",
-        ar_instance_key:     "123",
-        es_index_name:       Article.are_search_index_target(:default).are_search_es_index_name,
-    )
-
-alert メールに sync request の id が出ている場合は、その id で確認する。
+対象を確認する。
 
     sync_request = AreSearch::SyncRequest.find(id)
 
-解除前に確認する条件。
+解除条件。
 
-    processing_token が nil ではない
-    force_attempted が true
-    force_attempt_count が 1 以上
+    sync_request.processing_token が存在する
+    sync_request.force_attempted が true
+    sync_request.force_attempt_count が 1 以上
     processing_at が十分古い
-    当該 Job がもう存在しない、または Job worker 停止 + queue clear 済み
+    対象 Job が存在しない、または Job worker を停止済み
 
-
-予期せぬ再開の可能性があるため、Job がまた動く可能性がある状態では解除しない。
-Job 管理ツール等で 当該 Job がもう存在しないことを確認するか、
-Job worker を停止して queue を clear したうえで実行する。
-
-AreSearch.after_commit_mode != :job の場合は、再開の可能性が無いため確認は不要
-
-processing_token を解除する。
+解除する。
 
     updated_count = AreSearch::SyncRequest
         .where(id: sync_request.id)
@@ -552,21 +278,9 @@ processing_token を解除する。
 
     puts updated_count
 
-
-update_all は条件に合う行へ直接 UPDATE を発行する。
-validation / callback / timestamp の自動更新は通らない。
-戻り値は更新件数。
-
-updated_count が 1 なら解除済み。
-updated_count が 0 なら、対象がすでに変更されているか、条件に合わない。
-
-解除後、通常の復旧ルートで同期する。
+updated_count が 1 なら、通常同期へ戻す。
 
     bundle exec rake are_search:run_sync_requests
 
-その後、対象の sync request が消えたか確認する。
-
-    AreSearch::SyncRequest.find_by(id: sync_request.id)
-
-nil なら通常同期で削除済み。
-残っている場合は last_error / retry_count / request_sequence / processing_token を確認する。
+この操作は同期済みとして削除するものではない。
+processing_token を外して再処理可能にするだけ。

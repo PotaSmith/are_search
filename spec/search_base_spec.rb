@@ -51,6 +51,38 @@ RSpec.describe AreSearch::SearchBase do
         { max_result_window: 2_000 }
     end
 
+    describe ".deep_symbolize_opts" do
+        it "Array 内の Hash まで再帰的に Symbol key へ統一する" do
+            options = [
+                {
+                    "field" => "status",
+                    "value" => {
+                        "gte" => 1,
+                    },
+                },
+            ]
+
+            result = described_class.deep_symbolize_opts(options)
+
+            expect(result).to eq([
+                {
+                    field: "status",
+                    value: {
+                        gte: 1,
+                    },
+                },
+            ])
+        end
+
+        it "HashでもArrayでもない値は変更しない" do
+            value = Object.new
+
+            result = described_class.deep_symbolize_opts(value)
+
+            expect(result).to equal(value)
+        end
+    end
+
     describe ".check_index_exists?" do
         it "全 index target の alias が存在すれば true を返す" do
             expect(AreSearch::IndexManager)
@@ -316,43 +348,407 @@ RSpec.describe AreSearch::SearchBase do
         end
     end
 
-    describe ".validate_results_where!" do
-        it "未指定なら ctx を変更しない" do
-            ctx = { model_results_filters: {} }
+    describe ".execute_and_build_result" do
+        it "highlight 未指定でも Elasticsearch の _source を hit_source として保持する" do
+            record_class = Struct.new(:id)
+            record = record_class.new(1)
+            index_to_index_target = {
+                "test_articles_default" => article_index_target,
+            }
+            search_body = {
+                query: {
+                    match_all: {},
+                },
+            }
+            hits = [
+                {
+                    "_index" => "test_articles_default",
+                    "_source" => {
+                        AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => "Article",
+                        AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s => "1",
+                        "title" => "Rails guide",
+                    },
+                },
+            ]
+            response = {
+                "hits" => {
+                    "total" => {
+                        "value" => 1,
+                    },
+                    "hits" => hits,
+                },
+            }
+            result_context = {
+                index_to_index_target: index_to_index_target,
+                model_results_filters: {},
+                model_includes:        {},
+                page:                  1,
+                per_page:              25,
+            }
+            client = double("client")
 
-            described_class.validate_results_where!(
-                ctx,
-                nil,
-                [article_model],
-                caller_name: :multi_search,
+            allow(AreSearch)
+                .to receive(:client)
+                .and_return(client)
+
+            expect(client)
+                .to receive(:search)
+                .with(
+                    index: "test_articles_default",
+                    body:  search_body,
+                )
+                .and_return(response)
+
+            allow(described_class)
+                .to receive(:build_records)
+                .with(
+                    hits,
+                    index_to_index_target,
+                    {},
+                    {},
+                )
+                .and_return(
+                    records:                   [record],
+                    records_with_target_names: [[record, :default]],
+                )
+
+            allow(article_index_target)
+                .to receive(:are_search_es_composite_key) do |id|
+                    "test_articles_default/#{id}"
+                end
+
+            allow(record_class)
+                .to receive(:are_search_index_target)
+                .with(:default)
+                .and_return(article_index_target)
+
+            result = described_class.execute_and_build_result(
+                "test_articles_default",
+                search_body,
+                result_context,
             )
 
-            expect(ctx).to eq(model_results_filters: {})
+            expect(result.hit_source(record, :default)).to eq(
+                AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => "Article",
+                AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME => "1",
+                title: "Rails guide",
+            )
+            expect(result.highlights_html(record, :default)).to eq([])
         end
 
-        it "検索対象モデルの条件だけを許可し、値は加工せず ctx に積む" do
-            ctx = { model_results_filters: {} }
+        it "hit_source と highlight のフラグメントを別々に保持する" do
+            record_class = Struct.new(:id)
+            record = record_class.new(1)
+            index_to_index_target = {
+                "test_articles_default" => article_index_target,
+            }
+            search_body = {
+                query: {
+                    match_all: {},
+                },
+                highlight: {
+                    fields: {
+                        title: {},
+                    },
+                },
+            }
+            hits = [
+                {
+                    "_index" => "test_articles_default",
+                    "_source" => {
+                        AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => "Article",
+                        AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s => "1",
+                        "title" => "Rails guide",
+                    },
+                    "highlight" => {
+                        "title" => ["<em>Rails</em> guide"],
+                    },
+                },
+            ]
+            response = {
+                "hits" => {
+                    "total" => {
+                        "value" => 1,
+                    },
+                    "hits" => hits,
+                },
+            }
+            result_context = {
+                index_to_index_target: index_to_index_target,
+                model_results_filters: {},
+                model_includes:        {},
+                page:                  1,
+                per_page:              25,
+            }
+            client = double("client")
+
+            allow(AreSearch)
+                .to receive(:client)
+                .and_return(client)
+
+            expect(client)
+                .to receive(:search)
+                .with(
+                    index: "test_articles_default",
+                    body:  search_body,
+                )
+                .and_return(response)
+
+            allow(described_class)
+                .to receive(:build_records)
+                .with(
+                    hits,
+                    index_to_index_target,
+                    {},
+                    {},
+                )
+                .and_return(
+                    records:                   [record],
+                    records_with_target_names: [[record, :default]],
+                )
+
+            allow(article_index_target)
+                .to receive(:are_search_es_composite_key) do |id|
+                    "test_articles_default/#{id}"
+                end
+
+            allow(record_class)
+                .to receive(:are_search_index_target)
+                .with(:default)
+                .and_return(article_index_target)
+
+            result = described_class.execute_and_build_result(
+                "test_articles_default",
+                search_body,
+                result_context,
+            )
+
+            expect(result.hit_source(record, :default)[:title]).to eq("Rails guide")
+            expect(result.highlights_html(record, :default)).to eq([
+                "<em>Rails</em> guide",
+            ])
+        end
+
+        it "String key の highlight 要求でもフラグメントを保持する" do
+            record_class = Struct.new(:id)
+            record = record_class.new(1)
+            index_to_index_target = {
+                "test_articles_default" => article_index_target,
+            }
+            search_body = {
+                "query" => {
+                    "match_all" => {},
+                },
+                "highlight" => {
+                    "fields" => {
+                        "title" => {},
+                    },
+                },
+            }
+            hits = [
+                {
+                    "_index" => "test_articles_default",
+                    "_source" => {
+                        AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => "Article",
+                        AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s => "1",
+                        "title" => "Rails guide",
+                    },
+                    "highlight" => {
+                        "title" => ["<em>Rails</em> guide"],
+                    },
+                },
+            ]
+            response = {
+                "hits" => {
+                    "total" => {
+                        "value" => 1,
+                    },
+                    "hits" => hits,
+                },
+            }
+            result_context = {
+                index_to_index_target: index_to_index_target,
+                model_results_filters: {},
+                model_includes:        {},
+                page:                  1,
+                per_page:              25,
+            }
+            client = double("client")
+
+            allow(AreSearch)
+                .to receive(:client)
+                .and_return(client)
+
+            expect(client)
+                .to receive(:search)
+                .with(
+                    index: "test_articles_default",
+                    body:  search_body,
+                )
+                .and_return(response)
+
+            allow(described_class)
+                .to receive(:build_records)
+                .with(
+                    hits,
+                    index_to_index_target,
+                    {},
+                    {},
+                )
+                .and_return(
+                    records:                   [record],
+                    records_with_target_names: [[record, :default]],
+                )
+
+            allow(article_index_target)
+                .to receive(:are_search_es_composite_key) do |id|
+                    "test_articles_default/#{id}"
+                end
+
+            allow(record_class)
+                .to receive(:are_search_index_target)
+                .with(:default)
+                .and_return(article_index_target)
+
+            result = described_class.execute_and_build_result(
+                "test_articles_default",
+                search_body,
+                result_context,
+            )
+
+            expect(result.highlights_html(record, :default)).to eq([
+                "<em>Rails</em> guide",
+            ])
+        end
+    end
+
+    describe "build_records" do
+        it "予約フィールドのクラス名配列に対象モデル名を含む hit だけ復元する" do
+            record = double("article", id: 1)
+            index_to_index_target = {
+                "test_articles_default" => article_index_target,
+            }
+            hits = [
+                {
+                    "_index" => "test_articles_default",
+                    "_source" => {
+                        AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
+                            "SpecialArticle",
+                            "Article",
+                        ],
+                        AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s => "1",
+                    },
+                },
+                {
+                    "_index" => "test_articles_default",
+                    "_source" => {
+                        AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
+                            "Document",
+                        ],
+                        AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s => "2",
+                    },
+                },
+            ]
+
+            expect(article_model)
+                .to receive(:where)
+                .with(id: ["1"])
+                .and_return([record])
+
+            allow(article_index_target)
+                .to receive(:are_search_es_composite_key) do |id|
+                    "test_articles_default/#{id}"
+                end
+
+            result = described_class.send(
+                :build_records,
+                hits,
+                index_to_index_target,
+                {},
+                {},
+            )
+
+            expect(result).to eq(
+                records: [record],
+                records_with_target_names: [[record, :default]],
+            )
+        end
+    end
+
+    describe ".validate_paging_options!" do
+        it "未指定または正の整数を許可する" do
+            expect do
+                described_class.validate_paging_options!(
+                    nil,
+                    25,
+                    caller_name: :multi_search,
+                )
+            end.not_to raise_error
+        end
+
+        it "AreSearch 内部で計算できない値を拒否する" do
+            expect do
+                described_class.validate_paging_options!(
+                    "2",
+                    25,
+                    caller_name: :multi_search,
+                )
+            end.to raise_error(ArgumentError, /:page は正の整数/)
+
+            expect do
+                described_class.validate_paging_options!(
+                    1,
+                    0,
+                    caller_name: :multi_search,
+                )
+            end.to raise_error(ArgumentError, /:per_page は正の整数/)
+        end
+    end
+
+    describe ".resolve_default_option" do
+        it "未指定値だけをデフォルトへ変換する" do
+            expect(described_class.resolve_default_option(nil, 25)).to eq(25)
+            expect(described_class.resolve_default_option(10, 25)).to eq(10)
+        end
+    end
+
+    describe ".validate_results_where_options!" do
+        it "未指定なら何もしない" do
+            expect do
+                described_class.validate_results_where_options!(
+                    nil,
+                    [article_model],
+                    caller_name: :multi_search,
+                )
+            end.not_to raise_error
+        end
+
+        it "検索対象モデルの条件だけを許可し、値を変更しない" do
             filter = { status: "published" }
             opts = { article_model => filter }
 
-            described_class.validate_results_where!(
-                ctx,
+            described_class.validate_results_where_options!(
                 opts,
                 [article_model],
                 caller_name: :multi_search,
             )
 
-            expect(ctx[:model_results_filters]).to equal(opts)
-            expect(ctx[:model_results_filters][article_model]).to equal(filter)
+            expect(opts[article_model]).to equal(filter)
         end
 
-        it "検索対象外モデルが指定された場合は ArgumentError を出す" do
-            ctx = { model_results_filters: {} }
+        it "Hash以外または検索対象外モデルを拒否する" do
+            expect do
+                described_class.validate_results_where_options!(
+                    [],
+                    [article_model],
+                    caller_name: :multi_search,
+                )
+            end.to raise_error(ArgumentError, /model_results_where は Hash/)
+
             opts = { document_model => { visible: true } }
 
             expect do
-                described_class.validate_results_where!(
-                    ctx,
+                described_class.validate_results_where_options!(
                     opts,
                     [article_model],
                     caller_name: :multi_search,
@@ -361,35 +757,56 @@ RSpec.describe AreSearch::SearchBase do
         end
     end
 
-    describe ".validate_includes!" do
-        it "検索対象モデルの includes だけを許可し、値は加工せず ctx に積む" do
-            ctx = { model_includes: {} }
+    describe ".validate_includes_options!" do
+        it "検索対象モデルの includes だけを許可し、値を変更しない" do
             includes = [:user, :tags]
             opts = { article_model => includes }
 
-            described_class.validate_includes!(
-                ctx,
+            described_class.validate_includes_options!(
                 opts,
                 [article_model],
                 caller_name: :multi_search,
             )
 
-            expect(ctx[:model_includes]).to equal(opts)
-            expect(ctx[:model_includes][article_model]).to equal(includes)
+            expect(opts[article_model]).to equal(includes)
         end
 
-        it "検索対象外モデルが指定された場合は ArgumentError を出す" do
-            ctx = { model_includes: {} }
+        it "Hash以外または検索対象外モデルを拒否する" do
+            expect do
+                described_class.validate_includes_options!(
+                    [:user],
+                    [article_model],
+                    caller_name: :multi_search,
+                )
+            end.to raise_error(ArgumentError, /model_includes は Hash/)
+
             opts = { document_model => [:author] }
 
             expect do
-                described_class.validate_includes!(
-                    ctx,
+                described_class.validate_includes_options!(
                     opts,
                     [article_model],
                     caller_name: :multi_search,
                 )
             end.to raise_error(ArgumentError, /model_includes/)
+        end
+    end
+
+    describe ".validate_raw_search_body!" do
+        it "Hashだけを許可する" do
+            expect do
+                described_class.validate_raw_search_body!(
+                    {
+                        query: {
+                            match_all: {},
+                        },
+                    },
+                )
+            end.not_to raise_error
+
+            expect do
+                described_class.validate_raw_search_body!([])
+            end.to raise_error(ArgumentError, /body は Hash/)
         end
     end
 end

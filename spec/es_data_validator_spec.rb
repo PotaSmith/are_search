@@ -1,6 +1,36 @@
 # frozen_string_literal: true
 
 RSpec.describe AreSearch::EsDataValidator do
+    describe ".reserved_data_field_names" do
+        it "予約フィールドを Symbol key で検出する" do
+            data = {
+                title: "hello",
+                are_search_es_ar_model_class_name: "Article",
+            }
+
+            result = described_class.reserved_data_field_names(data)
+
+            expect(result).to eq([:are_search_es_ar_model_class_name])
+        end
+
+        it "予約フィールドを String key でも検出する" do
+            data = {
+                "title" => "hello",
+                "are_search_es_ar_instance_key" => "123",
+            }
+
+            result = described_class.reserved_data_field_names(data)
+
+            expect(result).to eq([:are_search_es_ar_instance_key])
+        end
+
+        it "Hash 以外なら空配列を返す" do
+            result = described_class.reserved_data_field_names(nil)
+
+            expect(result).to eq([])
+        end
+    end
+
     describe ".validate" do
         let(:mappings) do
             {

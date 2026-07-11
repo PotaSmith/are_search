@@ -4,6 +4,23 @@ module AreSearch
     module RakeUtils
         extend self
 
+        def searchable_index_names
+            Rails.application.eager_load!
+
+            es_index_names = []
+
+            ActiveRecord::Base.descendants.select { |klass| klass.include?(AreSearch::Searchable) }.each do |klass|
+                klass.are_search_index_targets.each do |index_target|
+                    es_index_name = index_target.are_search_es_index_name
+                    next if es_index_names.include?(es_index_name)
+
+                    es_index_names << es_index_name
+                end
+            end
+
+            es_index_names
+        end
+
         def model_check(klass, errors)
             puts "are_search_es_data method_defined : #{klass.method_defined?(:are_search_es_data)}"
 
@@ -139,15 +156,9 @@ module AreSearch
         # Searchable モデルを継承系統ごとに整理し、
         # 各系統で最も上位にあるモデルだけを返す。
         def searchable_root_models(searchable_models)
-            root_models = []
-
-            searchable_models.each do |model|
-                if is_upper_model(model, searchable_models)
-                    root_models << model
-                end
+            searchable_models.select do |model|
+                is_upper_model(model, searchable_models)
             end
-
-            root_models
         end
 
         # modelsの中で最上位のモデルかを判定する
@@ -169,14 +180,9 @@ module AreSearch
         def all_searchable_include_models
             Rails.application.eager_load!
 
-            searchable_models = []
-            ActiveRecord::Base.descendants.each do |model|
-                if model.include?(AreSearch::Searchable)
-                    searchable_models << model
-                end
+            ActiveRecord::Base.descendants.select do |model|
+                model.include?(AreSearch::Searchable)
             end
-
-            searchable_models
         end
     end
 end

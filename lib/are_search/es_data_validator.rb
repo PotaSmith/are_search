@@ -4,6 +4,27 @@ module AreSearch
     module EsDataValidator
         extend self
 
+        # Hash の key に AreSearch 予約フィールドが含まれていないか確認し、
+        # 含まれている予約フィールド名を Symbol の配列で返す。
+        # 利用側 key は Symbol / String のどちらもあり得るため両方を見る。
+        def reserved_data_field_names(hash)
+            reserved_names = []
+            return reserved_names unless hash.instance_of?(Hash)
+
+            AreSearch::RESERVED_ES_FIELD_NAMES.each do |reserved_name|
+                if hash.key?(reserved_name)
+                    reserved_names << reserved_name
+                    next
+                end
+
+                if hash.key?(reserved_name.to_s)
+                    reserved_names << reserved_name
+                end
+            end
+
+            reserved_names
+        end
+
         # mappings（型定義）と data（実データ）の整合性をチェックし、
         # 違反内容の文字列の配列を返す純粋メソッド。
         # 違反が無ければ空配列を返す。errors.add への変換は呼び出し側の責務。
@@ -13,6 +34,14 @@ module AreSearch
         # @return [Array<String>]
         def validate(mappings, data)
             violations = []
+
+            unless mappings.instance_of?(Hash)
+                violations << "mappings が hash ではありません: #{mappings.inspect}"
+            end
+            unless data.instance_of?(Hash)
+                violations << "data が hash ではありません: #{data.inspect}"
+            end
+            return violations if violations.any?
 
             validate_symbol_keys(violations, mappings, "mappings", 3)
             validate_symbol_keys(violations, data, "data", 1)

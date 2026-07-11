@@ -39,12 +39,7 @@ namespace :are_search do
             end
 
             # このタスク内で処理対象にする Searchable モデルの一覧を作成する
-            models = []
-            ActiveRecord::Base.descendants.each do |klass|
-                next unless klass.include?(AreSearch::Searchable)
-
-                models << klass
-            end
+            models = ActiveRecord::Base.descendants.select { |klass| klass.include?(AreSearch::Searchable) }
 
             ar_model_class_names = models.map(&:name)
 
@@ -126,7 +121,7 @@ namespace :are_search do
 
     desc "AreSearch::Searchable を include している全モデルの index(STI重複なし) に manual marker を作成する"
     task mark_all: :environment do
-        AreSearch.searchable_index_names.each do |es_index_name|
+        AreSearch::RakeUtils.searchable_index_names.each do |es_index_name|
             marker = AreSearch.mark_index!(es_index_name)
 
             if marker
@@ -148,7 +143,7 @@ namespace :are_search do
 
     desc "AreSearch::Searchable を include している全モデルの index(STI重複なし) の manual marker を削除する"
     task unmark_all: :environment do
-        AreSearch.searchable_index_names.each do |es_index_name|
+        AreSearch::RakeUtils.searchable_index_names.each do |es_index_name|
             deleted_count = AreSearch.unmark_index!(es_index_name)
 
             if deleted_count > 0
@@ -162,7 +157,7 @@ namespace :are_search do
 
     desc "AreSearch::Searchable を include している全モデルの index(STI重複なし) から古い物理インデックスを削除する"
     task clean_up_all: :environment do
-        AreSearch.searchable_index_names.each do |es_index_name|
+        AreSearch::RakeUtils.searchable_index_names.each do |es_index_name|
             begin
                 result = AreSearch::IndexManager.es_clean_up(es_index_name)
 
@@ -182,7 +177,7 @@ namespace :are_search do
 
     desc "AreSearch::Searchable を include している全モデルの index(STI重複なし) の marker / lock / alias 状態を表示する"
     task check_index_status: :environment do
-        es_index_names = AreSearch.searchable_index_names
+        es_index_names = AreSearch::RakeUtils.searchable_index_names
 
         es_index_names.each do |es_index_name|
             lock_path     = AreSearch.index_lock_file_path(es_index_name)
@@ -402,7 +397,7 @@ namespace :are_search do
                 errors << "#{klass.name}: after_commit :are_search_after_commit が重複しています。"
             end
 
-            AreSearch::RakeUtils.model_check(errors, klass)
+            AreSearch::RakeUtils.model_check(klass, errors)
         end
 
         AreSearch::RakeUtils.validate_searchable_index_name_ownership(errors)

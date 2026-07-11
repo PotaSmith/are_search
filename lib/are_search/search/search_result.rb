@@ -74,17 +74,18 @@ module AreSearch
 
     # 検索結果オブジェクト
     #
-    # highlights_html(record, target_name, tag: 'em', attr: nil)
-    #   ハイライトされたフラグメントのフラット配列を返す。
-    #   ヒットなし・highlight オプション未指定の場合は []。
-    #   tag  : マッチ箇所を囲むHTMLタグ名 (default: 'em')
-    #   attr : タグに付与する属性文字列 (例: 'class="hl"', default: nil)
+    # highlights_html(record, target_name, tag: "em", class_name: nil)
+    #   ハイライトされたフラグメントの配列を返す。
+    #   対象 hit にハイライトが無い場合は []。
+    #   tag        : マッチ箇所を囲むHTMLタグ名。デフォルトは "em"。
+    #   class_name : tag に付与するCSS class文字列。デフォルトは nil。
     #
-    # highlights_source(record, target_name)
-    #   _source をそのまま { field: value } の形で返す。
-    #   ヒットなし・highlight オプション未指定の場合は {}。
+    # hit_source(record, target_name)
+    #   検索時に返された _source を { field: value } の形で返す。
+    #   対象 hit が無い場合は {}。highlight の指定有無には依存しない。
     #
-    # @param highlights [Hash{String => {fragments: Array<String>, source: Hash{Symbol => Object}}}]
+    # @param hit_sources [Hash{String => Hash{Symbol => Object}}]
+    # @param highlights [Hash{String => Array<String>}]
     #
     class SearchResult
         HIGHLIGHT_PRE_TAG    = "<em>"
@@ -94,19 +95,20 @@ module AreSearch
 
         attr_reader :records_with_target_names, :records, :aggs, :raw_response
 
-        def initialize(records_with_target_names, records, aggs, highlights = {}, raw_response: nil)
+        def initialize(records_with_target_names, records, aggs, hit_sources, highlights = {}, raw_response: nil)
             @records_with_target_names  = records_with_target_names
             @records                    = records
             @aggs                       = aggs
             @highlights                 = highlights
+            @hit_sources                = hit_sources
             @raw_response               = raw_response
         end
 
+        # highlight オプションに pre_tags post_tags で独自に指定している場合は
+        # 引数 tag は機能しない
         def highlights_html(record, target_name, tag: "em", class_name: nil)
-            data = @highlights[composite_key_by_record(record, target_name)]
-            return [] unless data
-
-            fragments = data[:fragments]
+            fragments = @highlights[composite_key_by_record(record, target_name)]
+            return [] if fragments.nil?
             return [] if fragments.empty?
 
             tag_name = tag.to_s
@@ -121,11 +123,12 @@ module AreSearch
             end
         end
 
-        def highlights_source(record, target_name)
-            data = @highlights[composite_key_by_record(record, target_name)]
-            return {} unless data
+        # 確認用で普通は使わない
+        def hit_source(record, target_name)
+            source = @hit_sources[composite_key_by_record(record, target_name)]
+            return {} if source.nil?
 
-            data[:source]
+            source
         end
 
         private

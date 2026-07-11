@@ -12,6 +12,17 @@ RSpec.describe AreSearch::Reindexer do
         }
     end
 
+    let(:mappings_for_index) do
+        {
+            properties: {
+                id:    { type: "long" },
+                title: { type: "text" },
+                are_search_es_ar_model_class_name: AreSearch::RESERVED_ES_FIELD_NAME_SETTING,
+                are_search_es_ar_instance_key:     AreSearch::RESERVED_ES_FIELD_NAME_SETTING,
+            },
+        }
+    end
+
     let(:index_settings) do
         { max_result_window: 50_000 }
     end
@@ -30,6 +41,7 @@ RSpec.describe AreSearch::Reindexer do
             target_name:                    :default,
             are_search_es_index_name:       "test_articles_default",
             are_search_es_mappings:         mappings,
+            are_search_es_mappings_for_index: mappings_for_index,
             are_search_es_index_settings:   index_settings,
         )
     end
@@ -71,13 +83,13 @@ RSpec.describe AreSearch::Reindexer do
                     "Article",
                     id: 1,
                     are_search_es_indexable?: true,
-                    are_search_es_data: { id: 1, title: "first" },
+                    are_search_es_data_for_index!: { id: 1, title: "first" },
                 )
                 second_record = instance_double(
                     "Article",
                     id: 2,
                     are_search_es_indexable?: true,
-                    are_search_es_data: { id: 2, title: "second" },
+                    are_search_es_data_for_index!: { id: 2, title: "second" },
                 )
 
                 allow(model).to receive(:find_in_batches) do |batch_size:, &block|
@@ -95,7 +107,7 @@ RSpec.describe AreSearch::Reindexer do
                 expect(AreSearch::IndexManager).to receive(:es_reindex) do |index_name, actual_index_settings, index_mappings, &block|
                     expect(index_name).to eq("test_articles_default")
                     expect(actual_index_settings).to eq(index_settings)
-                    expect(index_mappings).to eq(mappings)
+                    expect(index_mappings).to eq(mappings_for_index)
 
                     block.call("test_articles_20240101120000")
                 end
@@ -120,13 +132,13 @@ RSpec.describe AreSearch::Reindexer do
                     "Article",
                     id: 1,
                     are_search_es_indexable?: true,
-                    are_search_es_data: { id: 1, title: "first" },
+                    are_search_es_data_for_index!: { id: 1, title: "first" },
                 )
                 second_record = instance_double(
                     "Article",
                     id: 2,
                     are_search_es_indexable?: true,
-                    are_search_es_data: { id: 2, title: "second" },
+                    are_search_es_data_for_index!: { id: 2, title: "second" },
                 )
 
                 allow(model).to receive(:find_in_batches) do |batch_size:, &block|
@@ -173,7 +185,7 @@ RSpec.describe AreSearch::Reindexer do
                     "Article",
                     id: 1,
                     are_search_es_indexable?: true,
-                    are_search_es_data: { id: 1, title: "first" },
+                    are_search_es_data_for_index!: { id: 1, title: "first" },
                 )
                 second_record = instance_double(
                     "Article",
@@ -215,19 +227,19 @@ RSpec.describe AreSearch::Reindexer do
                     "Article",
                     id: 1,
                     are_search_es_indexable?: true,
-                    are_search_es_data: { id: 1, title: "first" },
+                    are_search_es_data_for_index!: { id: 1, title: "first" },
                 )
                 second_record = instance_double(
                     "Article",
                     id: 2,
                     are_search_es_indexable?: true,
-                    are_search_es_data: { id: 2, title: "second" },
+                    are_search_es_data_for_index!: { id: 2, title: "second" },
                 )
                 third_record = instance_double(
                     "Article",
                     id: 3,
                     are_search_es_indexable?: true,
-                    are_search_es_data: { id: 3, title: "third" },
+                    are_search_es_data_for_index!: { id: 3, title: "third" },
                 )
 
                 allow(model).to receive(:find_in_batches) do |batch_size:, &block|
@@ -266,18 +278,85 @@ RSpec.describe AreSearch::Reindexer do
             end
         end
 
+        context "when bulk raises" do
+            let(:record_count) do
+                1
+            end
+
+            it "例外を握りつぶさない" do
+                record = instance_double(
+                    "Article",
+                    id: 1,
+                    are_search_es_indexable?: true,
+                    are_search_es_data_for_index!: { id: 1, title: "first" },
+                )
+
+                allow(model).to receive(:find_in_batches) do |batch_size:, &block|
+                    expect(batch_size).to eq(500)
+                    block.call([record])
+                end
+
+                allow(AreSearch::IndexManager).to receive(:es_reindex) do |_index_name, _index_settings, _mappings, &block|
+                    block.call("test_articles_2024_01_01_00_00_00_000000")
+                end
+
+                allow(client)
+                    .to receive(:bulk)
+                    .and_raise(RuntimeError, "bulk failed")
+
+                expect do
+                    described_class.reindex_index_target(index_target)
+                end.to raise_error(RuntimeError, "bulk failed")
+            end
+        end
+
+        context "when data for index raises" do
+            let(:record_count) do
+                1
+            end
+
+            it "例外を握りつぶさず bulk しない" do
+                record = instance_double(
+                    "Article",
+                    id: 1,
+                    are_search_es_indexable?: true,
+                )
+
+                allow(record)
+                    .to receive(:are_search_es_data_for_index!)
+                    .with(index_target)
+                    .and_raise(AreSearch::Error, "reserved field")
+
+                allow(model).to receive(:find_in_batches) do |batch_size:, &block|
+                    expect(batch_size).to eq(500)
+                    block.call([record])
+                end
+
+                allow(AreSearch::IndexManager).to receive(:es_reindex) do |_index_name, _index_settings, _mappings, &block|
+                    block.call("test_articles_2024_01_01_00_00_00_000000")
+                end
+
+                expect(client).not_to receive(:bulk)
+
+                expect do
+                    described_class.reindex_index_target(index_target)
+                end.to raise_error(AreSearch::Error, "reserved field")
+            end
+        end
+
         context "when the model has no records" do
             let(:record_count) do
                 0
             end
 
-            it "does not call bulk and returns an empty failed id list" do
+            it "does not create ProgressBar or call bulk and returns an empty failed id list" do
                 allow(model).to receive(:find_in_batches)
 
                 allow(AreSearch::IndexManager).to receive(:es_reindex) do |_index_name, _index_settings, _index_mappings, &block|
                     block.call("test_articles_20240101120000")
                 end
 
+                expect(ProgressBar).not_to receive(:new)
                 expect(client).not_to receive(:bulk)
 
                 result = described_class.reindex_index_target(index_target)

@@ -24,15 +24,41 @@ module AreSearch
             target_mappings[:index_settings]
         end
 
-        # Elasticsearch に渡す mappings
+        # ユーザが定義した are_search_es_mappings
         def are_search_es_mappings
             mappings = {}
 
             target_mappings.each do |key, value|
                 next if key == :index_settings
 
-                mappings[key] = value
+                if key == :properties
+                    if value.instance_of?(Hash)
+                        new_properties = {}
+                        value.each do |property_key, property_value|
+                            new_properties[property_key] = property_value
+                        end
+                        mappings[key] = new_properties
+                    else
+                        # 事前チェックがあるから本来到達しないはず
+                        raise ArgumentError, "properties が hashではありません。"
+                    end
+                else
+                    mappings[key] = value
+                end
             end
+
+            mappings
+        end
+
+        # Elasticsearch に渡す mappings
+        # 予約フィールド mapping を足す
+        def are_search_es_mappings_for_index
+            mappings = are_search_es_mappings
+
+            return mappings unless mappings.key?(:properties)
+
+            mappings[:properties][AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME] = AreSearch::RESERVED_ES_FIELD_NAME_SETTING
+            mappings[:properties][AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME] = AreSearch::RESERVED_ES_FIELD_NAME_SETTING
 
             mappings
         end
@@ -70,15 +96,44 @@ module AreSearch
             AreSearch::Reindexer.reindex_index_target(self)
         end
 
-        # 検索を実行する
-        #
-        # AreSearch::SingleSearch.search のラッパー。
-        # オプションの仕様は SingleSearch.search を参照。
+        # 単一の index target を MultiSearch で検索する。
+        # includes / results_where は、対象モデルを key にした
+        # model_includes / model_results_where へ変換して渡す。
         #
         # @return [SearchResult]
         #
         def are_search_es_search(query, **options)
-            AreSearch::SingleSearch.search(self, query, **options)
+            invalid_options = []
+            if options.key?(:model_includes)
+                invalid_options << :model_includes
+            end
+            if options.key?(:model_results_where)
+                invalid_options << :model_results_where
+            end
+
+            if invalid_options.any?
+                raise ArgumentError,
+                    "are_search_es_search に未知のオプションが指定されています: #{invalid_options.inspect}"
+            end
+
+            model = model_class
+            index_targets = [self]
+
+            includes_opt = options.delete(:includes)
+            results_where_opt = options.delete(:results_where)
+
+            options[:model_includes] = {
+                model => includes_opt,
+            }
+            options[:model_results_where] = {
+                model => results_where_opt,
+            }
+
+            AreSearch::MultiSearch.search(
+                index_targets,
+                query,
+                **options,
+            )
         end
 
         # 指定した ar_instance_key のドキュメントをElasticsearchから強制的にdeleteする。

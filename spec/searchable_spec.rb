@@ -279,6 +279,32 @@ RSpec.describe AreSearch::Searchable do
                 model_class.are_search_index_targets
             end.to raise_error(ArgumentError, /key は Symbol/)
         end
+
+        it "properties に予約フィールドがあればエラーにする" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            allow(model_class)
+                .to receive(:are_search_es_mappings)
+                .and_return(
+                    default: {
+                        index_settings: {
+                            max_result_window: 2_000,
+                        },
+                        properties: {
+                            title: { type: "text" },
+                            are_search_es_ar_model_class_name: { type: "keyword" },
+                        },
+                    },
+                )
+
+            expect do
+                model_class.are_search_index_targets
+            end.to raise_error(
+                ArgumentError,
+                /properties.*予約フィールドは指定できません: are_search_es_ar_model_class_name/,
+            )
+        end
     end
 
     describe ".are_search_index_target" do
@@ -316,6 +342,44 @@ RSpec.describe AreSearch::Searchable do
 
             expect(AreSearch::EsDataValidator)
                 .not_to receive(:validate)
+
+            record.are_search_es_data_validate
+        end
+
+        it "validate_es_data が true で data に予約フィールドがあれば validation error を追加する" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+            record = model_class.new
+            errors = double("errors")
+
+            allow(AreSearch)
+                .to receive(:validate_es_data)
+                .and_return(true)
+
+            allow(record)
+                .to receive(:are_search_es_data)
+                .with(:default)
+                .and_return(
+                    title: "hello",
+                    are_search_es_ar_instance_key: "123",
+                )
+
+            allow(record)
+                .to receive(:errors)
+                .and_return(errors)
+
+            allow(AreSearch::EsDataValidator)
+                .to receive(:validate)
+                .and_return([])
+
+            expect(logger)
+                .to receive(:debug) do |&block|
+                    expect(block.call).to include("予約フィールド")
+                end
+
+            expect(errors)
+                .to receive(:add)
+                .with(:base, "[Article] 検索データが不正です")
 
             record.are_search_es_data_validate
         end
@@ -558,6 +622,96 @@ RSpec.describe AreSearch::Searchable do
         end
     end
 
+    describe "#are_search_es_data_for_index!" do
+        it "Hash に予約フィールドを追加して同じ Hash を返す" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+            stub_const("SearchableArticle", model_class)
+
+            record = model_class.new
+            record.id = 123
+            index_target = model_class.are_search_index_target(:default)
+            data = { title: "hello" }
+
+            allow(record)
+                .to receive(:are_search_es_data)
+                .with(:default)
+                .and_return(data)
+
+            result = record.are_search_es_data_for_index!(index_target)
+
+            expect(result).to equal(data)
+            expect(result).to eq(
+                title: "hello",
+                AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME => "123",
+                AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => ["SearchableArticle"],
+            )
+        end
+
+        it "実体クラスから Searchable を実装した親クラスまでの名前を保存する" do
+            parent_model = build_searchable_class
+            parent_model.include(described_class)
+            child_model = Class.new(parent_model)
+            grand_child_model = Class.new(child_model)
+
+            stub_const("SearchableParent", parent_model)
+            stub_const("SearchableChild", child_model)
+            stub_const("SearchableGrandChild", grand_child_model)
+
+            record = grand_child_model.new
+            record.id = 123
+            index_target = parent_model.are_search_index_target(:default)
+
+            result = record.are_search_es_data_for_index!(index_target)
+
+            expect(
+                result[AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME],
+            ).to eq([
+                "SearchableGrandChild",
+                "SearchableChild",
+                "SearchableParent",
+            ])
+        end
+
+        it "Hash 以外なら AreSearch::Error を出す" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+            record = model_class.new
+            index_target = model_class.are_search_index_target(:default)
+
+            allow(record)
+                .to receive(:are_search_es_data)
+                .with(:default)
+                .and_return(nil)
+
+            expect do
+                record.are_search_es_data_for_index!(index_target)
+            end.to raise_error(AreSearch::Error, /Hash を返してください/)
+        end
+
+        it "予約フィールドがあれば AreSearch::Error を出す" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+            record = model_class.new
+            index_target = model_class.are_search_index_target(:default)
+
+            allow(record)
+                .to receive(:are_search_es_data)
+                .with(:default)
+                .and_return(
+                    title: "hello",
+                    are_search_es_ar_instance_key: "123",
+                )
+
+            expect do
+                record.are_search_es_data_for_index!(index_target)
+            end.to raise_error(
+                AreSearch::Error,
+                /予約フィールドは指定できません: are_search_es_ar_instance_key/,
+            )
+        end
+    end
+
     describe "#are_search_es_sync!" do
         it "destroyed でなければ index_target の alias に index する" do
             model_class = build_searchable_class
@@ -581,8 +735,8 @@ RSpec.describe AreSearch::Searchable do
                 .and_return(false)
 
             allow(record)
-                .to receive(:are_search_es_data)
-                .with(:default)
+                .to receive(:are_search_es_data_for_index!)
+                .with(index_target)
                 .and_return({ title: "hello" })
 
             expect(client)

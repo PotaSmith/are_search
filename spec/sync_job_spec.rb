@@ -3,14 +3,15 @@
 require "spec_helper"
 
 RSpec.describe AreSearch::SyncJob do
-    let(:database_name)       { "app_test" }
-    let(:ar_model_class_name) { "Article" }
-    let(:target_name)         { :default }
-    let(:ar_instance_key)     { "123" }
-    let(:es_index_name)       { "test_articles_default" }
-    let(:processing_token)    { "token-1" }
-    let(:db_config)           { double("db_config", database: current_database_name) }
-    let(:article_model)       { Class.new }
+    let(:database_name)         { "app_test" }
+    let(:ar_model_class_name)   { "Article" }
+    let(:target_name)           { :default }
+    let(:ar_instance_key)       { "123" }
+    let(:es_index_name)         { "test_articles_default" }
+    let(:processing_token)      { "token-1" }
+    let(:current_database_name) { database_name }
+    let(:db_config)             { double("db_config", database: current_database_name) }
+    let(:article_model)         { Class.new }
 
     before do
         stub_const(ar_model_class_name, article_model)
@@ -21,6 +22,21 @@ RSpec.describe AreSearch::SyncJob do
     end
 
     describe "#perform" do
+        context "model class が存在しない場合" do
+            it "constantize の例外を握りつぶさない" do
+                expect do
+                    described_class.new.perform(
+                        database_name,
+                        "MissingArticle",
+                        target_name,
+                        ar_instance_key,
+                        es_index_name,
+                        processing_token,
+                    )
+                end.to raise_error(NameError)
+            end
+        end
+
         context "Job 作成時の database_name と worker の database_name が一致する場合" do
             let(:current_database_name) { "app_test" }
 

@@ -107,7 +107,7 @@ module AreSearch
         #
         # 正常・例外のどちらでも marker 削除を試みる。
         # marker 削除に到達できない場合、または marker 削除自体が失敗した場合は marker が残る。
-        def es_reindex(es_index_name, index_settings, mappings, &block)
+        def es_reindex(es_index_name, index_settings, mappings_for_index, &block)
             validate_index_operation_enabled!
 
             locked_message = "[AreSearch] es_reindex: 別プロセスが実行中のためスキップしました (#{es_index_name})"
@@ -115,7 +115,7 @@ module AreSearch
             with_index_guard(es_index_name, locked_message, operation: "reindex") do
                 physical_es_index_name = gen_physical_es_index_name(es_index_name)
 
-                create_physical_index!(physical_es_index_name, index_settings, mappings)
+                create_physical_index!(physical_es_index_name, index_settings, mappings_for_index)
 
                 failed_ids = block.call(physical_es_index_name)
 
@@ -160,26 +160,16 @@ module AreSearch
         end
 
         def build_physical_index_entries(physical_names, current_physical_names)
-            entries = []
-
-            physical_names.sort.each do |physical_name|
-                entries << {
+            physical_names.sort.map do |physical_name|
+                {
                     name:    physical_name,
                     current: current_physical_names.include?(physical_name),
                 }
             end
-
-            entries
         end
 
         def newest_physical_index_name(physical_names)
-            timestamped_names = []
-
-            physical_names.each do |physical_name|
-                if physical_name.to_s.match?(PHYSICAL_INDEX_TIMESTAMP_SUFFIX)
-                    timestamped_names << physical_name
-                end
-            end
+            timestamped_names = physical_names.select { |physical_name| physical_name.to_s.match?(PHYSICAL_INDEX_TIMESTAMP_SUFFIX) }
 
             return timestamped_names.sort.last if timestamped_names.any?
 
@@ -248,12 +238,12 @@ module AreSearch
             raise
         end
 
-        def create_physical_index!(physical_es_index_name, index_settings, mappings)
+        def create_physical_index!(physical_es_index_name, index_settings, mappings_for_index)
             AreSearch.client.indices.create(
                 index: physical_es_index_name,
                 body: {
                     settings: AreSearch.analyzer_settings.merge(index: index_settings),
-                    mappings: mappings,
+                    mappings: mappings_for_index,
                 },
             )
         end

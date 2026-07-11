@@ -8,7 +8,7 @@ AreSearch.logger = logger
 # AreSearch.after_commit_mode = :job
 
 # インデックス操作を行う環境のみtrueにする
-AreSearch.index_operation_enabled = true
+# AreSearch.index_operation_enabled = true
 
 AreSearch.setup(
     index_prefix: "#{ConfVars.get(:are_search, :index_prefix)}_#{Rails.env}"

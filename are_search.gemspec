@@ -21,6 +21,7 @@ Gem::Specification.new do |spec|
     spec.files = Dir[
         "lib/**/*",
         "LICENSE.txt",
+        "README.ja.md",
         "README.md",
         "CHANGELOG.md",
     ]

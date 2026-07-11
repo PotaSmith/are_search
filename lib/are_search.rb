@@ -4,23 +4,24 @@ require "fileutils"
 require "securerandom"
 
 require_relative "are_search/version"
-require_relative "are_search/search_result"
 require_relative "are_search/index_marker"
 require_relative "are_search/index_target"
 require_relative "are_search/sync_request"
 require_relative "are_search/record_sync"
 require_relative "are_search/sync_job"
-require_relative "are_search/dump_body"
-require_relative "are_search/search_base"
-require_relative "are_search/search_utils"
 require_relative "are_search/index_manager"
 require_relative "are_search/reindexer"
 require_relative "are_search/es_data_validator"
 require_relative "are_search/searchable"
-require_relative "are_search/single_search"
-require_relative "are_search/multi_search"
-require_relative "are_search/more_like_this"
-require_relative "are_search/raw_search"
+
+require_relative "are_search/search/dump_body"
+require_relative "are_search/search/search_result"
+require_relative "are_search/search/search_base"
+require_relative "are_search/search/search_utils"
+require_relative "are_search/search/multi_search"
+require_relative "are_search/search/more_like_this"
+require_relative "are_search/search/raw_search"
+
 require_relative "are_search/rake_utils" if defined?(Rails::Railtie)
 require_relative "are_search/railtie" if defined?(Rails::Railtie)
 
@@ -51,6 +52,15 @@ module AreSearch
         },
     }.freeze
 
+    RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME = :are_search_es_ar_model_class_name
+    RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME = :are_search_es_ar_instance_key
+    RESERVED_ES_FIELD_NAME_SETTING = { type: 'keyword' }
+
+    RESERVED_ES_FIELD_NAMES = [
+        RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME,
+        RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME,
+    ].freeze
+
     AFTER_COMMIT_MODES = [:job, :direct, :none].freeze
 
     class Error < StandardError; end
@@ -69,6 +79,7 @@ module AreSearch
     @logger = nil
     @after_commit_mode = :direct
     @index_operation_enabled = false
+    @batch_size = 500
 
     @sync_request_process_hang_wait = 1800
     @max_force_attempt_count = 5
@@ -128,6 +139,14 @@ module AreSearch
 
     def self.index_operation_enabled=(value)
         @index_operation_enabled = value
+    end
+
+    def self.batch_size
+        @batch_size
+    end
+
+    def self.batch_size=(value)
+        @batch_size = value
     end
 
     def self.sync_request_process_hang_wait
@@ -244,23 +263,6 @@ module AreSearch
 
     def self.more_like_this(index_targets, instance, index_target, **options)
         AreSearch::MoreLikeThis.search(index_targets, instance, index_target, **options)
-    end
-
-    def self.searchable_index_names
-        Rails.application.eager_load!
-
-        es_index_names = []
-
-        ActiveRecord::Base.descendants.select { |klass| klass.include?(AreSearch::Searchable) }.each do |klass|
-            klass.are_search_index_targets.each do |index_target|
-                es_index_name = index_target.are_search_es_index_name
-                next if es_index_names.include?(es_index_name)
-
-                es_index_names << es_index_name
-            end
-        end
-
-        es_index_names
     end
 
     def self.mark_index!(es_index_name)

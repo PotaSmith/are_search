@@ -1,0 +1,360 @@
+# frozen_string_literal: true
+
+require "spec_helper"
+
+RSpec.describe AreSearch::IndexTarget do
+    let(:target_mappings) do
+        {
+            default: {
+                index_settings: {
+                    max_result_window: 2_000,
+                },
+                dynamic:    "strict",
+                properties: {
+                    id:    { type: "long" },
+                    title: { type: "text" },
+                },
+            },
+        }
+    end
+
+    let(:model_class) do
+        double(
+            "Article",
+            name:                   "Article",
+            table_name:             "articles",
+            are_search_es_mappings: target_mappings,
+        )
+    end
+
+    let(:index_target) do
+        described_class.new(model_class, :default)
+    end
+
+    describe "#are_search_es_mappings" do
+        it "index_settings を除外し予約フィールドを含めない" do
+            mappings = index_target.are_search_es_mappings
+
+            expect(mappings).to eq(
+                dynamic:    "strict",
+                properties: {
+                    id:    { type: "long" },
+                    title: { type: "text" },
+                },
+            )
+            expect(mappings[:properties]).not_to have_key(
+                AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME,
+            )
+            expect(mappings[:properties]).not_to have_key(
+                AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME,
+            )
+        end
+
+        it "properties を元定義とは別 Hash で返す" do
+            mappings = index_target.are_search_es_mappings
+
+            expect(mappings[:properties]).not_to equal(
+                target_mappings[:default][:properties],
+            )
+
+            mappings[:properties][:extra] = { type: "keyword" }
+
+            expect(target_mappings[:default][:properties]).not_to have_key(:extra)
+        end
+    end
+
+    describe "#are_search_es_mappings_for_index" do
+        it "Elasticsearch に渡す mappings にだけ予約フィールド mapping を足す" do
+            mappings_for_index = index_target.are_search_es_mappings_for_index
+
+            expect(mappings_for_index[:properties]).to include(
+                AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME =>
+                    AreSearch::RESERVED_ES_FIELD_NAME_SETTING,
+                AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME =>
+                    AreSearch::RESERVED_ES_FIELD_NAME_SETTING,
+            )
+        end
+
+        it "予約フィールド mapping を足しても元定義を汚さない" do
+            index_target.are_search_es_mappings_for_index
+
+            original_properties = target_mappings[:default][:properties]
+
+            expect(original_properties).not_to have_key(
+                AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME,
+            )
+            expect(original_properties).not_to have_key(
+                AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME,
+            )
+        end
+
+        it "予約フィールド mapping を足しても通常 mappings には混ざらない" do
+            index_target.are_search_es_mappings_for_index
+
+            mappings = index_target.are_search_es_mappings
+
+            expect(mappings[:properties]).not_to have_key(
+                AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME,
+            )
+            expect(mappings[:properties]).not_to have_key(
+                AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME,
+            )
+        end
+
+        context "properties が無い mappings" do
+            let(:target_mappings) do
+                {
+                    default: {
+                        index_settings: {
+                            max_result_window: 2_000,
+                        },
+                        dynamic: "strict",
+                    },
+                }
+            end
+
+            it "予約フィールド mapping を足さずそのまま返す" do
+                mappings_for_index = index_target.are_search_es_mappings_for_index
+
+                expect(mappings_for_index).to eq(
+                    dynamic: "strict",
+                )
+            end
+        end
+    end
+
+    describe "#are_search_es_search" do
+        before do
+            allow(model_class)
+                .to receive(:include?)
+                .with(AreSearch::Searchable)
+                .and_return(true)
+
+            allow(AreSearch)
+                .to receive(:index_prefix)
+                .and_return("test")
+
+            allow(AreSearch::IndexManager)
+                .to receive(:es_index_alias_exists?)
+                .with("test_articles_default")
+                .and_return(true)
+        end
+
+        it "単一 target とAR用オプションを MultiSearch 用へ変換する" do
+            includes = [:user, :tags]
+            results_where = { published: true }
+
+            expect(AreSearch::MultiSearch)
+                .to receive(:search) do |index_targets, query, **actual_options|
+                    expect(index_targets).to eq([index_target])
+                    expect(query).to eq("Rails")
+                    expect(actual_options).to eq(
+                        fields:              [:title],
+                        model_includes:      { model_class => includes },
+                        model_results_where: { model_class => results_where },
+                    )
+
+                    :search_result
+                end
+
+            result = index_target.are_search_es_search(
+                "Rails",
+                fields:        [:title],
+                includes:      includes,
+                results_where: results_where,
+            )
+
+            expect(result).to eq(:search_result)
+        end
+
+        it "未指定のAR用オプションも対象モデルのHashへ変換する" do
+            expect(AreSearch::MultiSearch)
+                .to receive(:search) do |_index_targets, _query, **actual_options|
+                    expect(actual_options[:model_includes]).to eq(
+                        model_class => nil,
+                    )
+                    expect(actual_options[:model_results_where]).to eq(
+                        model_class => nil,
+                    )
+
+                    :search_result
+                end
+
+            result = index_target.are_search_es_search(
+                "Rails",
+                fields: [:title],
+            )
+
+            expect(result).to eq(:search_result)
+        end
+
+        it "複数モデル用のARオプションは受け付けない" do
+            expect do
+                index_target.are_search_es_search(
+                    "Rails",
+                    fields:         [:title],
+                    model_includes: { model_class => [:user] },
+                )
+            end.to raise_error(ArgumentError, /未知のオプション.*model_includes/)
+
+            expect do
+                index_target.are_search_es_search(
+                    "Rails",
+                    fields:              [:title],
+                    model_results_where: { model_class => { published: true } },
+                )
+            end.to raise_error(ArgumentError, /未知のオプション.*model_results_where/)
+        end
+
+        it "同じ検索オプションを渡した MultiSearch と同じ ES body を作る" do
+            search_options = {
+                fields: {
+                    title: 2.0,
+                },
+                where: {
+                    id: 1,
+                },
+                where_not: [
+                    { field: :id, value: 2 },
+                ],
+                where_or: [
+                    { field: :id, value: [3, 4], boost: 1.5 },
+                ],
+                aggs: [:id],
+                page: 2,
+                per_page: 20,
+                sort: { id: :desc },
+                highlight: {
+                    fields: [:title],
+                },
+            }
+
+            shortcut_body = index_target.are_search_es_search(
+                AreSearch::DumpBody,
+                **search_options,
+            )
+
+            multi_search_body = AreSearch::MultiSearch.search(
+                [index_target],
+                AreSearch::DumpBody,
+                **search_options,
+                model_includes: { model_class => nil },
+                model_results_where: { model_class => nil },
+            )
+
+            expect(shortcut_body).to eq(multi_search_body)
+        end
+    end
+
+    describe "#are_search_es_delete!" do
+        let(:searchable_model_class) do
+            Class.new do
+                def self.table_name
+                    "articles"
+                end
+
+                def self.are_search_es_mappings
+                    {
+                        default: {
+                            index_settings: {
+                                max_result_window: 2_000,
+                            },
+                            properties: {
+                                title: { type: "text" },
+                            },
+                        },
+                    }
+                end
+            end
+        end
+
+        let(:searchable_index_target) do
+            described_class.new(searchable_model_class, :default)
+        end
+
+        let(:client) do
+            double("client")
+        end
+
+        before do
+            allow(AreSearch)
+                .to receive(:index_prefix)
+                .and_return("test")
+            allow(AreSearch)
+                .to receive(:client)
+                .and_return(client)
+        end
+
+        it "指定した id を alias から delete する" do
+            expect(client)
+                .to receive(:delete)
+                .with(index: "test_articles_default", id: "123")
+                .and_return("result" => "deleted")
+
+            result = searchable_index_target.are_search_es_delete!(123)
+
+            expect(result).to eq("result" => "deleted")
+        end
+
+        it "NotFound は無視する" do
+            allow(client)
+                .to receive(:delete)
+                .and_raise(Elastic::Transport::Transport::Errors::NotFound)
+
+            expect do
+                searchable_index_target.are_search_es_delete!(123)
+            end.not_to raise_error
+        end
+
+        it "NotFound 以外の例外は伝播する" do
+            allow(client)
+                .to receive(:delete)
+                .and_raise(RuntimeError, "delete failed")
+
+            expect do
+                searchable_index_target.are_search_es_delete!(123)
+            end.to raise_error(RuntimeError, "delete failed")
+        end
+    end
+
+    describe "#are_search_es_sync" do
+        let(:searchable_model_class) do
+            Class.new do
+                def self.table_name
+                    "articles"
+                end
+            end
+        end
+
+        let(:searchable_index_target) do
+            described_class.new(searchable_model_class, :default)
+        end
+
+        before do
+            stub_const("Article", searchable_model_class)
+
+            allow(AreSearch)
+                .to receive(:index_prefix)
+                .and_return("test")
+        end
+
+        it "RecordSync.sync に target_name と index 名と processing_token を渡す" do
+            allow(SecureRandom)
+                .to receive(:uuid)
+                .and_return("token-1")
+
+            expect(AreSearch::RecordSync)
+                .to receive(:sync)
+                .with(
+                    "Article",
+                    :default,
+                    "123",
+                    "test_articles_default",
+                    "token-1",
+                    reraise: true,
+                )
+
+            searchable_index_target.are_search_es_sync("123", reraise: true)
+        end
+    end
+end

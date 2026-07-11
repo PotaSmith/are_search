@@ -52,6 +52,42 @@ module AreSearch
             true
         end
 
+        # Elasticsearch に投入する data を取得し、
+        # AreSearch 予約フィールドが利用側 data に含まれていないことを確認する。
+        # validate_es_data = false の場合でも、ES投入直前では必ずこの検査を通す。
+        def are_search_es_data_for_index!(index_target)
+            data = are_search_es_data(index_target.target_name)
+
+            unless data.instance_of?(Hash)
+                raise AreSearch::Error,
+                    "#{self.class.name}#are_search_es_data(#{index_target.target_name.inspect}) は Hash を返してください"
+            end
+
+            reserved_data_field_names = AreSearch::EsDataValidator.reserved_data_field_names(data)
+
+            unless reserved_data_field_names.empty?
+                raise AreSearch::Error,
+                    "#{self.class.name}#are_search_es_data(#{index_target.target_name.inspect}) に AreSearch の予約フィールドは指定できません: #{reserved_data_field_names.join(", ")}"
+            end
+
+            # 親クラス全部拾う
+            model_class_names = []
+
+            current_model_class = self.class
+            while current_model_class
+                if current_model_class.include?(AreSearch::Searchable)
+                    model_class_names << current_model_class.name
+                end
+
+                current_model_class = current_model_class.superclass
+            end
+
+            data[AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME] = model_class_names
+            data[AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME] = self.id.to_s
+
+            data
+        end
+
         # このレコードの現在の状態を Elasticsearch へ直接反映する。
         # destroyed? の場合は delete、それ以外の場合は index を実行する。
         #
@@ -68,7 +104,7 @@ module AreSearch
                 AreSearch.client.index(
                     index: index_target.are_search_es_index_name,
                     id:    id.to_s,
-                    body:  are_search_es_data(index_target.target_name),
+                    body:  are_search_es_data_for_index!(index_target),
                 )
             end
         end
@@ -88,6 +124,15 @@ module AreSearch
                 data     = are_search_es_data(index_target.target_name)
 
                 violations = AreSearch::EsDataValidator.validate(mappings, data)
+
+                if data.instance_of?(Hash)
+                    reserved_data_field_names = AreSearch::EsDataValidator.reserved_data_field_names(data)
+
+                    unless reserved_data_field_names.empty?
+                        violations << "are_search_es_data(#{index_target.target_name.inspect}) に AreSearch の予約フィールドは指定できません: #{reserved_data_field_names}"
+                    end
+                end
+
                 next if violations.empty?
 
                 AreSearch.logger.debug { "[AreSearch] data/mappings 不整合 #{self.class.name} #{id || 'new'}: #{violations.inspect}" }
@@ -174,11 +219,8 @@ module AreSearch
 
                 are_search_validate_es_mappings_by_target!
 
-                targets = []
-
-                are_search_es_mappings.keys.each do |target_name|
-                    targets << AreSearch::IndexTarget.new(self, target_name)
-                end
+                target_names = are_search_es_mappings.keys
+                targets = target_names.map { |target_name| AreSearch::IndexTarget.new(self, target_name) }
 
                 @are_search_index_targets = targets.freeze
             end
@@ -281,6 +323,14 @@ module AreSearch
 
                     if target_mappings.key?(:properties) && target_mappings[:properties].instance_of?(Hash) == false
                         errors << "#{name}.are_search_es_mappings[#{target_name.inspect}][:properties] は Hash で指定してください"
+                    end
+
+                    if target_mappings.key?(:properties) && target_mappings[:properties].instance_of?(Hash)
+                        reserved_data_field_names = AreSearch::EsDataValidator.reserved_data_field_names(target_mappings[:properties])
+
+                        reserved_data_field_names.each do |reserved_field_name|
+                            errors << "#{name}.are_search_es_mappings[#{target_name.inspect}][:properties] に AreSearch の予約フィールドは指定できません: #{reserved_field_name}"
+                        end
                     end
 
                     violations = AreSearch::EsDataValidator.validate_mapping_symbol_keys(target_mappings)

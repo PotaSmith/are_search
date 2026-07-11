@@ -252,6 +252,32 @@ RSpec.describe AreSearch::IndexManager do
             expect(deleted_indices).to eq([es_index_name])
         end
 
+        it "旧方式の同名実体 index の削除に失敗した場合は marker を削除して例外を再送出する" do
+            allow(indices)
+                .to receive(:exists)
+                .with(index: es_index_name)
+                .and_return(true)
+
+            allow(indices)
+                .to receive(:delete)
+                .with(index: es_index_name)
+                .and_raise(RuntimeError, "delete failed")
+
+            allow(indices).to receive(:create)
+
+            expect(indices).not_to receive(:update_aliases)
+
+            expect do
+                described_class.es_reindex(es_index_name, index_settings, mappings) do
+                    []
+                end
+            end.to raise_error(RuntimeError, "delete failed")
+
+            marker = AreSearch::IndexMarker.find_by(es_index_name: es_index_name)
+
+            expect(marker).to eq(nil)
+        end
+
         it "処理中に例外が出た場合も marker を削除して例外を再送出する" do
             allow(indices)
                 .to receive(:exists)
@@ -266,6 +292,34 @@ RSpec.describe AreSearch::IndexManager do
                     raise "bulk failed"
                 end
             end.to raise_error(RuntimeError, "bulk failed")
+
+            marker = AreSearch::IndexMarker.find_by(es_index_name: es_index_name)
+
+            expect(marker).to eq(nil)
+        end
+
+        it "alias 切り替えで例外が出た場合も marker を削除して例外を再送出する" do
+            allow(indices)
+                .to receive(:exists)
+                .with(index: es_index_name)
+                .and_return(false)
+
+            allow(indices).to receive(:create)
+
+            allow(indices)
+                .to receive(:get_alias)
+                .with(name: es_index_name)
+                .and_raise(Elastic::Transport::Transport::Errors::NotFound)
+
+            allow(indices)
+                .to receive(:update_aliases)
+                .and_raise(RuntimeError, "alias failed")
+
+            expect do
+                described_class.es_reindex(es_index_name, index_settings, mappings) do
+                    []
+                end
+            end.to raise_error(RuntimeError, "alias failed")
 
             marker = AreSearch::IndexMarker.find_by(es_index_name: es_index_name)
 

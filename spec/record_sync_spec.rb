@@ -304,6 +304,48 @@ RSpec.describe AreSearch::RecordSync do
             expect(AreSearch::SyncRequest.find(sync_request.id).processing_token).to eq(nil)
         end
 
+        it "index_target_name が異なる場合は retry_count を増やさない" do
+            sync_request = create_sync_request(index_target_name: "archive")
+
+            expect(model).not_to receive(:find_by)
+
+            result = described_class.sync_with_request(
+                index_target,
+                sync_request,
+                processing_token,
+                on_rake: true,
+            )
+
+            reloaded = AreSearch::SyncRequest.find(sync_request.id)
+
+            expect(result).to eq(false)
+            expect(reloaded.retry_count).to eq(0)
+            expect(reloaded.last_error).to eq("index_target_name not match")
+        end
+
+        it "es_index_name が異なる場合は retry_count を増やさない" do
+            sync_request = create_sync_request
+
+            allow(index_target)
+                .to receive(:are_search_es_index_name)
+                .and_return("test_articles_v2_default")
+
+            expect(model).not_to receive(:find_by)
+
+            result = described_class.sync_with_request(
+                index_target,
+                sync_request,
+                processing_token,
+                on_rake: true,
+            )
+
+            reloaded = AreSearch::SyncRequest.find(sync_request.id)
+
+            expect(result).to eq(false)
+            expect(reloaded.retry_count).to eq(0)
+            expect(reloaded.last_error).to eq("es_index_name not match")
+        end
+
         it "別 token で処理中の sync request は取得しない" do
             sync_request = create_sync_request(
                 processing_token: "other-token",
@@ -404,6 +446,81 @@ RSpec.describe AreSearch::RecordSync do
             expect(reloaded.force_attempted).to eq(true)
             expect(reloaded.processing_token).to eq(nil)
             expect(reloaded.processing_at).to eq(nil)
+        end
+    end
+
+    describe ".try_force" do
+        it "processing_token が残った sync request を強制同期し force 系カラムだけ更新する" do
+            sync_request = create_sync_request(
+                processing_token:    "token-1",
+                processing_at:       1.hour.ago,
+                force_attempt_count: 1,
+            )
+
+            allow(model)
+                .to receive(:find_by)
+                .with(id: ar_instance_key)
+                .and_return(record)
+
+            expect(record)
+                .to receive(:are_search_es_sync!)
+                .with(index_target)
+
+            result = described_class.try_force(index_target, sync_request)
+
+            reloaded = AreSearch::SyncRequest.find(sync_request.id)
+
+            expect(result).to eq(true)
+            expect(reloaded.force_attempted).to eq(true)
+            expect(reloaded.force_attempted_at).not_to eq(nil)
+            expect(reloaded.force_attempt_count).to eq(2)
+            expect(reloaded.processing_token).to eq("token-1")
+            expect(reloaded.processing_at).not_to eq(nil)
+        end
+
+        it "force 同期で例外が出た場合は retry_count を増やさず last_error を更新する" do
+            sync_request = create_sync_request(
+                processing_token:    "token-1",
+                processing_at:       1.hour.ago,
+                force_attempt_count: 0,
+            )
+            error = RuntimeError.new("sync failed")
+
+            allow(model)
+                .to receive(:find_by)
+                .with(id: ar_instance_key)
+                .and_return(record)
+
+            allow(record)
+                .to receive(:are_search_es_sync!)
+                .with(index_target)
+                .and_raise(error)
+
+            result = described_class.try_force(index_target, sync_request)
+
+            reloaded = AreSearch::SyncRequest.find(sync_request.id)
+
+            expect(result).to eq(false)
+            expect(reloaded.retry_count).to eq(0)
+            expect(reloaded.last_error).to eq("sync failed")
+            expect(reloaded.force_attempted).to eq(true)
+            expect(reloaded.force_attempt_count).to eq(1)
+            expect(reloaded.processing_token).to eq("token-1")
+        end
+
+        it "processing_token が無い場合は同期本体を実行しない" do
+            sync_request = create_sync_request
+
+            expect(model).not_to receive(:find_by)
+            expect(record).not_to receive(:are_search_es_sync!)
+
+            result = described_class.try_force(index_target, sync_request)
+
+            reloaded = AreSearch::SyncRequest.find(sync_request.id)
+
+            expect(result).to eq(true)
+            expect(reloaded.force_attempted).to eq(false)
+            expect(reloaded.force_attempt_count).to eq(0)
         end
     end
 end
