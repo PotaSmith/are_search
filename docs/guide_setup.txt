@@ -26,7 +26,13 @@ Gemfile に追加する。
     lib/tasks/are_search_retry_alert.rake
 
 ------ 注意 ------
-are_search_sync_requests と are_search_index_markers は、検索対象モデルと同じデータベースに作成する。
+AreSearch が対象とするデータベースは PostgreSQL。
+
+are_search_sync_requests と are_search_index_markers は、検索対象モデルと同じ PostgreSQL データベースに作成する。
+検索対象レコードの変更と sync request の作成を同一トランザクションに含めるため、are_search_sync_requests を別データベースへ分離しない。
+同一データベースにある限り、検索対象レコードの変更だけが commit され、対応する sync request が存在しない状態は、Rails または PostgreSQL のトランザクション機能自体に不具合がない限り、ありえない。
+
+are_search_index_markers も同じデータベースに置き、すべてのアプリケーションプロセスから同じ index 操作状態を参照できるようにする。
 
 
 # 2. イニシャライザ

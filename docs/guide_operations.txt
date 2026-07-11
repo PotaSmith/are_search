@@ -148,6 +148,18 @@ unmark 操作が削除するのは manual marker だけ。
     AreSearch.sync_request_process_hang_wait
     AreSearch.max_force_attempt_count
 
+現在残っている sync request と marker の状況を確認する。
+
+    bundle exec rake are_search:check_sync_request_status
+
+以下を表示する。
+
+    現在存在する index marker
+    モデル別の sync request 件数とエラー件数
+    テーブル名・エラー内容別の件数上位20件
+
+各表は端末上で列位置が揃う固定幅で出力する。
+
 通知用の生成タスク。
 
     bundle exec rake are_search:alert_retry_exceeded
@@ -184,19 +196,44 @@ Searchable のコールバックと、are_search_es_mappings / are_search_es_dat
     3. alias と物理 index の状態を確認する
 
 
-## 8-3. bulk 更新後に検索結果が合わない
+## 8-3. コールバックを通らない更新後に検索結果が合わない
 ----------------------------------------------------------------
 
-update_all、delete_all、insert_all、upsert_all は ActiveRecord コールバックを通らない。
-対象レコードが存在する場合は直接同期し、削除済みの場合は直接削除する。
-件数が多い場合は reindex を使用する。
+update_columns、update_all、delete_all、insert_all、upsert_all、SQLの直接実行は ActiveRecord コールバックを通らない。
+そのため、通常 save と同じ同期経路を使う場合は、DB更新と sync request の作成を同じトランザクション内で行い、commit 後に are_search_after_commit を呼ぶ。
+
+    article = Article.find(id)
+
+    Article.transaction do
+        article.update_columns(
+            title:      "変更後のタイトル",
+            updated_at: Time.zone.now,
+        )
+
+        article.are_search_enqueue_es_sync_request
+    end
+
+    article.are_search_after_commit
+
+after_commit_mode = :none の場合、are_search_after_commit は同期を開始しない。
+sync request は残るため、定期実行している run_sync_requests が後から処理する。
+
+    bundle exec rake are_search:run_sync_requests
+
+sync request を経由せず、その場で Elasticsearch へ直接反映する場合。
 
     index_target = Article.are_search_index_target(:default)
     article = Article.find(id)
 
     article.are_search_es_sync!(index_target)
 
+削除済みレコードを直接削除する場合。
+
     index_target.are_search_es_delete!(id)
+
+直接反映は sync request、再試行、状態確認の経路を通らない。
+通常同期と同じ保証が必要な場合は、are_search_enqueue_es_sync_request と are_search_after_commit を使用する。
+件数が多い場合は reindex を使用する。
 
     index_target.are_search_es_reindex
 

@@ -302,31 +302,84 @@ commit 後の処理は after_commit_mode に従う。
 失敗した sync request は残り、run_sync_requests で再処理できる。
 
 
-## 5-1. コールバックを通らない更新
+## 5-1. DB更新とsync requestのトランザクション保証
 ----------------------------------------------------------------
 
-以下は sync request を作成しない。
+通常の保存・touch・削除では、検索対象レコードの変更と sync request の作成を、同じ PostgreSQL データベースの同一トランザクション内で行う。
 
-    update_all
-    delete_all
-    insert_all
-    upsert_all
+    トランザクション内
+        検索対象レコードを変更
+        are_search_sync_requests を作成または更新
 
-更新後のレコードを個別反映する場合。
+    commit後
+        after_commit_mode に従って同期を開始
 
-    index_target = Article.are_search_index_target(:default)
+検索対象モデルと are_search_sync_requests が同じデータベースに存在する限り、次の状態は、Rails または PostgreSQL のトランザクション機能自体に不具合がない限り、ありえない。
+
+    検索対象レコードの変更だけが commit されている
+    その変更に対応する sync request が存在しない
+
+after_commit は sync request を作成する場所ではない。
+sync request は commit 前に作成済みであり、after_commit は直接同期または Job 登録を開始する。
+そのため、after_commit、Job 登録、Elasticsearch 同期のいずれかが失敗しても sync request は残る。
+
+この保証の対象は、AreSearch::Searchable の ActiveRecord コールバックを通る保存・touch・削除。
+update_columns、update_all、delete_all、insert_all、upsert_all、SQLの直接実行などは、利用側で同期要求を作成する必要がある。
+
+
+## 5-2. コールバックを通らない更新を通常同期に乗せる
+----------------------------------------------------------------
+
+update_columns などで ActiveRecord コールバックを通さずに更新した場合でも、are_search_enqueue_es_sync_request と are_search_after_commit を呼ぶことで、通常の save と同じ同期経路へ乗せられる。
+
+DB更新と sync request の作成は、必ず同じトランザクション内で行う。
+are_search_after_commit は、そのトランザクションが commit した後に呼ぶ。
+
     article = Article.find(id)
 
-    article.are_search_es_sync!(index_target)
+    Article.transaction do
+        article.update_columns(
+            title:      "変更後のタイトル",
+            updated_at: Time.zone.now,
+        )
 
-削除済みレコードを個別反映する場合。
+        article.are_search_enqueue_es_sync_request
+    end
 
-    index_target.are_search_es_delete!(id)
+    article.are_search_after_commit
 
-件数が多い場合は reindex を使用する。
+これにより、通常の save と同じ順序になる。
+
+    トランザクション内
+        DBレコードを更新
+        sync requestを作成
+
+    commit後
+        are_search_after_commit
+
+are_search_after_commit の動作は after_commit_mode に従う。
+
+    :direct
+        その場で同期する。
+
+    :job
+        AreSearch::SyncJob を登録する。
+
+    :none
+        何もしない。
+        sync request は残り、run_sync_requests が後から処理する。
+
+after_commit_mode = :none の場合も、DB更新と are_search_enqueue_es_sync_request のトランザクション構造は同じ。
+are_search_after_commit を呼んでも同期処理は開始せず、sync request の回収は run_sync_requests に任せる。
+
+are_search_enqueue_es_sync_request を DB更新とは別のトランザクションで呼ぶと、その間に処理が停止した場合、DB更新だけが確定して同期要求が作成されない可能性がある。
+通常 save と同じ保証が必要な場合は、必ず上記の構造にする。
+外側のトランザクションがある場合、are_search_after_commit は最外トランザクションの commit 後に呼ぶ。
+
+update_all、delete_all、insert_all、upsert_all など複数件を変更する処理では、対象レコードごとに同期要求を作成するか、件数に応じて reindex を使用する。
 
 
-## 5-2. are_search_es_sync
+## 5-3. are_search_es_sync
 ----------------------------------------------------------------
 
 既存の sync request 1件を処理するためのメソッド。

@@ -30,6 +30,16 @@ sync request、index marker、rake タスク、アラートメールを通じて
 何が正常で、何が未処理・失敗・固着・index 操作中なのかを、アプリ運用者が判断できるようにします。
 
 
+## PostgreSQL と同期要求の保証
+
+AreSearch が対象とするデータベースは PostgreSQL です。
+
+検索対象レコードの変更と `are_search_sync_requests` への同期要求の記録は、同じ PostgreSQL データベースの同一トランザクション内で行います。
+そのため、検索対象モデルと `are_search_sync_requests` が同じデータベースに存在する限り、「検索対象レコードの変更だけが commit され、その変更を Elasticsearch へ反映するための sync request が存在しない」という状態は、Rails または PostgreSQL のトランザクション機能自体に不具合がない限り、ありえません。
+
+`after_commit` での直接同期、Job の登録、Elasticsearch への同期に失敗した場合でも、sync request は PostgreSQL に残ります。残った要求は rake タスクから再処理できます。
+
+
 ## 使っている index を reindex しない
 
 AreSearch は、動いている本番 index に検索改善の reindex を直接かける設計を避けます。

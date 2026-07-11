@@ -30,6 +30,16 @@ Through sync requests, index markers, rake tasks, and alert emails, it leaves vi
 It is designed so that application operators can determine what is normal, what is pending, what failed, what is stuck, and what is currently under index operation.
 
 
+## PostgreSQL and synchronization guarantees
+
+AreSearch targets PostgreSQL as its Active Record database.
+
+Changes to searchable records and the corresponding synchronization requests in `are_search_sync_requests` are written in the same transaction on the same PostgreSQL database.
+As long as the searchable models and `are_search_sync_requests` use the same database, a state where a record change is committed without a sync request for reflecting that change in Elasticsearch cannot occur unless the transaction mechanism in Rails or PostgreSQL itself is faulty.
+
+Even if direct synchronization from `after_commit`, job enqueueing, or Elasticsearch synchronization fails, the sync request remains in PostgreSQL and can be processed later by the rake task.
+
+
 ## Do not reindex an index that is being used
 
 AreSearch avoids directly reindexing a running production index for search improvements.
