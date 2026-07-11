@@ -7,6 +7,7 @@ require "fileutils"
 # bundle exec rake are_search:unmark_all
 # bundle exec rake are_search:clean_up_all
 # bundle exec rake are_search:check_index_status
+# bundle exec rake are_search:check_sync_request_status
 # bundle exec rake are_search:reindex_all_for_es_version_up
 # bundle exec rake are_search:check_all_models
 
@@ -264,6 +265,78 @@ namespace :are_search do
                 puts "    elasticsearch: failed #{e.class}: #{e.message}"
             end
         end
+    end
+
+
+    desc "are_search_sync_requests の marker・件数・エラー内容を表示する"
+    task check_sync_request_status: :environment do
+        Rails.application.eager_load!
+
+        puts "-------------------------------------------------------------------------"
+        puts "[AreSearch] sync request status"
+        puts "-------------------------------------------------------------------------"
+        puts "マーカー状況"
+        puts ""
+
+        marker_rows = AreSearch::RakeUtils.index_marker_status_rows
+        if marker_rows.empty?
+            puts "なし"
+        else
+            marker_headers = [
+                "ESインデックス名",
+                "操作",
+                "開始日時",
+                "ホスト",
+                "PID",
+                "メッセージ",
+            ]
+
+            AreSearch::RakeUtils.fixed_width_table_lines(marker_headers, marker_rows).each do |line|
+                puts line
+            end
+        end
+
+        puts ""
+        puts "-------------------------------------------------------------------------"
+        puts "リクエスト数"
+        puts ""
+
+        request_rows = AreSearch::RakeUtils.sync_request_status_rows
+        if request_rows.empty?
+            puts "なし"
+        else
+            request_headers = [
+                "テーブル名",
+                "モデル",
+                "データ数",
+                "エラー数",
+            ]
+
+            AreSearch::RakeUtils.fixed_width_table_lines(request_headers, request_rows).each do |line|
+                puts line
+            end
+        end
+
+        puts ""
+        puts "-------------------------------------------------------------------------"
+        puts "エラー内容 トップ20"
+        puts ""
+
+        error_rows = AreSearch::RakeUtils.sync_request_error_status_rows(20)
+        if error_rows.empty?
+            puts "なし"
+        else
+            error_headers = [
+                "テーブル名",
+                "内容",
+                "件数",
+            ]
+
+            AreSearch::RakeUtils.fixed_width_table_lines(error_headers, error_rows).each do |line|
+                puts line
+            end
+        end
+        puts ""
     end
 
 

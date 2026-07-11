@@ -21,6 +21,129 @@ module AreSearch
             es_index_names
         end
 
+        # 現在残っている index marker を状態確認用の行データとして返す。
+        def index_marker_status_rows
+            rows = []
+
+            AreSearch::IndexMarker.order(:es_index_name, :id).each do |marker|
+                started_at = ""
+                if marker.started_at != nil
+                    started_at = marker.started_at.strftime("%Y-%m-%d %H:%M:%S")
+                end
+
+                rows << [
+                    marker.es_index_name.to_s,
+                    marker.operation.to_s,
+                    started_at,
+                    marker.owner_host.to_s,
+                    marker.owner_pid.to_s,
+                    marker.message.to_s,
+                ]
+            end
+
+            rows
+        end
+
+        # sync request をモデル単位で集計し、テーブル名・モデル名・総数・エラー数を返す。
+        def sync_request_status_rows
+            total_counts = AreSearch::SyncRequest
+                .group(:ar_model_class_name)
+                .count
+
+            error_counts = AreSearch::SyncRequest
+                .where.not(last_error: [nil, ""])
+                .group(:ar_model_class_name)
+                .count
+
+            rows = []
+
+            total_counts.each do |model_class_name, data_count|
+                rows << [
+                    sync_request_model_table_name(model_class_name),
+                    model_class_name.to_s,
+                    data_count.to_s,
+                    error_counts.fetch(model_class_name, 0).to_s,
+                ]
+            end
+
+            rows.sort_by! { |row| [row[0], row[1]] }
+
+            rows
+        end
+
+        # sync request のエラーをテーブル名と内容で集計し、件数上位を返す。
+        def sync_request_error_status_rows(limit)
+            model_error_counts = AreSearch::SyncRequest
+                .where.not(last_error: [nil, ""])
+                .group(:ar_model_class_name, :last_error)
+                .count
+
+            table_error_counts = {}
+
+            model_error_counts.each do |group_values, count|
+                model_class_name = group_values[0]
+                last_error = group_values[1]
+                table_name = sync_request_model_table_name(model_class_name)
+                table_error_key = [table_name, last_error.to_s]
+
+                if table_error_counts.key?(table_error_key) == false
+                    table_error_counts[table_error_key] = 0
+                end
+
+                table_error_counts[table_error_key] += count
+            end
+
+            rows = []
+
+            table_error_counts.each do |table_error_key, count|
+                rows << [
+                    table_error_key[0],
+                    table_error_key[1],
+                    count.to_s,
+                ]
+            end
+
+            rows.sort_by! do |row|
+                [-row[2].to_i, row[0], row[1]]
+            end
+
+            rows.first(limit)
+        end
+
+        # 各列の表示幅を揃えた文字列の行を返す。
+        # 日本語を含む文字は端末上で2桁幅として扱う。
+        def fixed_width_table_lines(headers, rows)
+            all_rows = [headers]
+            rows.each do |row|
+                all_rows << row
+            end
+
+            widths = Array.new(headers.length, 0)
+
+            all_rows.each do |row|
+                row.each_with_index do |value, index|
+                    value_width = terminal_display_width(value.to_s)
+                    if value_width > widths[index]
+                        widths[index] = value_width
+                    end
+                end
+            end
+
+            lines = []
+
+            all_rows.each do |row|
+                cells = []
+
+                row.each_with_index do |value, index|
+                    cells << fixed_width_cell(value.to_s, widths[index])
+                end
+
+                lines << cells.join("  ").rstrip
+            end
+
+            lines
+        end
+
         def model_check(klass, errors)
             puts "are_search_es_data method_defined : #{klass.method_defined?(:are_search_es_data)}"
 
@@ -183,6 +306,43 @@ module AreSearch
             ActiveRecord::Base.descendants.select do |model|
                 model.include?(AreSearch::Searchable)
             end
+        end
+
+        private
+
+        # sync request のモデル名からテーブル名を取得する。
+        # モデルを解決できない場合はハイフンを返す。
+        def sync_request_model_table_name(model_class_name)
+            model = model_class_name.to_s.safe_constantize
+
+            if model != nil && model.respond_to?(:table_name)
+                return model.table_name.to_s
+            end
+
+            "-"
+        end
+
+        # 端末表示上の文字幅を返す。
+        # ASCII は1桁、それ以外は日本語表示を前提に2桁として数える。
+        def terminal_display_width(value)
+            width = 0
+
+            value.each_char do |character|
+                if character.ascii_only?
+                    width += 1
+                else
+                    width += 2
+                end
+            end
+
+            width
+        end
+
+        # 指定された表示幅になるまで末尾へ空白を追加する。
+        def fixed_width_cell(value, width)
+            padding_size = width - terminal_display_width(value)
+
+            value + (" " * padding_size)
         end
     end
 end

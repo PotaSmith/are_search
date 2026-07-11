@@ -24,14 +24,16 @@ RSpec.describe "are_search rake tasks" do
     let(:article_model) do
         class_double(
             "Article",
-            name: "Article",
+            name:                   "Article",
+            table_name:             "articles",
             are_search_index_targets: [article_index_target],
         )
     end
     let(:document_model) do
         class_double(
             "Document",
-            name: "Document",
+            name:                   "Document",
+            table_name:             "documents",
             are_search_index_targets: [document_index_target],
         )
     end
@@ -361,6 +363,117 @@ RSpec.describe "are_search rake tasks" do
             ).to_stdout
         end
     end
+
+    describe "are_search:check_sync_request_status" do
+        it "marker・モデル別件数・テーブル別エラー上位20件を固定幅で出力する" do
+            article_archive_model = class_double(
+                "ArticleArchive",
+                name:       "ArticleArchive",
+                table_name: "articles",
+            )
+            stub_const("ArticleArchive", article_archive_model)
+
+            AreSearch::IndexMarker.create!(
+                es_index_name: "test_articles_default",
+                operation:     "manual",
+                owner_token:   SecureRandom.uuid,
+                owner_host:    "test-host",
+                owner_pid:     12345,
+                started_at:    Time.zone.parse("2026-07-11 10:20:30"),
+                message:       "maintenance",
+            )
+
+            create_sync_request(
+                ar_instance_key: "1",
+                last_error:     "index marked",
+            )
+            create_sync_request(
+                ar_instance_key: "2",
+                last_error:     "index marked",
+            )
+            create_sync_request(
+                ar_instance_key: "3",
+            )
+            create_sync_request(
+                ar_model_class_name: "ArticleArchive",
+                ar_instance_key:     "4",
+                last_error:          "index marked",
+            )
+            create_sync_request(
+                ar_model_class_name: "Document",
+                ar_instance_key:     "5",
+                es_index_name:       "test_documents_default",
+                last_error:          "timeout",
+            )
+
+            expected_output = <<~OUTPUT
+                ---------------
+                マーカー状況
+
+                ESインデックス名       操作    開始日時             ホスト     PID    メッセージ
+                test_articles_default  manual  2026-07-11 10:20:30  test-host  12345  maintenance
+
+                ---------------
+                リクエスト数
+
+                テーブル名  モデル          データ数  エラー数
+                articles    Article         3         2
+                articles    ArticleArchive  1         1
+                documents   Document        1         1
+
+                ---------------
+                エラー内容 トップ20
+
+                テーブル名  内容          件数
+                articles    index marked  3
+                documents   timeout       1
+            OUTPUT
+
+            expect do
+                Rake::Task["are_search:check_sync_request_status"].invoke
+            end.to output(expected_output).to_stdout
+        end
+
+        it "marker・sync request・エラーが無い場合は各区分に、なしと出力する" do
+            expected_output = <<~OUTPUT
+                ---------------
+                マーカー状況
+
+                なし
+
+                ---------------
+                リクエスト数
+
+                なし
+
+                ---------------
+                エラー内容 トップ20
+
+                なし
+            OUTPUT
+
+            expect do
+                Rake::Task["are_search:check_sync_request_status"].invoke
+            end.to output(expected_output).to_stdout
+        end
+
+        it "エラー内容は件数順の上位20件だけを返す" do
+            21.times do |index|
+                create_sync_request(
+                    ar_instance_key: index.to_s,
+                    last_error:     "error #{index.to_s.rjust(2, '0')}",
+                )
+            end
+
+            rows = AreSearch::RakeUtils.sync_request_error_status_rows(20)
+
+            expect(rows.length).to eq(20)
+            expect(rows[0]).to eq(["articles", "error 00", "1"])
+            expect(rows[19]).to eq(["articles", "error 19", "1"])
+            expect(rows).not_to include(["articles", "error 20", "1"])
+        end
+    end
+
 
     describe "are_search:mark_all" do
         it "manual marker を作成し、既存 marker がある index はスキップする" do
