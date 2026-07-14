@@ -5,6 +5,7 @@
 
 ## [Unreleased]
 
+- clean_up / index status が別 target の物理 index を前方一致で拾う不具合を修正
 - index target単位で flock と marker を取得してブロックを実行する `are_search_es_with_index_guard` を追加
 
 ## [0.3.1] - 2026-07-14

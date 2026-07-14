@@ -84,10 +84,10 @@ RSpec.describe AreSearch::IndexManager do
             expect(result).to eq("test_articles")
         end
 
-        it "timestamp 形式でなければ元の index 名を返す" do
+        it "timestamp 形式でなければ nil を返す" do
             result = described_class.es_alias_name_from_index_name("test_articles_20260703031000")
 
-            expect(result).to eq("test_articles_20260703031000")
+            expect(result).to eq(nil)
         end
     end
 
@@ -123,6 +123,44 @@ RSpec.describe AreSearch::IndexManager do
             result = described_class.es_get_alias_physical_names(es_index_name)
 
             expect(result).to eq([])
+        end
+    end
+
+    describe ".es_index_status" do
+        it "別 target の物理 index を状態確認から除外する" do
+            current_physical_name = "test_articles_2026_07_14_00_00_00_000000"
+            other_target_physical_name = "test_articles_archive_2026_07_15_00_00_00_000000"
+
+            allow(indices)
+                .to receive(:get_alias)
+                .with(name: es_index_name)
+                .and_return(alias_response_for(current_physical_name))
+
+            allow(indices)
+                .to receive(:get)
+                .with(index: "#{es_index_name}_*")
+                .and_return(
+                    {
+                        current_physical_name      => {},
+                        other_target_physical_name => {},
+                    },
+                )
+
+            allow(indices)
+                .to receive(:get)
+                .with(index: es_index_name)
+                .and_raise(Elastic::Transport::Transport::Errors::NotFound)
+
+            status = described_class.es_index_status(es_index_name)
+
+            expect(status[:physical_indexes]).to eq([
+                {
+                    name:    current_physical_name,
+                    current: true,
+                },
+            ])
+            expect(status[:newest_physical_name]).to eq(current_physical_name)
+            expect(status[:warnings]).to eq([])
         end
     end
 
@@ -426,6 +464,41 @@ RSpec.describe AreSearch::IndexManager do
                 "test_articles_2024_01_03_00_00_00_000000",
             ])
             expect(AreSearch::IndexMarker.find_by(es_index_name: es_index_name)).to eq(nil)
+        end
+
+        it "別 target の物理 index は削除しない" do
+            current_physical_name = "test_articles_2026_07_14_00_00_00_000000"
+            old_physical_name = "test_articles_2026_07_13_00_00_00_000000"
+            other_target_physical_name = "test_articles_archive_2026_07_12_00_00_00_000000"
+            arbitrary_suffix_index_name = "test_articles_backup"
+            deleted_indices = []
+
+            allow(indices)
+                .to receive(:get_alias)
+                .with(name: es_index_name)
+                .and_return(alias_response_for(current_physical_name))
+
+            allow(indices)
+                .to receive(:get)
+                .with(index: "#{es_index_name}_*")
+                .and_return(
+                    {
+                        current_physical_name      => {},
+                        old_physical_name           => {},
+                        other_target_physical_name  => {},
+                        arbitrary_suffix_index_name => {},
+                    },
+                )
+
+            allow(indices)
+                .to receive(:delete) do |args|
+                    deleted_indices << args[:index]
+                end
+
+            result = described_class.es_clean_up(es_index_name)
+
+            expect(result).to eq(true)
+            expect(deleted_indices).to eq([old_physical_name])
         end
 
         it "削除中に例外が出た場合も marker を削除して例外を再送出する" do

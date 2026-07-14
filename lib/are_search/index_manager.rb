@@ -18,9 +18,12 @@ module AreSearch
         PHYSICAL_INDEX_TIMESTAMP_SUFFIX = /_\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2}_\d{6}\z/.freeze
 
         # AreSearch の物理 index 名から alias 名を復元する。
-        # 物理 index 名でなければ、そのまま返す。
+        # timestamp 形式の物理 index 名でなければ nil を返す。
         def es_alias_name_from_index_name(index_name)
-            index_name.to_s.sub(PHYSICAL_INDEX_TIMESTAMP_SUFFIX, "")
+            index_name_string = index_name.to_s
+            return nil unless index_name_string.match?(PHYSICAL_INDEX_TIMESTAMP_SUFFIX)
+
+            index_name_string.sub(PHYSICAL_INDEX_TIMESTAMP_SUFFIX, "")
         end
 
         # 互換用。実体は DB 上の index marker の存在判定。
@@ -46,7 +49,7 @@ module AreSearch
 
         def es_index_status(es_index_name)
             current_physical_names = es_get_alias_physical_names(es_index_name)
-            physical_names = get_raw_es_index_names("#{es_index_name}_*")
+            physical_names = get_physical_es_index_names(es_index_name)
             legacy_index_exists = legacy_index_exists?(es_index_name)
 
             {
@@ -189,6 +192,25 @@ module AreSearch
             []
         end
 
+        # 指定 alias 名から生成された timestamp 付き物理 index 名だけを返す。
+        # fooとfoo_barのような前方一致で取得された別 target や任意 suffix の index は除外する。
+        # foo_timestamp       → foo     → 残す
+        # foo_bar_timestamp   → foo_bar → 除外
+        # foo_backup          → nil     → 除外
+        def get_physical_es_index_names(es_index_name)
+            # 指定 alias 名から始まる index を広めに取得する。
+            raw_index_names = get_raw_es_index_names("#{es_index_name}_*")
+
+            raw_index_names.reject do |index_name|
+                # timestamp 付き物理 index 名なら、生成元の alias 名を復元する。
+                # timestamp 形式でなければ nil を返す。
+                alias_name = es_alias_name_from_index_name(index_name)
+
+                # 復元できない index と、別 alias から生成された物理 index を除外する。
+                alias_name != es_index_name
+            end
+        end
+
         def build_physical_index_entries(physical_names, current_physical_names)
             physical_names.sort.map do |physical_name|
                 {
@@ -246,7 +268,7 @@ module AreSearch
             alias_name        = es_index_name
             current_physicals = es_get_alias_physical_names(alias_name)
 
-            physical_names = get_raw_es_index_names("#{alias_name}_*")
+            physical_names = get_physical_es_index_names(alias_name)
 
             physical_names.map do |name|
                 {

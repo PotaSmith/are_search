@@ -216,15 +216,22 @@ module AreSearch
             total_count
         end
 
-        def index_target_for_hit_index(index_to_target, hit_index)
+        # index_to_index_target は alias 名をキーにした map。
+        def index_target_for_hit_index(index_to_index_target, hit_index)
+            # Elasticsearch の hit に含まれる実体 index 名。
             index_name = hit_index.to_s
-            index_target = index_to_target[index_name]
+
+            # 旧方式の、alias 名と同名の実体 index を検索した場合。
+            index_target = index_to_index_target[index_name]
             return index_target unless index_target.nil?
 
+            # timestamp 付き物理 index 名から、生成元の alias 名を復元する。
             alias_name = AreSearch::IndexManager.es_alias_name_from_index_name(index_name)
-            return nil if alias_name == index_name
 
-            index_to_target[alias_name]
+            # AreSearch の物理 index 命名形式でなければ対応する target はない。
+            return nil if alias_name.nil?
+
+            index_to_index_target[alias_name]
         end
 
         # ヒット一覧からActiveRecordオブジェクトを復元し、ヒット順に並べて返す
