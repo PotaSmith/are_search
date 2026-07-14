@@ -472,6 +472,116 @@ RSpec.describe AreSearch::IndexManager do
         end
     end
 
+    describe ".es_with_index_guard" do
+        it "flock と marker の内側で block を実行し戻り値を返す" do
+            marker_in_block = nil
+
+            result = described_class.es_with_index_guard(
+                es_index_name,
+                operation: "pdf_extract",
+            ) do
+                marker_in_block = AreSearch::IndexMarker.find_by(
+                    es_index_name: es_index_name,
+                )
+
+                "done"
+            end
+
+            expect(result).to eq("done")
+            expect(marker_in_block).not_to eq(nil)
+            expect(marker_in_block.operation).to eq("pdf_extract")
+            expect(AreSearch::IndexMarker.marked?(es_index_name)).to eq(false)
+        end
+
+        it "block で例外が出た場合も marker を削除して例外を再送出する" do
+            expect do
+                described_class.es_with_index_guard(
+                    es_index_name,
+                    operation: "pdf_extract",
+                ) do
+                    raise RuntimeError, "extract failed"
+                end
+            end.to raise_error(RuntimeError, "extract failed")
+
+            expect(AreSearch::IndexMarker.marked?(es_index_name)).to eq(false)
+        end
+
+        it "marker が残っている場合は block を実行せず false を返す" do
+            create_index_marker(es_index_name, operation: "reindex")
+            block_called = false
+
+            result = described_class.es_with_index_guard(
+                es_index_name,
+                operation: "pdf_extract",
+            ) do
+                block_called = true
+            end
+
+            expect(result).to eq(false)
+            expect(block_called).to eq(false)
+            expect(AreSearch::IndexMarker.marked?(es_index_name)).to eq(true)
+        end
+
+        it "flock を別プロセス相当の処理が取得済みなら block を実行せず false を返す" do
+            lock_path = AreSearch.index_lock_file_path(es_index_name)
+            FileUtils.mkdir_p(File.dirname(lock_path))
+            block_called = false
+
+            File.open(lock_path, File::RDWR | File::CREAT) do |lock_file|
+                locked = lock_file.flock(File::LOCK_EX | File::LOCK_NB)
+                expect(locked).to eq(0)
+
+                result = described_class.es_with_index_guard(
+                    es_index_name,
+                    operation: "pdf_extract",
+                ) do
+                    block_called = true
+                end
+
+                expect(result).to eq(false)
+            end
+
+            expect(block_called).to eq(false)
+            expect(AreSearch::IndexMarker.marked?(es_index_name)).to eq(false)
+        end
+
+        it "index 操作が許可されていない場合は IndexOperationViolation を出す" do
+            AreSearch.index_operation_enabled = false
+
+            expect do
+                described_class.es_with_index_guard(
+                    es_index_name,
+                    operation: "pdf_extract",
+                ) do
+                    "not reached"
+                end
+            end.to raise_error(
+                AreSearch::IndexOperationViolation,
+                /index 操作が許可されていません/,
+            )
+        end
+
+        it "operation が空なら ArgumentError を出す" do
+            expect do
+                described_class.es_with_index_guard(
+                    es_index_name,
+                    operation: nil,
+                ) do
+                    "not reached"
+                end
+            end.to raise_error(ArgumentError, "operation を指定してください")
+        end
+
+        it "block が無ければ ArgumentError を出す" do
+            expect do
+                described_class.es_with_index_guard(
+                    es_index_name,
+                    operation: "pdf_extract",
+                )
+            end.to raise_error(ArgumentError, "es_with_index_guard には block が必要です")
+        end
+    end
+
     describe ".es_delete_index!" do
         it "指定された物理 index を削除する" do
             expect(indices)

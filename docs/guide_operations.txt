@@ -62,6 +62,64 @@ DBから一度に読み込む件数は AreSearch.batch_size で設定する。
 途中で失敗した場合は、その時点で停止する。
 
 
+## 2-2. index guard を使ったバッチ更新
+----------------------------------------------------------------
+
+DBから復元できない検索データを作成し、複数レコードを直接 Elasticsearch へ反映する場合は、
+対象 index target の flock と marker を取得した状態で処理する。
+
+    index_target = Article.are_search_index_target(:default)
+
+    result = index_target.are_search_es_with_index_guard(
+        operation: "pdf_extract",
+    ) do
+        Article.find_each do |article|
+            # are_search_es_data が参照する一時データを用意する。
+            article.pdf_text_for_search = extract_pdf_text(article)
+
+            article.are_search_es_sync!(index_target)
+        end
+
+        true
+    end
+
+この処理には AreSearch.index_operation_enabled = true が必要。
+
+戻り値。
+
+    block の戻り値
+        flock と marker を取得し、block を実行した。
+
+    false
+        他の index 操作中、または marker が残っているため実行されなかった。
+
+block 内で例外が発生した場合は marker の削除を試みた後、その例外を呼び出し元へ伝播する。
+block の実行中は通常 sync が marker を検出して停止し、sync request は残る。
+`are_search_es_sync!` と `are_search_es_delete!` は marker を確認しないため、guard の内側から直接実行できる。
+
+marker 作成前に通常 sync が marker 確認を通過していた場合、その sync は guard 開始後も継続する。
+guard 内の直接更新より後に通常 sync が完了すると、直接更新した内容が上書きされる可能性がある。
+既に存在する未処理 sync request との競合を避けたい場合は、各レコードを直接更新する前に、
+対象 index・モデル・ID の sync request が存在しないことを確認する。
+
+    sync_request_exists = AreSearch::SyncRequest.exists?(
+        ar_model_class_name: article.class.name,
+        ar_instance_key:     article.id.to_s,
+        es_index_name:       index_target.are_search_es_index_name,
+    )
+
+    next if sync_request_exists
+
+この確認後に新しいDB更新が発生した場合の競合までは防がない。
+
+非同期 Job の登録だけを block 内で行っても、Job の実行時には guard が解除されている。
+実際の抽出と Elasticsearch 更新が完了するまでを同じ block 内で実行する。
+
+`are_search_es_sync!` はドキュメント全体を index する。
+guard 終了後に通常 sync が実行されると、通常の are_search_es_data に含まれない一時フィールドは消える。
+必要な場合は、このバッチ処理を再実行して復元する。
+
+
 # 3. clean up
 ================================================================
 

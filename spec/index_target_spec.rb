@@ -174,6 +174,36 @@ RSpec.describe AreSearch::IndexTarget do
         end
     end
 
+    describe "#are_search_es_with_index_guard" do
+        before do
+            allow(AreSearch)
+                .to receive(:index_prefix)
+                .and_return("test")
+        end
+
+        it "対象 index 名と operation と block を IndexManager へ渡す" do
+            received_block = nil
+            source_block = proc { "done" }
+
+            expect(AreSearch::IndexManager)
+                .to receive(:es_with_index_guard) do |es_index_name, operation:, &block|
+                    expect(es_index_name).to eq("test_articles_default")
+                    expect(operation).to eq("pdf_extract")
+                    received_block = block
+
+                    "guard result"
+                end
+
+            result = index_target.are_search_es_with_index_guard(
+                operation: "pdf_extract",
+                &source_block
+            )
+
+            expect(result).to eq("guard result")
+            expect(received_block).to equal(source_block)
+        end
+    end
+
     describe "#are_search_es_search" do
         before do
             allow(model_class)

@@ -1,10 +1,11 @@
 ## Planned
 
-- reindex等と同等のロックをするバッチ処理用のAPI
 - ドット付き等の特殊フィールドの許容オプションを追加
 - 検索データ削減のためのsource と fields の設定
 
 ## [Unreleased]
+
+- index target単位で flock と marker を取得してブロックを実行する `are_search_es_with_index_guard` を追加
 
 ## [0.3.1] - 2026-07-14
 

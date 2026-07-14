@@ -8,7 +8,7 @@ module AreSearch
     # - alias の作成・切替
     # - 旧方式 index の削除
     # - 古い物理インデックスの clean_up
-    # - reindex 用 flock / marker 管理
+    # - index 操作用 flock / marker 管理
     #
     # Searchable は参照しない。
     # モデル依存の bulk 投入処理は Searchable 側に置く。
@@ -92,6 +92,36 @@ module AreSearch
             validate_index_operation_enabled!
 
             AreSearch.client.indices.delete(index: physical_es_index_name)
+        end
+
+        # 利用側の処理を index 単位の flock と marker でガードする。
+        # reindex / clean_up と同じ排他制御を使用し、block の戻り値をそのまま返す。
+        # 別処理が flock を取得済み、または marker が存在する場合は false を返す。
+        def es_with_index_guard(es_index_name, operation:, &block)
+            validate_index_operation_enabled!
+
+            if operation.to_s.empty?
+                raise ArgumentError, "operation を指定してください"
+            end
+
+            if block.nil?
+                raise ArgumentError, "es_with_index_guard には block が必要です"
+            end
+
+            operation_name = operation.to_s
+            locked_message = "[AreSearch] es_with_index_guard: 別プロセスが実行中のためスキップしました " \
+                "(#{es_index_name}, operation=#{operation_name})"
+
+            result = nil
+
+            with_index_guard(es_index_name, locked_message, operation: operation_name) do
+                result = block.call
+            end
+
+            result
+        rescue AreSearch::IndexLockUnavailable
+            # ロック中はfalseを返す
+            false
         end
 
         # index 操作の flock と marker を管理する。

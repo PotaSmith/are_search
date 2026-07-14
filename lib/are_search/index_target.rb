@@ -75,6 +75,16 @@ module AreSearch
             AreSearch::IndexManager.es_clean_up(are_search_es_index_name)
         end
 
+        # 利用側の処理を、この index target の flock と marker でガードする。
+        # block 内から are_search_es_sync! などの低レベル操作を実行する用途を想定する。
+        def are_search_es_with_index_guard(operation:, &block)
+            AreSearch::IndexManager.es_with_index_guard(
+                are_search_es_index_name,
+                operation: operation,
+                &block
+            )
+        end
+
         # 検索結果復元用のcomposite_keyを生成する
         def are_search_es_composite_key(id)
             "#{are_search_es_index_name}/#{id}"
