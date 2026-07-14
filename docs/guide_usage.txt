@@ -177,6 +177,13 @@ query_string、fields、queries、sort とは同時に指定しない。
 mlt_params は Elasticsearch の more_like_this 句へ入れる設定をまとめた Hash。
 fields は必須で、text 型または keyword 型フィールドの Array で指定する。
 boost 付き Hash、数値型、date 型などは fields に使用できない。
+AreSearch の既定の _source 構成では、More Like This が基準ドキュメントの元の値を
+取得できるよう、fields に指定する各フィールドの mapping に store: true を指定する。
+
+    body: {
+        type:  "text",
+        store: true,
+    }
 
 fields 以外のキーは Symbol で指定する。
 値には String、Integer、true、false の単体値を指定でき、検証後に
@@ -614,7 +621,14 @@ AreSearch は以下を追加する。
     post_tags: ["</em>"]
     encoder:   "html"
 
-ハイライト対象を _source から除外する場合は、元文字列を取得できるよう store: true を指定する。
+AreSearch の既定の _source 構成では通常フィールドを保存しないため、ハイライト対象の
+mapping には元文字列を取得できるよう store: true を指定する。
+
+    body: {
+        type:  "text",
+        store: true,
+    }
+
 CJK bigram で本文再解析を避ける場合は index_options: "offsets" を使用する。
 index_options を使用しない場合は index_settings の highlight.max_analyzed_offset を調整する。
 どちらの場合も are_search_es_data には対象フィールドを含める。

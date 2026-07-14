@@ -191,6 +191,9 @@ page / per_page から作る取得範囲の上限。
                 index_settings: {
                     max_result_window: 2_000,
                 },
+                _source: {
+                    includes: [:title],
+                },
                 properties: {
                     id:    { type: "long" },
                     title: { type: "text" },
@@ -205,7 +208,27 @@ page / per_page から作る取得範囲の上限。
     target_name は Symbol
     各 target は Hash
     index_settings と properties が必要
+    _source を指定する場合は Hash
+    _source.enabled に false は指定できない
     mappings のキーは3階層目まで Symbol
+
+AreSearch は Elasticsearch に渡す mapping の _source.includes へ、検索結果の復元に必要な
+以下の予約フィールドを自動的に追加する。
+
+    are_search_es_ar_model_class_name
+    are_search_es_ar_instance_key
+
+利用側が _source.includes を指定していない場合、AreSearch は予約フィールドだけを includes に設定する。
+利用側が指定した includes と excludes は維持される。
+excludes で予約フィールドを除外すると検索結果を ActiveRecord へ復元できないため、予約フィールドは除外しない。
+
+_source に含まれない通常フィールドも、mapping 上で対応していれば検索、絞り込み、sort、aggregation に使用できる。
+元のフィールド値を必要とする機能で使用するフィールドは、properties に store: true を指定する。
+
+    body: {
+        type:  "text",
+        store: true,
+    }
 
 STI では、Searchable を持つ継承系統の上位モデルで are_search_es_mappings を定義する。
 

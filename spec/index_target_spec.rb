@@ -75,6 +75,57 @@ RSpec.describe AreSearch::IndexTarget do
             )
         end
 
+        it "_source.includes に予約フィールドを追加する" do
+            mappings_for_index = index_target.are_search_es_mappings_for_index
+
+            expect(mappings_for_index[:_source]).to eq(
+                includes: AreSearch::RESERVED_ES_FIELD_NAMES,
+            )
+        end
+
+        context "利用側が _source を指定している場合" do
+            let(:target_mappings) do
+                {
+                    default: {
+                        index_settings: {
+                            max_result_window: 2_000,
+                        },
+                        _source: {
+                            includes: [:title],
+                            excludes: [:body],
+                        },
+                        properties: {
+                            id:    { type: "long" },
+                            title: { type: "text" },
+                            body:  { type: "text" },
+                        },
+                    },
+                }
+            end
+
+            it "既存 includes と excludes を維持して予約フィールドを追加する" do
+                mappings_for_index = index_target.are_search_es_mappings_for_index
+
+                expect(mappings_for_index[:_source]).to eq(
+                    includes: [
+                        :title,
+                        AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME,
+                        AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME,
+                    ],
+                    excludes: [:body],
+                )
+            end
+
+            it "予約フィールドを追加しても元の _source 定義を汚さない" do
+                index_target.are_search_es_mappings_for_index
+
+                expect(target_mappings[:default][:_source]).to eq(
+                    includes: [:title],
+                    excludes: [:body],
+                )
+            end
+        end
+
         it "予約フィールド mapping を足しても元定義を汚さない" do
             index_target.are_search_es_mappings_for_index
 

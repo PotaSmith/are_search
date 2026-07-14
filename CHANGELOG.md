@@ -1,10 +1,14 @@
 ## Planned
 
-- index削減のための、mapping の sourceと includes の設定
-- 検索データ削減のためのsource と fields の設定
+- reindex等と同等のロックをするバッチ処理用のAPI
 - ドット付き等の特殊フィールドの許容オプションを追加
+- 検索データ削減のためのsource と fields の設定
 
 ## [Unreleased]
+
+## [0.3.1] - 2026-07-14
+
+- index削減のための、mapping の sourceと includes の設定。※reindexが必要
 
 ## [0.3.0] - 2026-07-14
 

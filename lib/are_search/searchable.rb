@@ -321,6 +321,16 @@ module AreSearch
                         end
                     end
 
+                    if target_mappings.key?(:_source)
+                        source_settings = target_mappings[:_source]
+
+                        if source_settings.instance_of?(Hash) == false
+                            errors << "#{name}.are_search_es_mappings[#{target_name.inspect}][:_source] は Hash で指定してください"
+                        elsif source_settings[:enabled] == false
+                            errors << "#{name}.are_search_es_mappings[#{target_name.inspect}][:_source][:enabled] に false は指定できません"
+                        end
+                    end
+
                     if target_mappings.key?(:properties) && target_mappings[:properties].instance_of?(Hash) == false
                         errors << "#{name}.are_search_es_mappings[#{target_name.inspect}][:properties] は Hash で指定してください"
                     end

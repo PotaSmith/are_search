@@ -258,6 +258,57 @@ RSpec.describe AreSearch::Searchable do
             end.to raise_error(ArgumentError, /\[:max_result_window\] は正の整数/)
         end
 
+        it "_source.enabled に false が指定されていればエラーにする" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            allow(model_class)
+                .to receive(:are_search_es_mappings)
+                .and_return(
+                    default: {
+                        index_settings: {
+                            max_result_window: 2_000,
+                        },
+                        _source: {
+                            enabled: false,
+                        },
+                        properties: {
+                            title: { type: "text" },
+                        },
+                    },
+                )
+
+            expect do
+                model_class.are_search_index_targets
+            end.to raise_error(
+                ArgumentError,
+                /\[:_source\]\[:enabled\] に false は指定できません/,
+            )
+        end
+
+        it "_source が Hash でなければエラーにする" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            allow(model_class)
+                .to receive(:are_search_es_mappings)
+                .and_return(
+                    default: {
+                        index_settings: {
+                            max_result_window: 2_000,
+                        },
+                        _source: false,
+                        properties: {
+                            title: { type: "text" },
+                        },
+                    },
+                )
+
+            expect do
+                model_class.are_search_index_targets
+            end.to raise_error(ArgumentError, /\[:_source\] は Hash/)
+        end
+
         it "mappings と index_settings の key が Symbol でなければエラーにする" do
             model_class = build_searchable_class
             model_class.include(described_class)

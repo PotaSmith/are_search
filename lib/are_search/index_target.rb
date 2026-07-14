@@ -50,12 +50,14 @@ module AreSearch
             mappings
         end
 
-        # Elasticsearch に渡す mappings
-        # 予約フィールド mapping を足す
+        # Elasticsearch に渡す mappings を作る。
+        # 予約フィールドを properties と _source.includes に追加する。
         def are_search_es_mappings_for_index
             mappings = are_search_es_mappings
 
             return mappings unless mappings.key?(:properties)
+
+            add_reserved_source_includes!(mappings)
 
             mappings[:properties][AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME] = AreSearch::RESERVED_ES_FIELD_NAME_SETTING
             mappings[:properties][AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME] = AreSearch::RESERVED_ES_FIELD_NAME_SETTING
@@ -179,6 +181,45 @@ module AreSearch
         end
 
         private
+
+        # 利用側の _source 設定をコピーし、予約フィールドを includes に追加する。
+        # 元の are_search_es_mappings 定義は変更しない。
+        def add_reserved_source_includes!(mappings)
+            source_settings = {}
+
+            if mappings.key?(:_source)
+                source_settings = mappings[:_source].dup
+            end
+
+            source_includes = []
+            configured_includes = source_settings[:includes]
+
+            if configured_includes.instance_of?(Array)
+                configured_includes.each do |field_name|
+                    source_includes << field_name
+                end
+            elsif configured_includes.nil? == false
+                source_includes << configured_includes
+            end
+
+            AreSearch::RESERVED_ES_FIELD_NAMES.each do |reserved_field_name|
+                next if source_includes_field?(source_includes, reserved_field_name)
+
+                source_includes << reserved_field_name
+            end
+
+            source_settings[:includes] = source_includes
+            mappings[:_source] = source_settings
+        end
+
+        # Symbol / String の違いを無視して includes 内のフィールド重複を確認する。
+        def source_includes_field?(source_includes, field_name)
+            source_includes.each do |source_include|
+                return true if source_include.to_s == field_name.to_s
+            end
+
+            false
+        end
 
         def target_mappings
             model_class.are_search_es_mappings[target_name]
