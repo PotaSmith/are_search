@@ -39,7 +39,7 @@ RSpec.describe AreSearch::Reindexer do
             "index_target",
             model_class:                    model,
             target_name:                    :default,
-            are_search_es_index_name:       "test_articles_default",
+            are_search_es_index_name:       "test__articles__default",
             are_search_es_mappings:         mappings,
             are_search_es_mappings_for_index: mappings_for_index,
             are_search_es_index_settings:   index_settings,
@@ -98,18 +98,18 @@ RSpec.describe AreSearch::Reindexer do
                 end
 
                 expected_body = [
-                    { index: { _index: "test_articles_20240101120000", _id: "1" } },
+                    { index: { _index: "test_articles__20240101120000", _id: "1" } },
                     { id: 1, title: "first" },
-                    { index: { _index: "test_articles_20240101120000", _id: "2" } },
+                    { index: { _index: "test_articles__20240101120000", _id: "2" } },
                     { id: 2, title: "second" },
                 ]
 
                 expect(AreSearch::IndexManager).to receive(:es_reindex) do |index_name, actual_index_settings, index_mappings, &block|
-                    expect(index_name).to eq("test_articles_default")
+                    expect(index_name).to eq("test__articles__default")
                     expect(actual_index_settings).to eq(index_settings)
                     expect(index_mappings).to eq(mappings_for_index)
 
-                    block.call("test_articles_20240101120000")
+                    block.call("test_articles__20240101120000")
                 end
 
                 expect(client).to receive(:bulk)
@@ -147,7 +147,7 @@ RSpec.describe AreSearch::Reindexer do
                 end
 
                 allow(AreSearch::IndexManager).to receive(:es_reindex) do |_index_name, _index_settings, _index_mappings, &block|
-                    block.call("test_articles_20240101120000")
+                    block.call("test_articles__20240101120000")
                 end
 
                 response = {
@@ -199,13 +199,13 @@ RSpec.describe AreSearch::Reindexer do
                 end
 
                 allow(AreSearch::IndexManager).to receive(:es_reindex) do |_index_name, _index_settings, _index_mappings, &block|
-                    block.call("test_articles_20240101120000")
+                    block.call("test_articles__20240101120000")
                 end
 
                 expect(client).to receive(:bulk)
                     .with(
                         body: [
-                            { index: { _index: "test_articles_20240101120000", _id: "1" } },
+                            { index: { _index: "test_articles__20240101120000", _id: "1" } },
                             { id: 1, title: "first" },
                         ],
                     )
@@ -249,15 +249,15 @@ RSpec.describe AreSearch::Reindexer do
                 end
 
                 allow(AreSearch::IndexManager).to receive(:es_reindex) do |_index_name, _index_settings, _index_mappings, &block|
-                    block.call("test_articles_20240101120000")
+                    block.call("test_articles__20240101120000")
                 end
 
                 expect(client).to receive(:bulk)
                     .with(
                         body: [
-                            { index: { _index: "test_articles_20240101120000", _id: "1" } },
+                            { index: { _index: "test_articles__20240101120000", _id: "1" } },
                             { id: 1, title: "first" },
-                            { index: { _index: "test_articles_20240101120000", _id: "2" } },
+                            { index: { _index: "test_articles__20240101120000", _id: "2" } },
                             { id: 2, title: "second" },
                         ],
                     )
@@ -266,7 +266,7 @@ RSpec.describe AreSearch::Reindexer do
                 expect(client).to receive(:bulk)
                     .with(
                         body: [
-                            { index: { _index: "test_articles_20240101120000", _id: "3" } },
+                            { index: { _index: "test_articles__20240101120000", _id: "3" } },
                             { id: 3, title: "third" },
                         ],
                     )
@@ -297,7 +297,7 @@ RSpec.describe AreSearch::Reindexer do
                 end
 
                 allow(AreSearch::IndexManager).to receive(:es_reindex) do |_index_name, _index_settings, _mappings, &block|
-                    block.call("test_articles_2024_01_01_00_00_00_000000")
+                    block.call("test_articles__2024_01_01_00_00_00_000000")
                 end
 
                 allow(client)
@@ -333,7 +333,7 @@ RSpec.describe AreSearch::Reindexer do
                 end
 
                 allow(AreSearch::IndexManager).to receive(:es_reindex) do |_index_name, _index_settings, _mappings, &block|
-                    block.call("test_articles_2024_01_01_00_00_00_000000")
+                    block.call("test_articles__2024_01_01_00_00_00_000000")
                 end
 
                 expect(client).not_to receive(:bulk)
@@ -353,7 +353,7 @@ RSpec.describe AreSearch::Reindexer do
                 allow(model).to receive(:find_in_batches)
 
                 allow(AreSearch::IndexManager).to receive(:es_reindex) do |_index_name, _index_settings, _index_mappings, &block|
-                    block.call("test_articles_20240101120000")
+                    block.call("test_articles__20240101120000")
                 end
 
                 expect(ProgressBar).not_to receive(:new)

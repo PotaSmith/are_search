@@ -24,7 +24,7 @@ RSpec.describe "query builder fields" do
             "article_index_target",
             model_class:                  article_model,
             target_name:                  :default,
-            are_search_es_index_name:     "test_articles_default",
+            are_search_es_index_name:     "test__articles__default",
             are_search_es_mappings:       {
                 properties: {
                     title: { type: "text" },

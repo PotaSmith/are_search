@@ -64,7 +64,18 @@ config/initializers/are_search.rb で Elasticsearch クライアントと index_
 index_prefix は環境間で重複しない値にする。
 index target の alias 名は以下の形式になる。
 
-    {index_prefix}_{table_name}_{target_name}
+    {index_prefix}__{are_search_ar_table_name}__{target_name}
+
+物理 index 名は alias 名の後ろへ同じ区切り文字で timestamp を追加する。
+
+    {index_prefix}__{are_search_ar_table_name}__{target_name}__{timestamp}
+
+index_prefix に空文字列を指定した場合は `are_search_no_prefix` を先頭要素として使用する。
+空でない index_prefix、are_search_ar_table_name、target_name は小文字の英字で始まり、
+小文字の英字とアンダーバーだけを使用する。区切り文字 `__` は使用できない。
+
+旧形式の index 名から変更する場合は、未処理 sync request を空にしてから新形式の alias へ reindex する。
+旧形式の alias と物理 index は新形式の clean up 対象にならないため、切り替え確認後に手動で削除する。
 
 setup ブロックは Elasticsearch::Client のインスタンスを返す。
 任意設定は guide_reference.txt を参照する。
@@ -80,8 +91,17 @@ Elasticsearch::Client.new の設定:
 
 検索対象モデルへ AreSearch::Searchable を include し、mappings と投入データを定義する。
 
+index 名に使う Active Record 側の識別名は `are_search_ar_table_name` で取得する。
+既定では `table_name` を返す。変更する場合は、Searchable を include した継承系統の上位モデルでオーバーライドする。
+STI の子クラスではオーバーライドできない。
+戻り値は空でない String とし、小文字の英字で始まり、小文字の英字とアンダーバーだけを使用する。
+
     class Article < ApplicationRecord
         include AreSearch::Searchable
+
+        def self.are_search_ar_table_name
+            "search_articles"
+        end
 
         def self.are_search_es_mappings
             {

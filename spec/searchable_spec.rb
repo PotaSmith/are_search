@@ -99,7 +99,43 @@ RSpec.describe AreSearch::Searchable do
         end
     end
 
+    describe ".are_search_ar_table_name" do
+        it "既定では Active Record の table_name を返す" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            expect(model_class.are_search_ar_table_name).to eq("articles")
+        end
+
+        it "モデル側でオーバーライドできる" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            model_class.define_singleton_method(:are_search_ar_table_name) do
+                "search_articles"
+            end
+
+            expect(model_class.are_search_ar_table_name).to eq("search_articles")
+        end
+    end
+
     describe ".are_search_index_targets" do
+        it "are_search_ar_table_name が不正ならエラーにする" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            model_class.define_singleton_method(:are_search_ar_table_name) do
+                "_search_articles"
+            end
+
+            expect do
+                model_class.are_search_index_targets
+            end.to raise_error(
+                ArgumentError,
+                /are_search_ar_table_name は小文字の英字で始まり、小文字の英字とアンダーバーだけを使用した String/,
+            )
+        end
+
         it "mappings の target_name ごとに IndexTarget を返す" do
             model_class = build_searchable_class
             model_class.include(described_class)
@@ -113,7 +149,54 @@ RSpec.describe AreSearch::Searchable do
             expect(targets.size).to eq(1)
             expect(targets.first.model_class).to equal(model_class)
             expect(targets.first.target_name).to eq(:default)
-            expect(targets.first.are_search_es_index_name).to eq("test_articles_default")
+            expect(targets.first.are_search_es_index_name).to eq("test__articles__default")
+        end
+
+        it "target_name が小文字の英字とアンダーバーだけでなければエラーにする" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            allow(model_class)
+                .to receive(:are_search_es_mappings)
+                .and_return(
+                    :"Events-daily2" => {
+                        index_settings: {
+                            max_result_window: 2_000,
+                        },
+                        properties: {
+                            title: { type: "text" },
+                        },
+                    },
+                )
+
+            expect do
+                model_class.are_search_index_targets
+            end.to raise_error(
+                ArgumentError,
+                /target_name は小文字の英字で始まり、小文字の英字とアンダーバーだけを使用してください/,
+            )
+        end
+
+        it "target_name に index 名の区切り文字が含まれていればエラーにする" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            allow(model_class)
+                .to receive(:are_search_es_mappings)
+                .and_return(
+                    :"events__daily" => {
+                        index_settings: {
+                            max_result_window: 2_000,
+                        },
+                        properties: {
+                            title: { type: "text" },
+                        },
+                    },
+                )
+
+            expect do
+                model_class.are_search_index_targets
+            end.to raise_error(ArgumentError, /target_name.*"__" は使用できません/)
         end
 
         it "properties がトップレベルにあればエラーにする" do
@@ -625,7 +708,7 @@ RSpec.describe AreSearch::Searchable do
                         ar_model_class_name:  "Article",
                         index_target_name:    :default,
                         ar_instance_key:      "123",
-                        es_index_name:        "test_articles_default",
+                        es_index_name:        "test__articles__default",
                         request_sequence:     42,
                         request_sequence_at:  request_sequence_at,
                         retry_count:          0,
@@ -663,7 +746,7 @@ RSpec.describe AreSearch::Searchable do
                     "Article",
                     :default,
                     "123",
-                    "test_articles_default",
+                    "test__articles__default",
                     "token-1",
                 )
 
@@ -849,7 +932,7 @@ RSpec.describe AreSearch::Searchable do
             expect(client)
                 .to receive(:index)
                 .with(
-                    index: "test_articles_default",
+                    index: "test__articles__default",
                     id:    "123",
                     body:  { title: "hello" },
                 )
@@ -896,7 +979,7 @@ RSpec.describe AreSearch::Searchable do
 
             expect(AreSearch::RecordSync)
                 .to receive(:sync)
-                .with("Article", :default, "123", "test_articles_default", "token-1", reraise: false)
+                .with("Article", :default, "123", "test__articles__default", "token-1", reraise: false)
 
             record.are_search_es_sync_direct(index_target)
         end

@@ -11,7 +11,7 @@ RSpec.describe "search option flow" do
                 "Article"
             end
 
-            def self.table_name
+            def self.are_search_ar_table_name
                 "articles"
             end
 
@@ -61,7 +61,7 @@ RSpec.describe "search option flow" do
 
         allow(AreSearch::IndexManager)
             .to receive(:es_index_alias_exists?)
-            .with("test_articles_default")
+            .with("test__articles__default")
             .and_return(true)
     end
 

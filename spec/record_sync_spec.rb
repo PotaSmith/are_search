@@ -19,8 +19,8 @@ RSpec.describe AreSearch::RecordSync do
     let(:ar_model_class_name) { "Article" }
     let(:target_name) { :default }
     let(:ar_instance_key) { "123" }
-    let(:current_es_index_name) { "test_articles_default" }
-    let(:request_es_index_name) { "test_articles_default" }
+    let(:current_es_index_name) { "test__articles__default" }
+    let(:request_es_index_name) { "test__articles__default" }
     let(:index_marked) { false }
     let(:processing_token) { "token-1" }
 
@@ -46,7 +46,7 @@ RSpec.describe AreSearch::RecordSync do
             ar_model_class_name: "Article",
             index_target_name:   "default",
             ar_instance_key:     "123",
-            es_index_name:       "test_articles_default",
+            es_index_name:       "test__articles__default",
             request_sequence:    10,
             request_sequence_at: Time.zone.now,
             retry_count:         0,
@@ -87,7 +87,7 @@ RSpec.describe AreSearch::RecordSync do
 
             allow(index_target)
                 .to receive(:are_search_es_index_name)
-                .and_return("test_articles_v2_default")
+                .and_return("test__articles__v2_default")
 
             expect(model).not_to receive(:find_by)
 
@@ -328,7 +328,7 @@ RSpec.describe AreSearch::RecordSync do
 
             allow(index_target)
                 .to receive(:are_search_es_index_name)
-                .and_return("test_articles_v2_default")
+                .and_return("test__articles__v2_default")
 
             expect(model).not_to receive(:find_by)
 

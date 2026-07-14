@@ -328,15 +328,11 @@ AreSearch.index_operation_enabled = true のプロセスでのみ実行する。
 
 物理 index 名を確認する。
 
-    AreSearch.client.indices.get(
-        index: "#{AreSearch.index_prefix}_*"
-    )
+    AreSearch.client.indices.get(index: "#{AreSearch.index_prefix}#{AreSearch::ES_INDEX_NAME_DELIMITER}*")
 
 物理 index を指定して削除する。
 
-    AreSearch::IndexManager.es_delete_index!(
-        "myapp_production_articles_default_2026_07_04_10_00_00_000000"
-    )
+    AreSearch::IndexManager.es_delete_index!("myapp_production__articles__default__2026_07_04_10_00_00_000000")
 
 この操作は lock や marker を取得しない。
 現在使用中の物理 index を誤って削除しないよう、事前に alias を確認する。

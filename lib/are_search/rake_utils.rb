@@ -59,7 +59,7 @@ module AreSearch
 
             total_counts.each do |model_class_name, data_count|
                 rows << [
-                    sync_request_model_table_name(model_class_name),
+                    sync_request_model_ar_table_name(model_class_name),
                     model_class_name.to_s,
                     data_count.to_s,
                     error_counts.fetch(model_class_name, 0).to_s,
@@ -83,8 +83,8 @@ module AreSearch
             model_error_counts.each do |group_values, count|
                 model_class_name = group_values[0]
                 last_error = group_values[1]
-                table_name = sync_request_model_table_name(model_class_name)
-                table_error_key = [table_name, last_error.to_s]
+                ar_table_name = sync_request_model_ar_table_name(model_class_name)
+                table_error_key = [ar_table_name, last_error.to_s]
 
                 if table_error_counts.key?(table_error_key) == false
                     table_error_counts[table_error_key] = 0
@@ -157,9 +157,16 @@ module AreSearch
             declares_mappings_here = klass.singleton_class
                 .public_instance_methods(false)
                 .include?(:are_search_es_mappings)
+            declares_ar_table_name_here = klass.singleton_class
+                .public_instance_methods(false)
+                .include?(:are_search_ar_table_name)
 
             if searchable_from_superclass && declares_mappings_here
                 errors << "#{klass.name}: are_search_es_mappings は Searchable を include した上位クラスで定義してください。"
+            end
+
+            if searchable_from_superclass && declares_ar_table_name_here
+                errors << "#{klass.name}: are_search_ar_table_name は Searchable を include した上位クラスで定義してください。"
             end
 
             return if searchable_from_superclass
@@ -310,13 +317,13 @@ module AreSearch
 
         private
 
-        # sync request のモデル名からテーブル名を取得する。
+        # sync request のモデル名から状態表示用の Active Record 識別名を取得する。
         # モデルを解決できない場合はハイフンを返す。
-        def sync_request_model_table_name(model_class_name)
+        def sync_request_model_ar_table_name(model_class_name)
             model = model_class_name.to_s.safe_constantize
 
-            if model != nil && model.respond_to?(:table_name)
-                return model.table_name.to_s
+            if model != nil && model.respond_to?(:are_search_ar_table_name)
+                return model.are_search_ar_table_name.to_s
             end
 
             "-"

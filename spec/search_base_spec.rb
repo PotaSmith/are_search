@@ -14,7 +14,7 @@ RSpec.describe AreSearch::Searcher do
             "article_index_target",
             model_class:                  article_model,
             target_name:                  :default,
-            are_search_es_index_name:     "test_articles_default",
+            are_search_es_index_name:     "test__articles__default",
             are_search_es_mappings:       {
                 properties: {
                     title: { type: "text" },
@@ -28,7 +28,7 @@ RSpec.describe AreSearch::Searcher do
             "document_index_target",
             model_class:                  document_model,
             target_name:                  :default,
-            are_search_es_index_name:     "test_documents_default",
+            are_search_es_index_name:     "test__documents__default",
             are_search_es_mappings:       {
                 properties: {
                     name: { type: "text" },
@@ -42,11 +42,11 @@ RSpec.describe AreSearch::Searcher do
         it "全 index target の alias が存在すれば true を返す" do
             expect(AreSearch::IndexManager)
                 .to receive(:es_index_alias_exists?)
-                .with("test_articles_default")
+                .with("test__articles__default")
                 .and_return(true)
             expect(AreSearch::IndexManager)
                 .to receive(:es_index_alias_exists?)
-                .with("test_documents_default")
+                .with("test__documents__default")
                 .and_return(true)
 
             result = described_class.check_index_exists?([
@@ -60,11 +60,11 @@ RSpec.describe AreSearch::Searcher do
         it "ひとつでも alias が無ければ false を返す" do
             allow(AreSearch::IndexManager)
                 .to receive(:es_index_alias_exists?)
-                .with("test_articles_default")
+                .with("test__articles__default")
                 .and_return(true)
             allow(AreSearch::IndexManager)
                 .to receive(:es_index_alias_exists?)
-                .with("test_documents_default")
+                .with("test__documents__default")
                 .and_return(false)
 
             result = described_class.check_index_exists?([
@@ -80,11 +80,11 @@ RSpec.describe AreSearch::Searcher do
         it "対象 index のいずれかに marker があれば true を返す" do
             allow(AreSearch::IndexMarker)
                 .to receive(:marked?)
-                .with("test_articles_default")
+                .with("test__articles__default")
                 .and_return(false)
             allow(AreSearch::IndexMarker)
                 .to receive(:marked?)
-                .with("test_documents_default")
+                .with("test__documents__default")
                 .and_return(true)
 
             result = described_class.index_marked?([
@@ -144,8 +144,8 @@ RSpec.describe AreSearch::Searcher do
             )
 
             expect(result).to eq(
-                "test_articles_default"  => article_index_target,
-                "test_documents_default" => document_index_target,
+                "test__articles__default"  => article_index_target,
+                "test__documents__default" => document_index_target,
             )
         end
 
@@ -158,7 +158,7 @@ RSpec.describe AreSearch::Searcher do
             result = described_class.send(
                 :index_target_for_hit_index,
                 index_to_target,
-                "test_articles_default_2026_07_03_03_10_00_123456",
+                "test__articles__default__2026_07_03_03_10_00_123456",
             )
 
             expect(result).to equal(article_index_target)
@@ -173,7 +173,7 @@ RSpec.describe AreSearch::Searcher do
             result = described_class.send(
                 :index_target_for_hit_index,
                 index_to_target,
-                "test_articles_default_20260703031000",
+                "test__articles__default__20260703031000",
             )
 
             expect(result).to eq(nil)
@@ -185,7 +185,7 @@ RSpec.describe AreSearch::Searcher do
             record = double("article", id: 1)
             hits = [
                 {
-                    "_index" => "test_articles_default",
+                    "_index" => "test__articles__default",
                     "_id" => "1",
                     "_source" => {
                         AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
@@ -196,7 +196,7 @@ RSpec.describe AreSearch::Searcher do
                     },
                 },
                 {
-                    "_index" => "test_articles_default",
+                    "_index" => "test__articles__default",
                     "_id" => "2",
                     "_source" => {
                         AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
@@ -213,13 +213,13 @@ RSpec.describe AreSearch::Searcher do
                 .and_return([record])
             allow(article_index_target)
                 .to receive(:are_search_es_composite_key) do |id|
-                    "test_articles_default/#{id}"
+                    "test__articles__default/#{id}"
                 end
 
             result = described_class.send(
                 :build_records,
                 hits,
-                { "test_articles_default" => article_index_target },
+                { "test__articles__default" => article_index_target },
                 {},
                 {},
             )
@@ -245,7 +245,7 @@ RSpec.describe AreSearch::Searcher do
             }
             hits = [
                 {
-                    "_index" => "test_articles_default",
+                    "_index" => "test__articles__default",
                     "_id" => "1",
                     "_source" => {
                         AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
@@ -278,7 +278,7 @@ RSpec.describe AreSearch::Searcher do
                 )
             allow(article_index_target)
                 .to receive(:are_search_es_composite_key) do |id|
-                    "test_articles_default/#{id}"
+                    "test__articles__default/#{id}"
                 end
             allow(record_class)
                 .to receive(:are_search_index_target)
@@ -287,11 +287,11 @@ RSpec.describe AreSearch::Searcher do
 
             result = described_class.send(
                 :execute_and_build_result,
-                "test_articles_default",
+                "test__articles__default",
                 search_body,
                 {
                     index_to_index_target: {
-                        "test_articles_default" => article_index_target,
+                        "test__articles__default" => article_index_target,
                     },
                     model_includes:       {},
                     model_results_wheres: {},

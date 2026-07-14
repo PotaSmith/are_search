@@ -354,7 +354,9 @@ namespace :are_search do
         actual_index_names = []
 
         begin
-            response = AreSearch.client.indices.get(index: "#{AreSearch.index_prefix}_*")
+            response = AreSearch.client.indices.get(
+                index: "#{AreSearch.index_prefix}#{AreSearch::ES_INDEX_NAME_DELIMITER}*",
+            )
             actual_index_names = response.keys
         rescue Elastic::Transport::Transport::Errors::NotFound
             actual_index_names = []

@@ -78,14 +78,14 @@ RSpec.describe AreSearch::IndexManager do
     describe ".es_alias_name_from_index_name" do
         it "AreSearch の物理 index 名なら末尾 timestamp を削って alias 名を返す" do
             result = described_class.es_alias_name_from_index_name(
-                "test_articles_2026_07_03_03_10_00_123456",
+                "test__articles__default__2026_07_03_03_10_00_123456",
             )
 
-            expect(result).to eq("test_articles")
+            expect(result).to eq("test__articles__default")
         end
 
         it "timestamp 形式でなければ nil を返す" do
-            result = described_class.es_alias_name_from_index_name("test_articles_20260703031000")
+            result = described_class.es_alias_name_from_index_name("test__articles__default__20260703031000")
 
             expect(result).to eq(nil)
         end
@@ -107,11 +107,11 @@ RSpec.describe AreSearch::IndexManager do
             allow(indices)
                 .to receive(:get_alias)
                 .with(name: es_index_name)
-                .and_return(alias_response_for("test_articles_2024_01_01_00_00_00_000000"))
+                .and_return(alias_response_for("test_articles__2024_01_01_00_00_00_000000"))
 
             result = described_class.es_get_alias_physical_names(es_index_name)
 
-            expect(result).to eq(["test_articles_2024_01_01_00_00_00_000000"])
+            expect(result).to eq(["test_articles__2024_01_01_00_00_00_000000"])
         end
 
         it "alias が無ければ空配列を返す" do
@@ -128,8 +128,8 @@ RSpec.describe AreSearch::IndexManager do
 
     describe ".es_index_status" do
         it "別 target の物理 index を状態確認から除外する" do
-            current_physical_name = "test_articles_2026_07_14_00_00_00_000000"
-            other_target_physical_name = "test_articles_archive_2026_07_15_00_00_00_000000"
+            current_physical_name = "test_articles__2026_07_14_00_00_00_000000"
+            other_target_physical_name = "test_articles__archive__2026_07_15_00_00_00_000000"
 
             allow(indices)
                 .to receive(:get_alias)
@@ -138,7 +138,7 @@ RSpec.describe AreSearch::IndexManager do
 
             allow(indices)
                 .to receive(:get)
-                .with(index: "#{es_index_name}_*")
+                .with(index: "#{es_index_name}__*")
                 .and_return(
                     {
                         current_physical_name      => {},
@@ -208,7 +208,7 @@ RSpec.describe AreSearch::IndexManager do
             allow(indices)
                 .to receive(:get_alias)
                 .with(name: es_index_name)
-                .and_return(alias_response_for("test_articles_2023_12_01_00_00_00_000000"))
+                .and_return(alias_response_for("test_articles__2023_12_01_00_00_00_000000"))
 
             expect(indices)
                 .to receive(:update_aliases) do |args|
@@ -222,8 +222,11 @@ RSpec.describe AreSearch::IndexManager do
 
             expect(result).to eq([])
             expect(block_index).to eq(created_index)
+            expect(created_index).to match(
+                /\Atest_articles__\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2}_\d{6}\z/,
+            )
             expect(alias_actions).to eq([
-                { remove: { index: "test_articles_2023_12_01_00_00_00_000000", alias: es_index_name } },
+                { remove: { index: "test_articles__2023_12_01_00_00_00_000000", alias: es_index_name } },
                 { add: { index: created_index, alias: es_index_name } },
             ])
             expect(AreSearch::IndexMarker.find_by(es_index_name: es_index_name)).to eq(nil)
@@ -438,16 +441,16 @@ RSpec.describe AreSearch::IndexManager do
             allow(indices)
                 .to receive(:get_alias)
                 .with(name: es_index_name)
-                .and_return(alias_response_for("test_articles_2024_01_02_00_00_00_000000"))
+                .and_return(alias_response_for("test_articles__2024_01_02_00_00_00_000000"))
 
             allow(indices)
                 .to receive(:get)
-                .with(index: "#{es_index_name}_*")
+                .with(index: "#{es_index_name}__*")
                 .and_return(
                     {
-                        "test_articles_2024_01_01_00_00_00_000000" => {},
-                        "test_articles_2024_01_02_00_00_00_000000" => {},
-                        "test_articles_2024_01_03_00_00_00_000000" => {},
+                        "test_articles__2024_01_01_00_00_00_000000" => {},
+                        "test_articles__2024_01_02_00_00_00_000000" => {},
+                        "test_articles__2024_01_03_00_00_00_000000" => {},
                     },
                 )
 
@@ -460,16 +463,16 @@ RSpec.describe AreSearch::IndexManager do
 
             expect(result).to eq(true)
             expect(deleted_indices).to eq([
-                "test_articles_2024_01_01_00_00_00_000000",
-                "test_articles_2024_01_03_00_00_00_000000",
+                "test_articles__2024_01_01_00_00_00_000000",
+                "test_articles__2024_01_03_00_00_00_000000",
             ])
             expect(AreSearch::IndexMarker.find_by(es_index_name: es_index_name)).to eq(nil)
         end
 
         it "別 target の物理 index は削除しない" do
-            current_physical_name = "test_articles_2026_07_14_00_00_00_000000"
-            old_physical_name = "test_articles_2026_07_13_00_00_00_000000"
-            other_target_physical_name = "test_articles_archive_2026_07_12_00_00_00_000000"
+            current_physical_name = "test_articles__2026_07_14_00_00_00_000000"
+            old_physical_name = "test_articles__2026_07_13_00_00_00_000000"
+            other_target_physical_name = "test_articles__archive__2026_07_12_00_00_00_000000"
             arbitrary_suffix_index_name = "test_articles_backup"
             deleted_indices = []
 
@@ -480,7 +483,7 @@ RSpec.describe AreSearch::IndexManager do
 
             allow(indices)
                 .to receive(:get)
-                .with(index: "#{es_index_name}_*")
+                .with(index: "#{es_index_name}__*")
                 .and_return(
                     {
                         current_physical_name      => {},
@@ -505,21 +508,21 @@ RSpec.describe AreSearch::IndexManager do
             allow(indices)
                 .to receive(:get_alias)
                 .with(name: es_index_name)
-                .and_return(alias_response_for("test_articles_2024_01_02_00_00_00_000000"))
+                .and_return(alias_response_for("test_articles__2024_01_02_00_00_00_000000"))
 
             allow(indices)
                 .to receive(:get)
-                .with(index: "#{es_index_name}_*")
+                .with(index: "#{es_index_name}__*")
                 .and_return(
                     {
-                        "test_articles_2024_01_01_00_00_00_000000" => {},
-                        "test_articles_2024_01_02_00_00_00_000000" => {},
+                        "test_articles__2024_01_01_00_00_00_000000" => {},
+                        "test_articles__2024_01_02_00_00_00_000000" => {},
                     },
                 )
 
             allow(indices)
                 .to receive(:delete)
-                .with(index: "test_articles_2024_01_01_00_00_00_000000")
+                .with(index: "test_articles__2024_01_01_00_00_00_000000")
                 .and_raise(RuntimeError, "delete failed")
 
             expect do
@@ -659,9 +662,9 @@ RSpec.describe AreSearch::IndexManager do
         it "指定された物理 index を削除する" do
             expect(indices)
                 .to receive(:delete)
-                .with(index: "test_articles_2024_01_01_00_00_00_000000")
+                .with(index: "test_articles__2024_01_01_00_00_00_000000")
 
-            described_class.es_delete_index!("test_articles_2024_01_01_00_00_00_000000")
+            described_class.es_delete_index!("test_articles__2024_01_01_00_00_00_000000")
         end
     end
 end

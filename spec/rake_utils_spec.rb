@@ -9,19 +9,19 @@ RSpec.describe AreSearch::RakeUtils do
         let(:upper_target) do
             double(
                 "upper_target",
-                are_search_es_index_name: "test_articles_default",
+                are_search_es_index_name: "test__articles__default",
             )
         end
         let(:lower_target) do
             double(
                 "lower_target",
-                are_search_es_index_name: "test_articles_default",
+                are_search_es_index_name: "test__articles__default",
             )
         end
         let(:other_target) do
             double(
                 "other_target",
-                are_search_es_index_name: "test_documents_default",
+                are_search_es_index_name: "test__documents__default",
             )
         end
         let(:upper_model) do
@@ -95,13 +95,13 @@ RSpec.describe AreSearch::RakeUtils do
         let(:shared_target) do
             double(
                 "shared_target",
-                are_search_es_index_name: "test_articles_default",
+                are_search_es_index_name: "test__articles__default",
             )
         end
         let(:other_target) do
             double(
                 "other_target",
-                are_search_es_index_name: "test_documents_default",
+                are_search_es_index_name: "test__documents__default",
             )
         end
         let(:article_model) do
@@ -218,7 +218,7 @@ RSpec.describe AreSearch::RakeUtils do
             expect(result).to eq(false)
             expect(errors).to eq([
                 "継承関係のないモデルが同じ index を使用しています: " \
-                    "test_articles_default: Article, Document",
+                    "test__articles__default: Article, Document",
             ])
         end
     end
@@ -284,6 +284,33 @@ RSpec.describe AreSearch::RakeUtils do
 
             expect(errors).to eq([
                 "ModelCheckChild: are_search_es_mappings は Searchable を include した上位クラスで定義してください。",
+            ])
+        end
+
+        it "STI 子クラスが are_search_ar_table_name を定義していればエラーにする" do
+            parent_model = build_model_check_parent_class
+            child_model = Class.new(parent_model) do
+                self.abstract_class = true
+
+                def self.are_search_ar_table_name
+                    "child_articles"
+                end
+            end
+
+            stub_const("ModelCheckParent", parent_model)
+            stub_const("ModelCheckChild", child_model)
+
+            errors = []
+
+            expect do
+                described_class.model_check(child_model, errors)
+            end.to output(
+                "are_search_es_data method_defined : true\n" \
+                "are_search_es_mappings respond_to : true\n",
+            ).to_stdout
+
+            expect(errors).to eq([
+                "ModelCheckChild: are_search_ar_table_name は Searchable を include した上位クラスで定義してください。",
             ])
         end
 

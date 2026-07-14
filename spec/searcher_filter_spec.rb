@@ -12,7 +12,7 @@ RSpec.describe AreSearch::Searcher, "filters" do
             "index_target",
             model_class:                  model_class,
             target_name:                  :default,
-            are_search_es_index_name:     "test_sync_requests_default",
+            are_search_es_index_name:     "test__sync_requests__default",
             are_search_es_mappings:       {
                 properties: {
                     search_text:         { type: "text" },
@@ -39,12 +39,12 @@ RSpec.describe AreSearch::Searcher, "filters" do
 
         allow(index_target)
             .to receive(:are_search_es_composite_key) do |id|
-                "test_sync_requests_default/#{id}"
+                "test__sync_requests__default/#{id}"
             end
 
         allow(AreSearch::IndexManager)
             .to receive(:es_index_alias_exists?)
-            .with("test_sync_requests_default")
+            .with("test__sync_requests__default")
             .and_return(true)
 
         allow(AreSearch)
@@ -307,7 +307,7 @@ RSpec.describe AreSearch::Searcher, "filters" do
             ar_model_class_name: "Article",
             index_target_name:   "default",
             ar_instance_key:     "1",
-            es_index_name:       "test_articles_default",
+            es_index_name:       "test__articles__default",
             request_sequence:    1,
             request_sequence_at: Time.zone.now,
             last_error:          nil,
@@ -316,7 +316,7 @@ RSpec.describe AreSearch::Searcher, "filters" do
             ar_model_class_name: "Article",
             index_target_name:   "default",
             ar_instance_key:     "2",
-            es_index_name:       "test_articles_default",
+            es_index_name:       "test__articles__default",
             request_sequence:    2,
             request_sequence_at: Time.zone.now,
             last_error:          "blocked",
@@ -326,7 +326,7 @@ RSpec.describe AreSearch::Searcher, "filters" do
 
         model_class.order(:id).each do |record|
             hits << {
-                "_index" => "test_sync_requests_default",
+                "_index" => "test__sync_requests__default",
                 "_id" => record.id.to_s,
                 "_source" => {
                     AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => model_class.name,

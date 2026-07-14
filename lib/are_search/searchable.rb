@@ -213,6 +213,12 @@ module AreSearch
 
         class_methods do
 
+            # Elasticsearch index 名に使用する Active Record 側の識別名を返す。
+            # 既定では table_name を使用し、必要なモデルだけオーバーライドする。
+            def are_search_ar_table_name
+                table_name
+            end
+
             # このモデルが持つ全 index target を返す。
             def are_search_index_targets
                 return @are_search_index_targets unless @are_search_index_targets.nil?
@@ -252,20 +258,36 @@ module AreSearch
             end
 
             def are_search_validate_es_mappings_by_target!
-                errors = are_search_es_mappings_by_target_errors([])
+                errors = []
+
+                are_search_ar_table_name_errors(errors)
+                are_search_es_mappings_by_target_errors(errors)
+
                 return true if errors.empty?
 
                 raise ArgumentError, errors.join("\n")
             end
 
             def are_search_validate_model_setting(errors)
+                are_search_ar_table_name_errors(errors)
                 are_search_es_mappings_by_target_errors(errors)
 
                 true
             rescue StandardError => e
-                errors << "#{name}.are_search_es_mappings の検査中に例外が発生しました: #{e.class}: #{e.message}"
+                errors << "#{name} のモデル設定検査中に例外が発生しました: #{e.class}: #{e.message}"
 
                 false
+            end
+
+            # Elasticsearch index 名に使用する識別名の形式を検査する。
+            def are_search_ar_table_name_errors(errors)
+                ar_table_name = are_search_ar_table_name
+
+                unless AreSearch.valid_es_index_name_element?(ar_table_name)
+                    errors << "#{name}.are_search_ar_table_name は小文字の英字で始まり、小文字の英字とアンダーバーだけを使用した String を返してください: #{ar_table_name.inspect}"
+                end
+
+                errors
             end
 
             def are_search_es_mappings_by_target_errors(errors)
@@ -294,6 +316,18 @@ module AreSearch
                 mappings.each do |target_name, target_mappings|
                     unless target_name.instance_of?(Symbol)
                         errors << "#{name}.are_search_es_mappings の target_name は Symbol で指定してください: #{target_name.inspect}"
+                    end
+
+                    target_name_string = target_name.to_s
+
+                    unless AreSearch.valid_es_index_name_element?(target_name_string)
+                        errors << "#{name}.are_search_es_mappings の target_name は小文字の英字で始まり、" \
+                            "小文字の英字とアンダーバーだけを使用してください: #{target_name.inspect}"
+                    end
+
+                    if target_name_string.include?(AreSearch::ES_INDEX_NAME_DELIMITER)
+                        errors << "#{name}.are_search_es_mappings の target_name に " \
+                            "#{AreSearch::ES_INDEX_NAME_DELIMITER.inspect} は使用できません: #{target_name.inspect}"
                     end
 
                     unless target_mappings.instance_of?(Hash)

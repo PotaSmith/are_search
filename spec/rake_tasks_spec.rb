@@ -11,30 +11,30 @@ RSpec.describe "are_search rake tasks" do
         double(
             "article_index_target",
             target_name:              :default,
-            are_search_es_index_name: "test_articles_default",
+            are_search_es_index_name: "test__articles__default",
         )
     end
     let(:document_index_target) do
         double(
             "document_index_target",
             target_name:              :default,
-            are_search_es_index_name: "test_documents_default",
+            are_search_es_index_name: "test__documents__default",
         )
     end
     let(:article_model) do
         class_double(
             "Article",
-            name:                   "Article",
-            table_name:             "articles",
-            are_search_index_targets: [article_index_target],
+            name:                     "Article",
+            are_search_ar_table_name: "articles",
+            are_search_index_targets:  [article_index_target],
         )
     end
     let(:document_model) do
         class_double(
             "Document",
-            name:                   "Document",
-            table_name:             "documents",
-            are_search_index_targets: [document_index_target],
+            name:                     "Document",
+            are_search_ar_table_name: "documents",
+            are_search_index_targets:  [document_index_target],
         )
     end
     let(:application) { double("application", eager_load!: true) }
@@ -86,7 +86,7 @@ RSpec.describe "are_search rake tasks" do
             ar_model_class_name: "Article",
             index_target_name:   "default",
             ar_instance_key:     "1",
-            es_index_name:       "test_articles_default",
+            es_index_name:       "test__articles__default",
             request_sequence:    10,
             request_sequence_at: Time.zone.now,
             retry_count:         0,
@@ -133,7 +133,7 @@ RSpec.describe "are_search rake tasks" do
                 ar_model_class_name: "Comment",
                 index_target_name:   "default",
                 ar_instance_key:     "4",
-                es_index_name:       "test_comments_default",
+                es_index_name:       "test__comments__default",
                 request_sequence:    40,
             )
             other_model.update_columns(created_at: old_time, updated_at: old_time)
@@ -237,50 +237,50 @@ RSpec.describe "are_search rake tasks" do
         it "Searchable index ごとに clean up を呼ぶ" do
             allow(AreSearch::IndexManager)
                 .to receive(:es_clean_up)
-                .with("test_articles_default")
+                .with("test__articles__default")
                 .and_return(true)
 
             allow(AreSearch::IndexManager)
                 .to receive(:es_clean_up)
-                .with("test_documents_default")
+                .with("test__documents__default")
                 .and_return(false)
 
             expect do
                 Rake::Task["are_search:clean_up_all"].invoke
             end.to output(
-                "[AreSearch] clean_up done: test_articles_default\n" \
-                "[AreSearch] clean_up skipped: test_documents_default locked\n",
+                "[AreSearch] clean_up done: test__articles__default\n" \
+                "[AreSearch] clean_up skipped: test__documents__default locked\n",
             ).to_stdout
         end
 
         it "1 index の clean up が失敗しても残り index を処理する" do
             allow(AreSearch::IndexManager)
                 .to receive(:es_clean_up)
-                .with("test_articles_default")
+                .with("test__articles__default")
                 .and_raise(RuntimeError, "delete failed")
 
             allow(AreSearch::IndexManager)
                 .to receive(:es_clean_up)
-                .with("test_documents_default")
+                .with("test__documents__default")
                 .and_return(true)
 
             expect do
                 Rake::Task["are_search:clean_up_all"].invoke
             end.to output(
-                "[AreSearch] clean_up failed: test_articles_default RuntimeError: delete failed\n" \
-                "[AreSearch] clean_up done: test_documents_default\n",
+                "[AreSearch] clean_up failed: test__articles__default RuntimeError: delete failed\n" \
+                "[AreSearch] clean_up done: test__documents__default\n",
             ).to_stdout
         end
 
         it "index 操作が許可されていない場合は例外を再送出する" do
             allow(AreSearch::IndexManager)
                 .to receive(:es_clean_up)
-                .with("test_articles_default")
+                .with("test__articles__default")
                 .and_raise(AreSearch::IndexOperationViolation, "not allowed")
 
             expect(AreSearch::IndexManager)
                 .not_to receive(:es_clean_up)
-                .with("test_documents_default")
+                .with("test__documents__default")
 
             expect do
                 Rake::Task["are_search:clean_up_all"].invoke
@@ -291,7 +291,7 @@ RSpec.describe "are_search rake tasks" do
     describe "are_search:check_index_status" do
         it "marker と lock と Elasticsearch 状態を出力する" do
             AreSearch::IndexMarker.create!(
-                es_index_name: "test_documents_default",
+                es_index_name: "test__documents__default",
                 operation:     "reindex",
                 owner_token:   SecureRandom.uuid,
                 owner_host:    "test-host",
@@ -301,15 +301,15 @@ RSpec.describe "are_search rake tasks" do
 
             allow(AreSearch::IndexManager)
                 .to receive(:es_index_status)
-                .with("test_articles_default")
+                .with("test__articles__default")
                 .and_return(
                     {
-                        alias_name:             "test_articles_default",
+                        alias_name:             "test__articles__default",
                         alias_exists:           true,
-                        current_physical_names: ["test_articles_default_2026_07_04_00_00_00_000000"],
+                        current_physical_names: ["test__articles__default__2026_07_04_00_00_00_000000"],
                         physical_indexes:       [
                             {
-                                name:    "test_articles_default_2026_07_04_00_00_00_000000",
+                                name:    "test__articles__default__2026_07_04_00_00_00_000000",
                                 current: true,
                             },
                         ],
@@ -319,10 +319,10 @@ RSpec.describe "are_search rake tasks" do
 
             allow(AreSearch::IndexManager)
                 .to receive(:es_index_status)
-                .with("test_documents_default")
+                .with("test__documents__default")
                 .and_return(
                     {
-                        alias_name:             "test_documents_default",
+                        alias_name:             "test__documents__default",
                         alias_exists:           false,
                         current_physical_names: [],
                         physical_indexes:       [],
@@ -333,24 +333,24 @@ RSpec.describe "are_search rake tasks" do
             expect do
                 Rake::Task["are_search:check_index_status"].invoke
             end.to output(
-                /index status: test_articles_default.*alias:\s+exists.*current physical:.*test_articles_default_2026_07_04_00_00_00_000000.*physical indexes:.*test_articles_default_2026_07_04_00_00_00_000000 current.*warning:\s+none.*index status: test_documents_default.*marker:\s+exists.*alias:\s+missing.*warning:\s+alias missing.*warning:\s+marker exists/m,
+                /index status: test__articles__default.*alias:\s+exists.*current physical:.*test__articles__default__2026_07_04_00_00_00_000000.*physical indexes:.*test__articles__default__2026_07_04_00_00_00_000000 current.*warning:\s+none.*index status: test__documents__default.*marker:\s+exists.*alias:\s+missing.*warning:\s+alias missing.*warning:\s+marker exists/m,
             ).to_stdout
         end
 
         it "Elasticsearch 状態の取得に失敗しても marker と lock は出力する" do
             allow(AreSearch::IndexManager)
                 .to receive(:es_index_status)
-                .with("test_articles_default")
+                .with("test__articles__default")
                 .and_raise(RuntimeError, "es down")
 
             allow(AreSearch::IndexManager)
                 .to receive(:es_index_status)
-                .with("test_documents_default")
+                .with("test__documents__default")
                 .and_return(
                     {
-                        alias_name:             "test_documents_default",
+                        alias_name:             "test__documents__default",
                         alias_exists:           true,
-                        current_physical_names: ["test_documents_default_2026_07_04_00_00_00_000000"],
+                        current_physical_names: ["test__documents__default__2026_07_04_00_00_00_000000"],
                         physical_indexes:       [],
                         warnings:               [],
                     },
@@ -359,7 +359,7 @@ RSpec.describe "are_search rake tasks" do
             expect do
                 Rake::Task["are_search:check_index_status"].invoke
             end.to output(
-                /index status: test_articles_default.*marker:\s+none.*elasticsearch: failed RuntimeError: es down.*index status: test_documents_default/m,
+                /index status: test__articles__default.*marker:\s+none.*elasticsearch: failed RuntimeError: es down.*index status: test__documents__default/m,
             ).to_stdout
         end
     end
@@ -369,12 +369,12 @@ RSpec.describe "are_search rake tasks" do
             article_archive_model = class_double(
                 "ArticleArchive",
                 name:       "ArticleArchive",
-                table_name: "articles",
+                are_search_ar_table_name: "articles",
             )
             stub_const("ArticleArchive", article_archive_model)
 
             AreSearch::IndexMarker.create!(
-                es_index_name: "test_articles_default",
+                es_index_name: "test__articles__default",
                 operation:     "manual",
                 owner_token:   SecureRandom.uuid,
                 owner_host:    "test-host",
@@ -402,7 +402,7 @@ RSpec.describe "are_search rake tasks" do
             create_sync_request(
                 ar_model_class_name: "Document",
                 ar_instance_key:     "5",
-                es_index_name:       "test_documents_default",
+                es_index_name:       "test__documents__default",
                 last_error:          "timeout",
             )
 
@@ -412,8 +412,8 @@ RSpec.describe "are_search rake tasks" do
                 -------------------------------------------------------------------------
                 マーカー状況
 
-                ESインデックス名       操作    開始日時             ホスト     PID    メッセージ
-                test_articles_default  manual  2026-07-11 10:20:30  test-host  12345  maintenance
+                ESインデックス名         操作    開始日時             ホスト     PID    メッセージ
+                test__articles__default  manual  2026-07-11 10:20:30  test-host  12345  maintenance
 
                 -------------------------------------------------------------------------
                 リクエスト数
@@ -484,7 +484,7 @@ RSpec.describe "are_search rake tasks" do
     describe "are_search:mark_all" do
         it "manual marker を作成し、既存 marker がある index はスキップする" do
             existing_marker = AreSearch::IndexMarker.create!(
-                es_index_name: "test_documents_default",
+                es_index_name: "test__documents__default",
                 operation:     "reindex",
                 owner_token:   SecureRandom.uuid,
                 owner_host:    "test-host",
@@ -495,11 +495,11 @@ RSpec.describe "are_search rake tasks" do
             expect do
                 Rake::Task["are_search:mark_all"].invoke
             end.to output(
-                /mark_all marked: test_articles_default marker_id=\d+.*mark_all skipped: test_documents_default existing_operation=reindex marker_id=#{existing_marker.id}/m,
+                /mark_all marked: test__articles__default marker_id=\d+.*mark_all skipped: test__documents__default existing_operation=reindex marker_id=#{existing_marker.id}/m,
             ).to_stdout
 
-            article_marker = AreSearch::IndexMarker.find_by(es_index_name: "test_articles_default")
-            document_marker = AreSearch::IndexMarker.find_by(es_index_name: "test_documents_default")
+            article_marker = AreSearch::IndexMarker.find_by(es_index_name: "test__articles__default")
+            document_marker = AreSearch::IndexMarker.find_by(es_index_name: "test__documents__default")
 
             expect(article_marker.operation).to eq("manual")
             expect(document_marker.id).to eq(existing_marker.id)
@@ -510,7 +510,7 @@ RSpec.describe "are_search rake tasks" do
     describe "are_search:unmark_all" do
         it "manual marker だけを削除する" do
             manual_marker = AreSearch::IndexMarker.create!(
-                es_index_name: "test_articles_default",
+                es_index_name: "test__articles__default",
                 operation:     "manual",
                 owner_token:   SecureRandom.uuid,
                 owner_host:    "test-host",
@@ -518,7 +518,7 @@ RSpec.describe "are_search rake tasks" do
                 started_at:    Time.zone.now,
             )
             reindex_marker = AreSearch::IndexMarker.create!(
-                es_index_name: "test_documents_default",
+                es_index_name: "test__documents__default",
                 operation:     "reindex",
                 owner_token:   SecureRandom.uuid,
                 owner_host:    "test-host",
@@ -529,7 +529,7 @@ RSpec.describe "are_search rake tasks" do
             expect do
                 Rake::Task["are_search:unmark_all"].invoke
             end.to output(
-                /unmark_all deleted: test_articles_default count=1.*unmark_all skipped: test_documents_default manual marker not found/m,
+                /unmark_all deleted: test__articles__default count=1.*unmark_all skipped: test__documents__default manual marker not found/m,
             ).to_stdout
 
             expect(AreSearch::IndexMarker.find_by(id: manual_marker.id)).to eq(nil)
@@ -564,24 +564,24 @@ RSpec.describe "are_search rake tasks" do
         it "現在の alias に接続されていない index があればエラーにする" do
             allow(indices)
                 .to receive(:get)
-                .with(index: "test_*")
+                .with(index: "test__*")
                 .and_return(
                     {
-                        "test_articles_default_2026_07_10_00_00_00_000000" => {},
-                        "test_documents_default_2026_07_10_00_00_00_000000" => {},
-                        "test_articles_default_2026_07_09_00_00_00_000000" => {},
+                        "test__articles__default__2026_07_10_00_00_00_000000" => {},
+                        "test__documents__default__2026_07_10_00_00_00_000000" => {},
+                        "test__articles__default__2026_07_09_00_00_00_000000" => {},
                     },
                 )
 
             allow(AreSearch::IndexManager)
                 .to receive(:es_get_alias_physical_names)
-                .with("test_articles_default")
-                .and_return(["test_articles_default_2026_07_10_00_00_00_000000"])
+                .with("test__articles__default")
+                .and_return(["test__articles__default__2026_07_10_00_00_00_000000"])
 
             allow(AreSearch::IndexManager)
                 .to receive(:es_get_alias_physical_names)
-                .with("test_documents_default")
-                .and_return(["test_documents_default_2026_07_10_00_00_00_000000"])
+                .with("test__documents__default")
+                .and_return(["test__documents__default__2026_07_10_00_00_00_000000"])
 
             expect($stdin).not_to receive(:gets)
             expect(article_index_target).not_to receive(:are_search_es_reindex)
@@ -591,30 +591,30 @@ RSpec.describe "are_search rake tasks" do
                 Rake::Task["are_search:reindex_all_for_es_version_up"].invoke
             end.to raise_error(
                 AreSearch::Error,
-                /test_articles_default_2026_07_09_00_00_00_000000/,
+                /test__articles__default__2026_07_09_00_00_00_000000/,
             )
         end
 
         it "確認で y 以外が入力された場合は reindex しない" do
             allow(indices)
                 .to receive(:get)
-                .with(index: "test_*")
+                .with(index: "test__*")
                 .and_return(
                     {
-                        "test_articles_default_2026_07_10_00_00_00_000000" => {},
-                        "test_documents_default_2026_07_10_00_00_00_000000" => {},
+                        "test__articles__default__2026_07_10_00_00_00_000000" => {},
+                        "test__documents__default__2026_07_10_00_00_00_000000" => {},
                     },
                 )
 
             allow(AreSearch::IndexManager)
                 .to receive(:es_get_alias_physical_names)
-                .with("test_articles_default")
-                .and_return(["test_articles_default_2026_07_10_00_00_00_000000"])
+                .with("test__articles__default")
+                .and_return(["test__articles__default__2026_07_10_00_00_00_000000"])
 
             allow(AreSearch::IndexManager)
                 .to receive(:es_get_alias_physical_names)
-                .with("test_documents_default")
-                .and_return(["test_documents_default_2026_07_10_00_00_00_000000"])
+                .with("test__documents__default")
+                .and_return(["test__documents__default__2026_07_10_00_00_00_000000"])
 
             allow($stdin).to receive(:gets).and_return("n\n")
 
@@ -626,8 +626,8 @@ RSpec.describe "are_search rake tasks" do
             end.to output(
                 "以下の index を reindex します。\n" \
                 "\n" \
-                "  test_articles_default\n" \
-                "  test_documents_default\n" \
+                "  test__articles__default\n" \
+                "  test__documents__default\n" \
                 "\n" \
                 "実行しますか？ [y/N]: [AreSearch] reindex canceled.\n",
             ).to_stdout
@@ -636,23 +636,23 @@ RSpec.describe "are_search rake tasks" do
         it "確認で y が入力された場合は全 index target を reindex する" do
             allow(indices)
                 .to receive(:get)
-                .with(index: "test_*")
+                .with(index: "test__*")
                 .and_return(
                     {
-                        "test_articles_default_2026_07_10_00_00_00_000000" => {},
-                        "test_documents_default_2026_07_10_00_00_00_000000" => {},
+                        "test__articles__default__2026_07_10_00_00_00_000000" => {},
+                        "test__documents__default__2026_07_10_00_00_00_000000" => {},
                     },
                 )
 
             allow(AreSearch::IndexManager)
                 .to receive(:es_get_alias_physical_names)
-                .with("test_articles_default")
-                .and_return(["test_articles_default_2026_07_10_00_00_00_000000"])
+                .with("test__articles__default")
+                .and_return(["test__articles__default__2026_07_10_00_00_00_000000"])
 
             allow(AreSearch::IndexManager)
                 .to receive(:es_get_alias_physical_names)
-                .with("test_documents_default")
-                .and_return(["test_documents_default_2026_07_10_00_00_00_000000"])
+                .with("test__documents__default")
+                .and_return(["test__documents__default__2026_07_10_00_00_00_000000"])
 
             allow($stdin).to receive(:gets).and_return("y\n")
 
@@ -669,7 +669,7 @@ RSpec.describe "are_search rake tasks" do
             expect do
                 Rake::Task["are_search:reindex_all_for_es_version_up"].invoke
             end.to output(
-                /reindex done: test_articles_default.*reindex done: test_documents_default/m,
+                /reindex done: test__articles__default.*reindex done: test__documents__default/m,
             ).to_stdout
         end
     end

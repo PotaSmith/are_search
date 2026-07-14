@@ -3,6 +3,25 @@
 require "fileutils"
 require "securerandom"
 
+module AreSearch
+    # alias の各要素と、alias と物理 index timestamp の境界に使用する。
+    ES_INDEX_NAME_DELIMITER = "__"
+
+    # Elasticsearch index 名を構成する各要素の共通形式。
+    # 小文字英字で始まり、小文字英字とアンダーバーだけを使用する。
+    ES_INDEX_NAME_ELEMENT_PATTERN = /\A[a-z][a-z_]*\z/.freeze
+
+    # 空の index_prefix を index 名の先頭要素として残すための代理値。
+    EMPTY_ES_INDEX_PREFIX = "are_search_no_prefix"
+
+    # 値が Elasticsearch index 名の要素として使用できる形式かを判定する。
+    def self.valid_es_index_name_element?(value)
+        return false unless value.instance_of?(String)
+
+        value.match?(ES_INDEX_NAME_ELEMENT_PATTERN)
+    end
+end
+
 require_relative "are_search/version"
 require_relative "are_search/index_marker"
 require_relative "are_search/index_target"
@@ -223,11 +242,28 @@ module AreSearch
     end
 
 
+    # Elasticsearch index 名の先頭要素を設定する。
+    # 空文字列は EMPTY_ES_INDEX_PREFIX へ置き換える。
+    # 値を指定する場合は小文字英字で始まり、小文字英字とアンダーバーだけを許可する。
     def self.setup(index_prefix:, &block)
         raise ArgumentError, "setup にはクライアント生成のブロックが必要です" unless block
         raise ArgumentError, "setup にはindex_prefixが必要です" unless index_prefix
 
-        @index_prefix = index_prefix
+        index_prefix_string = index_prefix.to_s
+
+        if index_prefix_string.empty? == false
+            unless valid_es_index_name_element?(index_prefix_string)
+                raise ArgumentError,
+                    "index_prefix は小文字の英字で始まり、小文字の英字とアンダーバーだけを使用してください: #{index_prefix_string.inspect}"
+            end
+        end
+
+        if index_prefix_string.include?(ES_INDEX_NAME_DELIMITER)
+            raise ArgumentError,
+                "index_prefix に #{ES_INDEX_NAME_DELIMITER.inspect} は使用できません"
+        end
+
+        @index_prefix = index_prefix_string
         @client_block = block
     end
 
@@ -268,10 +304,15 @@ module AreSearch
         new_client
     end
 
+    # 設定済みの index_prefix を index 名へ使用できる文字列として返す。
+    # 空文字列が設定されている場合も先頭要素を省略せず、代理値を返す。
     def self.index_prefix
         raise NotConfiguredError, "AreSearch.setup が呼ばれていません" unless @index_prefix
 
-        @index_prefix
+        index_prefix_string = @index_prefix.to_s
+        return EMPTY_ES_INDEX_PREFIX if index_prefix_string.empty?
+
+        index_prefix_string
     end
 
     # 複数 target 検索のショートハンド。

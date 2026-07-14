@@ -21,14 +21,68 @@ RSpec.describe AreSearch::IndexTarget do
     let(:model_class) do
         double(
             "Article",
-            name:                   "Article",
-            table_name:             "articles",
-            are_search_es_mappings: target_mappings,
+            name:                     "Article",
+            are_search_ar_table_name: "articles",
+            are_search_es_mappings:   target_mappings,
         )
     end
 
     let(:index_target) do
         described_class.new(model_class, :default)
+    end
+
+    describe ".new" do
+        it "target_name に index 名の区切り文字は使用できない" do
+            expect do
+                described_class.new(model_class, :"events__daily")
+            end.to raise_error(ArgumentError, /target name.*"__" は使用できません/)
+        end
+    end
+
+    describe "#are_search_es_index_name" do
+        before do
+            allow(AreSearch)
+                .to receive(:index_prefix)
+                .and_return("test")
+        end
+
+        it "prefix・are_search_ar_table_name・target_name を区切って alias 名を作る" do
+            expect(index_target.are_search_es_index_name).to eq("test__articles__default")
+        end
+
+        it "are_search_ar_table_name と target_name の組み合わせが異なる index 名を区別する" do
+            user_event_model = double(
+                "UserEvent",
+                are_search_ar_table_name: "user",
+                are_search_es_mappings: { events_daily: target_mappings[:default] },
+            )
+            user_events_daily_model = double(
+                "UserEventsDaily",
+                are_search_ar_table_name: "user_events",
+                are_search_es_mappings: { daily: target_mappings[:default] },
+            )
+
+            user_event_index = described_class.new(user_event_model, :events_daily)
+            user_events_daily_index = described_class.new(user_events_daily_model, :daily)
+
+            expect(user_event_index.are_search_es_index_name).to eq("test__user__events_daily")
+            expect(user_events_daily_index.are_search_es_index_name).to eq("test__user_events__daily")
+        end
+
+        it "are_search_ar_table_name に index 名の区切り文字は使用できない" do
+            delimiter_table_model = double(
+                "DelimiterTable",
+                are_search_ar_table_name: "user__events",
+                are_search_es_mappings: { daily: target_mappings[:default] },
+            )
+
+            expect do
+                described_class.new(delimiter_table_model, :daily)
+            end.to raise_error(
+                ArgumentError,
+                /are_search_ar_table_name.*"__" は使用できません/,
+            )
+        end
     end
 
     describe "#are_search_es_mappings" do
@@ -187,7 +241,7 @@ RSpec.describe AreSearch::IndexTarget do
 
             expect(AreSearch::IndexManager)
                 .to receive(:es_with_index_guard) do |es_index_name, operation:, &block|
-                    expect(es_index_name).to eq("test_articles_default")
+                    expect(es_index_name).to eq("test__articles__default")
                     expect(operation).to eq("pdf_extract")
                     received_block = block
 
@@ -217,7 +271,7 @@ RSpec.describe AreSearch::IndexTarget do
 
             allow(AreSearch::IndexManager)
                 .to receive(:es_index_alias_exists?)
-                .with("test_articles_default")
+                .with("test__articles__default")
                 .and_return(true)
         end
 
@@ -289,7 +343,7 @@ RSpec.describe AreSearch::IndexTarget do
                     "Article"
                 end
 
-                def self.table_name
+                def self.are_search_ar_table_name
                     "articles"
                 end
 
@@ -367,7 +421,7 @@ RSpec.describe AreSearch::IndexTarget do
     describe "#are_search_es_delete!" do
         let(:searchable_model_class) do
             Class.new do
-                def self.table_name
+                def self.are_search_ar_table_name
                     "articles"
                 end
 
@@ -406,7 +460,7 @@ RSpec.describe AreSearch::IndexTarget do
         it "指定した id を alias から delete する" do
             expect(client)
                 .to receive(:delete)
-                .with(index: "test_articles_default", id: "123")
+                .with(index: "test__articles__default", id: "123")
                 .and_return("result" => "deleted")
 
             result = searchable_index_target.are_search_es_delete!(123)
@@ -438,7 +492,7 @@ RSpec.describe AreSearch::IndexTarget do
     describe "#are_search_es_sync" do
         let(:searchable_model_class) do
             Class.new do
-                def self.table_name
+                def self.are_search_ar_table_name
                     "articles"
                 end
             end
@@ -467,7 +521,7 @@ RSpec.describe AreSearch::IndexTarget do
                     "Article",
                     :default,
                     "123",
-                    "test_articles_default",
+                    "test__articles__default",
                     "token-1",
                     reraise: true,
                 )

@@ -11,7 +11,7 @@ RSpec.describe "search highlight" do
                 "Article"
             end
 
-            def self.table_name
+            def self.are_search_ar_table_name
                 "articles"
             end
 
@@ -49,7 +49,7 @@ RSpec.describe "search highlight" do
                 "Document"
             end
 
-            def self.table_name
+            def self.are_search_ar_table_name
                 "documents"
             end
 
@@ -95,12 +95,12 @@ RSpec.describe "search highlight" do
 
         allow(AreSearch::IndexManager)
             .to receive(:es_index_alias_exists?)
-            .with("test_articles_default")
+            .with("test__articles__default")
             .and_return(true)
 
         allow(AreSearch::IndexManager)
             .to receive(:es_index_alias_exists?)
-            .with("test_documents_default")
+            .with("test__documents__default")
             .and_return(true)
     end
 

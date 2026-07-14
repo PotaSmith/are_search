@@ -7,7 +7,7 @@ RSpec.describe AreSearch::SyncJob do
     let(:ar_model_class_name)   { "Article" }
     let(:target_name)           { :default }
     let(:ar_instance_key)       { "123" }
-    let(:es_index_name)         { "test_articles_default" }
+    let(:es_index_name)         { "test__articles__default" }
     let(:processing_token)      { "token-1" }
     let(:current_database_name) { database_name }
     let(:db_config)             { double("db_config", database: current_database_name) }

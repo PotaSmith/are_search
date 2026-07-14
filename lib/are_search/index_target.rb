@@ -4,19 +4,47 @@ module AreSearch
     class IndexTarget
         attr_reader :model_class, :target_name
 
+        # モデルと target_name を保持し、index 名に使用できない値を拒否する。
         def initialize(model_class, target_name = :default)
             raise ArgumentError, "model_class が必要です" if model_class.nil?
             raise ArgumentError, "target name が必要です" if target_name.nil?
 
+            ar_table_name = model_class.are_search_ar_table_name
+            unless AreSearch.valid_es_index_name_element?(ar_table_name)
+                raise ArgumentError,
+                    "are_search_ar_table_name は小文字の英字で始まり、小文字の英字とアンダーバーだけを使用した String を返してください: #{ar_table_name.inspect}"
+            end
+
+            if ar_table_name.include?(AreSearch::ES_INDEX_NAME_DELIMITER)
+                raise ArgumentError,
+                    "are_search_ar_table_name に #{AreSearch::ES_INDEX_NAME_DELIMITER.inspect} は使用できません"
+            end
+
+            target_name_string = target_name.to_s
+            unless AreSearch.valid_es_index_name_element?(target_name_string)
+                raise ArgumentError,
+                    "target name は小文字の英字で始まり、小文字の英字とアンダーバーだけを使用してください: #{target_name.inspect}"
+            end
+
+            if target_name_string.include?(AreSearch::ES_INDEX_NAME_DELIMITER)
+                raise ArgumentError,
+                    "target name に #{AreSearch::ES_INDEX_NAME_DELIMITER.inspect} は使用できません"
+            end
+
             @model_class = model_class
             @target_name = target_name.to_sym
+            @ar_table_name = ar_table_name
         end
 
-        # alias名: {prefix}_{table_name}
+        # alias名: {prefix}__{are_search_ar_table_name}__{target_name}
         # 検索・index・delete・sync 等、既存の呼び出し元はこの名前を参照する。
         # prefix は config/initializers/are_search.rb で設定。
         def are_search_es_index_name
-            [AreSearch.index_prefix, model_class.table_name, target_name].compact.join("_")
+            [
+                AreSearch.index_prefix,
+                @ar_table_name,
+                target_name,
+            ].join(AreSearch::ES_INDEX_NAME_DELIMITER)
         end
 
         # index作成時の index settings

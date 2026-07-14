@@ -53,6 +53,50 @@ RSpec.describe AreSearch, "configuration" do
         end.to raise_error(ArgumentError, "setup にはindex_prefixが必要です")
     end
 
+    it "空の index_prefix は代理値を返す" do
+        described_class.setup(index_prefix: "") do
+            double("client")
+        end
+
+        expect(described_class.index_prefix).to eq(AreSearch::EMPTY_ES_INDEX_PREFIX)
+    end
+
+    it "index_prefix に index 名の区切り文字は使用できない" do
+        expect do
+            described_class.setup(index_prefix: "app__test") do
+                double("client")
+            end
+        end.to raise_error(ArgumentError, /index_prefix.*"__" は使用できません/)
+    end
+
+    it "index_prefix は小文字の英字で始まり小文字の英字とアンダーバーだけを許可する" do
+        invalid_values = [
+            "App",
+            "app-test",
+            "app2",
+            "_app",
+        ]
+
+        invalid_values.each do |invalid_value|
+            expect do
+                described_class.setup(index_prefix: invalid_value) do
+                    double("client")
+                end
+            end.to raise_error(
+                ArgumentError,
+                /index_prefix は小文字の英字で始まり、小文字の英字とアンダーバーだけを使用してください/,
+            )
+        end
+    end
+
+    it "index_prefix の小文字英字とアンダーバーを許可する" do
+        described_class.setup(index_prefix: "app_test") do
+            double("client")
+        end
+
+        expect(described_class.index_prefix).to eq("app_test")
+    end
+
     it "setup 前に client を呼ぶと NotConfiguredError を出す" do
         expect do
             described_class.client

@@ -25,7 +25,7 @@ RSpec.describe "search paging" do
                 "Article"
             end
 
-            def self.table_name
+            def self.are_search_ar_table_name
                 "articles"
             end
 
@@ -74,7 +74,7 @@ RSpec.describe "search paging" do
             "article_index_target",
             model_class:                  article_model,
             target_name:                  :default,
-            are_search_es_index_name:     "test_articles_default",
+            are_search_es_index_name:     "test__articles__default",
             are_search_es_mappings:       article_mappings,
             are_search_es_index_settings: article_index_settings,
         )
@@ -84,7 +84,7 @@ RSpec.describe "search paging" do
             "document_index_target",
             model_class:                  document_model,
             target_name:                  :default,
-            are_search_es_index_name:     "test_documents_default",
+            are_search_es_index_name:     "test__documents__default",
             are_search_es_mappings:       document_mappings,
             are_search_es_index_settings: document_index_settings,
         )
@@ -99,12 +99,12 @@ RSpec.describe "search paging" do
     before do
         allow(AreSearch::IndexManager)
             .to receive(:es_index_alias_exists?)
-            .with("test_articles_default")
+            .with("test__articles__default")
             .and_return(true)
 
         allow(AreSearch::IndexManager)
             .to receive(:es_index_alias_exists?)
-            .with("test_documents_default")
+            .with("test__documents__default")
             .and_return(true)
     end
 
@@ -174,7 +174,7 @@ RSpec.describe "search paging" do
 
         expect(client)
             .to receive(:search) do |args|
-                expect(args[:index]).to eq("test_articles_default")
+                expect(args[:index]).to eq("test__articles__default")
                 expect(args[:body][:from]).to eq(30)
                 expect(args[:body][:size]).to eq(0)
                 expect(args[:body][:query]).to eq(match_all: {})
@@ -205,7 +205,7 @@ RSpec.describe "search paging" do
             "hits" => {
                 "hits" => [
                     {
-                        "_index"  => "test_articles_default",
+                        "_index"  => "test__articles__default",
                         "_id"     => "1",
                         "_source" => {
                             AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
@@ -213,7 +213,7 @@ RSpec.describe "search paging" do
                         },
                     },
                     {
-                        "_index"  => "test_articles_default",
+                        "_index"  => "test__articles__default",
                         "_id"     => "2",
                         "_source" => {
                             AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
@@ -233,7 +233,7 @@ RSpec.describe "search paging" do
             .and_return(response)
         allow(article_index_target)
             .to receive(:are_search_es_composite_key) do |id|
-                "test_articles_default/#{id}"
+                "test__articles__default/#{id}"
             end
         allow(article_model)
             .to receive(:where)
@@ -507,7 +507,7 @@ RSpec.describe "search paging" do
         expect(client)
             .to receive(:search) do |args|
                 expect(args[:index]).to eq(
-                    "test_articles_default,test_documents_default",
+                    "test__articles__default,test__documents__default",
                 )
                 expect(args[:body].dig(:query, :bool, :filter)).to eq([
                     {

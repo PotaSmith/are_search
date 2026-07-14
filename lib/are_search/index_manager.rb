@@ -15,7 +15,10 @@ module AreSearch
     module IndexManager
         extend self
 
-        PHYSICAL_INDEX_TIMESTAMP_SUFFIX = /_\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2}_\d{6}\z/.freeze
+        PHYSICAL_INDEX_TIMESTAMP_SUFFIX = Regexp.new(
+            "#{Regexp.escape(AreSearch::ES_INDEX_NAME_DELIMITER)}" \
+                "\\d{4}_\\d{2}_\\d{2}_\\d{2}_\\d{2}_\\d{2}_\\d{6}\\z",
+        ).freeze
 
         # AreSearch の物理 index 名から alias 名を復元する。
         # timestamp 形式の物理 index 名でなければ nil を返す。
@@ -179,11 +182,14 @@ module AreSearch
 
         private
 
-        # 物理インデックス名: {alias名}_{マイクロ秒精度タイムスタンプ}
+        # 物理インデックス名: {alias名}__{マイクロ秒精度タイムスタンプ}
         def gen_physical_es_index_name(es_index_name)
             timestamp = Time.now.strftime("%Y_%m_%d_%H_%M_%S_%6N")
 
-            "#{es_index_name}_#{timestamp}"
+            [
+                es_index_name,
+                timestamp,
+            ].join(AreSearch::ES_INDEX_NAME_DELIMITER)
         end
 
         def get_raw_es_index_names(index_pattern)
@@ -193,13 +199,13 @@ module AreSearch
         end
 
         # 指定 alias 名から生成された timestamp 付き物理 index 名だけを返す。
-        # fooとfoo_barのような前方一致で取得された別 target や任意 suffix の index は除外する。
-        # foo_timestamp       → foo     → 残す
-        # foo_bar_timestamp   → foo_bar → 除外
-        # foo_backup          → nil     → 除外
+        # foo と foo__bar のように、指定 alias 名から始まる別 alias の物理 index も除外する。
+        # foo__timestamp       → foo      → 残す
+        # foo__bar__timestamp  → foo__bar → 除外
+        # foo__backup          → nil      → 除外
         def get_physical_es_index_names(es_index_name)
             # 指定 alias 名から始まる index を広めに取得する。
-            raw_index_names = get_raw_es_index_names("#{es_index_name}_*")
+            raw_index_names = get_raw_es_index_names("#{es_index_name}#{AreSearch::ES_INDEX_NAME_DELIMITER}*")
 
             raw_index_names.reject do |index_name|
                 # timestamp 付き物理 index 名なら、生成元の alias 名を復元する。
