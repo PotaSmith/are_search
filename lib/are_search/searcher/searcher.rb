@@ -1,24 +1,66 @@
 # frozen_string_literal: true
 
 module AreSearch
-    module SearchBase
+    module Searcher
         extend self
 
-        # --- ユーティリティ ---
+        # 複数の index target を横断して検索する
+        def search(index_targets, **options)
+            raise ArgumentError, "index_targets を指定してください" if index_targets.nil?
+            raise ArgumentError, "index_targets は1件以上指定してください" if index_targets.empty?
 
-        # Hash / Array 内の key を再帰的に Symbol へ統一する
-        def deep_symbolize_opts(opts)
-            if opts.instance_of?(Hash)
-                return opts.deep_symbolize_keys
+            models = index_targets_to_models(index_targets)
+            models.each do |model|
+                verify_searchable!(model)
             end
 
-            if opts.instance_of?(Array)
-                return opts.map do |value|
-                    deep_symbolize_opts(value)
-                end
+            valid_options = SearchParamValidator.validate(index_targets, models, **options)
+
+            query_options = valid_options.dup
+            body_options = valid_options.dup
+            query = AreSearch::QueryBuilderSelector.select(valid_options).build(index_targets, query_options)
+            body = AreSearch::BodyBuilderSelector.select(valid_options).build(index_targets, query, body_options)
+
+            # ここで使うオプションを取る
+            search_options = valid_options.dup
+
+            model_includes_opts      = search_options.delete(:model_includes)
+            model_results_where_opts = search_options.delete(:model_results_where)
+            page_opts                = search_options.delete(:page)
+            per_page_opts            = search_options.delete(:per_page)
+            dump_body_opts           = search_options.delete(:dump_body)
+
+            # 未使用のオプションがあるか
+            left_options = query_options.keys & body_options.keys & search_options.keys
+            if left_options.any?
+                raise ArgumentError, "余分な検索パラメーターがあります。#{left_options.inspect}"
             end
 
-            opts
+            # AreSearch::DumpBody は廃止
+            return body if dump_body_opts == true
+
+
+            # --- 変換 ---
+            model_includes        = (model_includes_opts.nil? ? {} : model_includes_opts)
+            model_results_wheres  = (model_results_where_opts.nil? ? {} : model_results_where_opts)
+
+            page     = AreSearch::SearcherUtils.resolve_default_option(page_opts, 1)
+            per_page = AreSearch::SearcherUtils.resolve_default_option(per_page_opts, 25)
+
+            return empty_search_result(page, per_page, params_invalid: true) unless AreSearch::EsSearchBodyPolicy.valid?(body)
+            return empty_search_result(page, per_page)                       unless check_index_exists?(index_targets)
+
+            # --- 結果復元情報 ---
+            result_context = {
+                index_to_index_target: build_index_to_index_target(index_targets),
+                model_includes:        model_includes,
+                model_results_wheres:  model_results_wheres,
+                page:                  page,
+                per_page:              per_page,
+            }
+
+            search_index = index_targets.map(&:are_search_es_index_name).join(",")
+            execute_and_build_result(search_index, body, result_context)
         end
 
         def index_ready?(index_targets)
@@ -42,24 +84,11 @@ module AreSearch
             end
         end
 
-        # 初期化中ようの空のresult
-        def empty_search_result(page, per_page)
-            paginated = PaginatedCollection.new(
-                [],
-                current_page:   page,
-                per_page:       per_page,
-                total_count:    0,
-                es_total_count: 0,
-            )
-            SearchResult.new([], paginated, {}, {})
-        end
+        private
 
-        # オプションを間違えていないかを確認
-        def validate_unknown_options!(options, valid_keys, caller_name:)
-            unknown = options.keys.map(&:to_sym) - valid_keys
-            return if unknown.empty?
-
-            raise ArgumentError, "#{caller_name} に未知のオプションが指定されています: #{unknown.inspect}"
+        # index_targets から重複しないモデル一覧を作る
+        def index_targets_to_models(index_targets)
+            index_targets.map(&:model_class).uniq
         end
 
         # モデルが Searchable を include しているか確認する
@@ -67,6 +96,18 @@ module AreSearch
             unless model.include?(AreSearch::Searchable)
                 raise ArgumentError, "#{model.name} は AreSearch::Searchable を include していません"
             end
+        end
+
+        # 初期化中ようの空のresult
+        def empty_search_result(page, per_page, params_invalid: false)
+            paginated = PaginatedCollection.new(
+                [],
+                current_page:   page,
+                per_page:       per_page,
+                total_count:    0,
+                es_total_count: 0,
+            )
+            SearchResult.new([], paginated, {}, {}, params_invalid: params_invalid)
         end
 
         # models から { es_index_name => index_target } の逆引きマップを組み立てる。
@@ -83,136 +124,6 @@ module AreSearch
             result
         end
 
-        # index target のモデル名から Elasticsearch 用の terms 条件を組み立てる
-        def build_model_filter_clause(index_targets)
-            model_class_names = []
-
-            index_targets.each do |index_target|
-                model_class_name = index_target.model_class.name
-                if model_class_names.include?(model_class_name) == false
-                    model_class_names << model_class_name
-                end
-            end
-
-            {
-                terms: {
-                    AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => model_class_names,
-                },
-            }
-        end
-
-        # 最小の max_result_window を計算
-        def resolve_max_result_window(index_targets)
-            values = index_targets.map { |index_target| resolve_model_max_result_window(index_target) }
-
-            values.min
-        end
-
-        # モデルごとの最小の max_result_window を計算
-        def resolve_model_max_result_window(index_target)
-            model_index_settings = index_target.are_search_es_index_settings
-
-            model_index_settings[:max_result_window]
-        end
-
-        # page / per_page から算出した from / size を max_result_window 内へ収める
-        def resolve_paging_params(index_targets, from, size)
-            max_result_window = resolve_max_result_window(index_targets)
-
-            if from >= max_result_window
-                return [max_result_window, 0]
-            end
-
-            if from + size > max_result_window
-                size = max_result_window - from
-            end
-
-            size = 0 if size < 0
-
-            [from, size]
-        end
-
-        # page / per_page が AreSearch 内部で計算可能な正の整数か確認する
-        def validate_paging_options!(page_opt, per_page_opt, caller_name:)
-            unless page_opt.nil? || page_opt.instance_of?(Integer)
-                raise ArgumentError,
-                    "#{caller_name} :page は正の整数で指定してください: #{page_opt.inspect}"
-            end
-
-            unless per_page_opt.nil? || per_page_opt.instance_of?(Integer)
-                raise ArgumentError,
-                    "#{caller_name} :per_page は正の整数で指定してください: #{per_page_opt.inspect}"
-            end
-
-            if page_opt && page_opt <= 0
-                raise ArgumentError,
-                    "#{caller_name} :page は正の整数で指定してください: #{page_opt.inspect}"
-            end
-
-            if per_page_opt && per_page_opt <= 0
-                raise ArgumentError,
-                    "#{caller_name} :per_page は正の整数で指定してください: #{per_page_opt.inspect}"
-            end
-        end
-
-        # オプションが未指定の場合だけデフォルト値へ変換する
-        def resolve_default_option(value, default_value)
-            value.nil? ? default_value : value
-        end
-
-        # --- opts チェック ---
-
-        # index_targets から重複しないモデル一覧を作る
-        def index_targets_to_models(index_targets)
-            index_targets.map(&:model_class).uniq
-        end
-
-        # model_results_where の構造と対象モデルを確認する
-        def validate_results_where_options!(model_results_where_opts, models, caller_name:)
-            return if model_results_where_opts.nil?
-
-            unless model_results_where_opts.instance_of?(Hash)
-                raise ArgumentError,
-                    "#{caller_name} :model_results_where は Hash で指定してください: #{model_results_where_opts.inspect}"
-            end
-
-            invalid = model_results_where_opts.keys - models
-            return if invalid.empty?
-
-            invalid_names = invalid.map(&:name)
-
-            raise ArgumentError,
-                "#{caller_name} :model_results_where に models に含まれていないモデルがあります: " \
-                "#{invalid_names.inspect}"
-        end
-
-        # model_includes の構造と対象モデルを確認する
-        def validate_includes_options!(model_includes_opts, models, caller_name:)
-            return if model_includes_opts.nil?
-
-            unless model_includes_opts.instance_of?(Hash)
-                raise ArgumentError,
-                    "#{caller_name} :model_includes は Hash で指定してください: #{model_includes_opts.inspect}"
-            end
-
-            invalid = model_includes_opts.keys - models
-            return if invalid.empty?
-
-            invalid_names = invalid.map(&:name)
-
-            raise ArgumentError,
-                "#{caller_name} :model_includes に models に含まれていないモデルがあります: " \
-                "#{invalid_names.inspect}"
-        end
-
-        # RawSearch body が利用者定義を保持したまま上書き可能な Hash か確認する
-        def validate_raw_search_body!(body)
-            return if body.instance_of?(Hash)
-
-            raise ArgumentError,
-                "raw_search body は Hash で指定してください: #{body.inspect}"
-        end
-
         # --- 実行 ---
 
         # ES リクエストを実行し、結果復元情報を使って SearchResult を組み立てる
@@ -227,7 +138,7 @@ module AreSearch
 
             index_to_index_target = result_context[:index_to_index_target]
             model_includes = result_context[:model_includes]
-            model_results_filters = result_context[:model_results_filters]
+            model_results_wheres = result_context[:model_results_wheres]
             page = result_context[:page]
             per_page = result_context[:per_page]
 
@@ -235,7 +146,7 @@ module AreSearch
                 hits,
                 index_to_index_target,
                 model_includes,
-                model_results_filters,
+                model_results_wheres,
             )
 
             records = record_result[:records]
@@ -279,8 +190,6 @@ module AreSearch
             )
         end
 
-        private
-
         def build_aggs_result(aggregations)
             return {} if aggregations.nil?
 
@@ -319,7 +228,7 @@ module AreSearch
         end
 
         # ヒット一覧からActiveRecordオブジェクトを復元し、ヒット順に並べて返す
-        def build_records(hits, index_to_index_target, model_includes, model_results_filters)
+        def build_records(hits, index_to_index_target, model_includes, model_results_wheres)
             empty_result = {
                 records:                   [],
                 records_with_target_names: [],
@@ -343,13 +252,11 @@ module AreSearch
 
                 if model_class_names.instance_of?(Array)
                     if model_class_names.include?(index_target.model_class.name)
-                        ids_by_index_target[index_target] <<
-                            hit["_source"][AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s]
+                        ids_by_index_target[index_target] << hit["_id"]
                     end
                 else
                     if model_class_names == index_target.model_class.name
-                        ids_by_index_target[index_target] <<
-                            hit["_source"][AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s]
+                        ids_by_index_target[index_target] << hit["_id"]
                     end
                 end
             end
@@ -361,7 +268,7 @@ module AreSearch
 
                 relation = model.where(id: ids)
                 # DB追加条件で取得対象を確定してから includes を付与する
-                relation = relation.where(model_results_filters[model]) if model_results_filters[model].present?
+                relation = relation.where(model_results_wheres[model]) if model_results_wheres[model].present?
 
                 model_includes_value = model_includes[model]
                 relation = relation.includes(model_includes_value) if model_includes_value.present?
@@ -380,7 +287,7 @@ module AreSearch
                 index_target = index_target_for_hit_index(index_to_index_target, hit["_index"])
                 next if index_target.nil?
 
-                key = index_target.are_search_es_composite_key(hit["_source"][AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s])
+                key = index_target.are_search_es_composite_key(hit["_id"])
                 next if key.nil?
 
                 record = records_by_composite_key[key]
@@ -403,7 +310,7 @@ module AreSearch
                 index_target = index_target_for_hit_index(index_to_index_target, hit["_index"])
                 next if index_target.nil?
 
-                key = index_target.are_search_es_composite_key(hit["_source"][AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s])
+                key = index_target.are_search_es_composite_key(hit["_id"])
                 next if key.nil?
 
                 source    = (hit["_source"] || {}).transform_keys(&:to_sym)
@@ -419,7 +326,7 @@ module AreSearch
                 index_target = index_target_for_hit_index(index_to_index_target, hit["_index"])
                 next if index_target.nil?
 
-                key = index_target.are_search_es_composite_key(hit["_source"][AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s])
+                key = index_target.are_search_es_composite_key(hit["_id"])
                 next if key.nil?
 
                 fragments = (hit["highlight"] || {}).values.flatten(1)

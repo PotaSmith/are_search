@@ -11,7 +11,7 @@ AreSearch 運用ガイド
 
 対象 index が検索可能か確認する。
 
-    ready = AreSearch::SearchBase.index_ready?(
+    ready = AreSearch::Searcher.index_ready?(
         [
             Article.are_search_index_target(:default),
             Comment.are_search_index_target(:default),

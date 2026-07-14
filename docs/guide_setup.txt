@@ -155,9 +155,10 @@ index 操作を行わないプロセスでは、index_operation_enabled を fals
 
     article_index = Article.are_search_index_target(:default)
 
-    result = article_index.are_search_es_search(
-        "Rails",
-        fields: [:title, :body],
+    result = AreSearch::Searcher.search(
+        [article_index],
+        query_string: "Rails",
+        fields:       [:title, :body],
     )
 
     result.records.each do |article|
@@ -166,11 +167,12 @@ index 操作を行わないプロセスでは、index_operation_enabled を fals
 
 ページネーションを指定する場合。
 
-    result = article_index.are_search_es_search(
-        "Rails",
-        fields:   [:title, :body],
-        page:     params[:page],
-        per_page: 20,
+    result = AreSearch::Searcher.search(
+        [article_index],
+        query_string: "Rails",
+        fields:       [:title, :body],
+        page:         params[:page],
+        per_page:     20,
     )
 
     @articles = result.records

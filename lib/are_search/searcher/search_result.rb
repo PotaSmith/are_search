@@ -93,15 +93,16 @@ module AreSearch
         HIGHLIGHT_PRE_TAGS   = [HIGHLIGHT_PRE_TAG].freeze
         HIGHLIGHT_POST_TAGS  = [HIGHLIGHT_POST_TAG].freeze
 
-        attr_reader :records_with_target_names, :records, :aggs, :raw_response
+        attr_reader :records_with_target_names, :records, :aggs, :raw_response, :params_invalid
 
-        def initialize(records_with_target_names, records, aggs, hit_sources, highlights = {}, raw_response: nil)
+        def initialize(records_with_target_names, records, aggs, hit_sources, highlights = {}, raw_response: nil, params_invalid: false)
             @records_with_target_names  = records_with_target_names
             @records                    = records
             @aggs                       = aggs
             @highlights                 = highlights
             @hit_sources                = hit_sources
             @raw_response               = raw_response
+            @params_invalid             = params_invalid
         end
 
         # highlight オプションに pre_tags post_tags で独自に指定している場合は

@@ -331,6 +331,12 @@ module AreSearch
                         reserved_data_field_names.each do |reserved_field_name|
                             errors << "#{name}.are_search_es_mappings[#{target_name.inspect}][:properties] に AreSearch の予約フィールドは指定できません: #{reserved_field_name}"
                         end
+
+                        target_mappings[:properties].each_key do |field_name|
+                            if AreSearch::EsSearchBodyPolicy.invalid_key?(field_name)
+                                errors << "#{name}.are_search_es_mappings[#{target_name.inspect}][:properties] に script 系フィールド名は指定できません: #{field_name}"
+                            end
+                        end
                     end
 
                     violations = AreSearch::EsDataValidator.validate_mapping_symbol_keys(target_mappings)

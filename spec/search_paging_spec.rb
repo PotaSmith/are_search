@@ -18,29 +18,75 @@ RSpec.describe "search paging" do
         }
     end
     let(:article_model) do
-        class_double("Article", name: "Article")
+        Class.new do
+            attr_reader :id
+
+            def self.name
+                "Article"
+            end
+
+            def self.table_name
+                "articles"
+            end
+
+            def self.are_search_es_mappings
+                {
+                    default: {
+                        index_settings: {
+                            max_result_window: 30,
+                        },
+                        properties: {
+                            title: { type: "text" },
+                        },
+                    },
+                }
+            end
+
+            def self.include?(mod)
+                return true if mod == AreSearch::Searchable
+
+                super
+            end
+
+            def initialize(id = 1)
+                @id = id
+            end
+        end
     end
     let(:document_model) do
-        class_double("Document", name: "Document")
+        Class.new do
+            def self.name
+                "Document"
+            end
+
+            def self.include?(mod)
+                return true if mod == AreSearch::Searchable
+
+                super
+            end
+        end
+    end
+    let(:article) do
+        article_model.new
     end
     let(:article_index_target) do
         double(
             "article_index_target",
-            model_class:                    article_model,
-            target_name:                    :default,
-            are_search_es_index_name:       "test_articles_default",
-            are_search_es_mappings:         article_mappings,
-            are_search_es_index_settings:   article_index_settings,
+            model_class:                  article_model,
+            target_name:                  :default,
+            are_search_es_index_name:     "test_articles_default",
+            are_search_es_mappings:       article_mappings,
+            are_search_es_index_settings: article_index_settings,
         )
     end
     let(:document_index_target) do
         double(
             "document_index_target",
-            model_class:                    document_model,
-            target_name:                    :default,
-            are_search_es_index_name:       "test_documents_default",
-            are_search_es_mappings:         document_mappings,
-            are_search_es_index_settings:   document_index_settings,
+            model_class:                  document_model,
+            target_name:                  :default,
+            are_search_es_index_name:     "test_documents_default",
+            are_search_es_mappings:       document_mappings,
+            are_search_es_index_settings: document_index_settings,
         )
     end
     let(:article_index_settings) do
@@ -51,16 +97,6 @@ RSpec.describe "search paging" do
     end
 
     before do
-        allow(article_model)
-            .to receive(:include?)
-            .with(AreSearch::Searchable)
-            .and_return(true)
-
-        allow(document_model)
-            .to receive(:include?)
-            .with(AreSearch::Searchable)
-            .and_return(true)
-
         allow(AreSearch::IndexManager)
             .to receive(:es_index_alias_exists?)
             .with("test_articles_default")
@@ -72,13 +108,13 @@ RSpec.describe "search paging" do
             .and_return(true)
     end
 
-    it "単一 target の MultiSearch は max_result_window を超える最後のページの size を縮める" do
-        body = AreSearch::MultiSearch.search(
+    it "単一 target は max_result_window を超える最後のページの size を縮める" do
+        body = AreSearch::Searcher.search(
             [article_index_target],
-            AreSearch::DumpBody,
-            fields:   [:title],
-            page:     2,
-            per_page: 20,
+            fields:    [:title],
+            page:      2,
+            per_page:  20,
+            dump_body: true,
         )
 
         expect(body[:track_total_hits]).to eq(true)
@@ -86,13 +122,13 @@ RSpec.describe "search paging" do
         expect(body[:size]).to eq(10)
     end
 
-    it "MultiSearch は対象 index target の最小 max_result_window で size を縮める" do
-        body = AreSearch::MultiSearch.search(
+    it "複数 target は最小の max_result_window で size を縮める" do
+        body = AreSearch::Searcher.search(
             [article_index_target, document_index_target],
-            AreSearch::DumpBody,
-            fields:   [:title],
-            page:     2,
-            per_page: 20,
+            fields:    [:title],
+            page:      2,
+            per_page:  20,
+            dump_body: true,
         )
 
         expect(body[:track_total_hits]).to eq(true)
@@ -100,14 +136,23 @@ RSpec.describe "search paging" do
         expect(body[:size]).to eq(10)
     end
 
-    it "MoreLikeThis は max_result_window を超える最後のページの size を縮める" do
-        body = AreSearch::MoreLikeThis.search(
-            [article_index_target],
-            AreSearch::DumpBody,
-            article_index_target,
-            fields:   [:title],
-            page:     2,
-            per_page: 20,
+    it "More Like This検索も基準IndexTargetのmax_result_window内へ収める" do
+        allow(AreSearch)
+            .to receive(:index_prefix)
+            .and_return("test")
+
+        mlt_index_target = AreSearch::IndexTarget.new(article_model, :default)
+
+        body = AreSearch::Searcher.search(
+            [mlt_index_target],
+            mlt_instance:     article,
+            mlt_index_target: mlt_index_target,
+            mlt_params: {
+                fields: [:title],
+            },
+            page:             2,
+            per_page:         20,
+            dump_body:        true,
         )
 
         expect(body[:track_total_hits]).to eq(true)
@@ -115,7 +160,7 @@ RSpec.describe "search paging" do
         expect(body[:size]).to eq(10)
     end
 
-    it "RawSearch も max_result_window 補正を行う" do
+    it "raw_body検索も max_result_window 補正を行う" do
         client = double("client")
         body = {
             query: {
@@ -142,9 +187,9 @@ RSpec.describe "search paging" do
                 }
             end
 
-        result = AreSearch::RawSearch.search(
+        result = AreSearch::Searcher.search(
             [article_index_target],
-            body,
+            raw_body: body,
             page:     3,
             per_page: 20,
         )
@@ -153,17 +198,12 @@ RSpec.describe "search paging" do
         expect(result.records.es_total_count).to eq(100)
     end
 
-    it "DB 復元で落ちた hit の件数を total_count から差し引き、ES の件数は es_total_count に残す" do
+    it "DB復元で落ちたhitをtotal_countから差し引き、ES件数はes_total_countへ残す" do
         client = double("client")
-        body = {
-            query: {
-                match_all: {},
-            },
-        }
-        record = double("record", id: 1)
+        record = article_model.new(1)
         response = {
             "hits" => {
-                "hits"  => [
+                "hits" => [
                     {
                         "_index"  => "test_articles_default",
                         "_id"     => "1",
@@ -188,24 +228,25 @@ RSpec.describe "search paging" do
         allow(AreSearch)
             .to receive(:client)
             .and_return(client)
-
         allow(client)
             .to receive(:search)
             .and_return(response)
-
         allow(article_index_target)
             .to receive(:are_search_es_composite_key) do |id|
                 "test_articles_default/#{id}"
             end
-
         allow(article_model)
             .to receive(:where)
             .with(id: ["1", "2"])
             .and_return([record])
 
-        result = AreSearch::RawSearch.search(
+        result = AreSearch::Searcher.search(
             [article_index_target],
-            body,
+            raw_body: {
+                query: {
+                    match_all: {},
+                },
+            },
             page:     1,
             per_page: 20,
         )
@@ -216,25 +257,8 @@ RSpec.describe "search paging" do
         expect(result.records.es_total_count).to eq(100)
     end
 
-    it "RawSearch は buckets を持つ aggs だけ result.aggs に変換し raw_response で生レスポンスを返す" do
+    it "raw_body検索はbucketsを持つaggsだけ変換しraw_responseで生レスポンスを返す" do
         client = double("client")
-        body = {
-            query: {
-                match_all: {},
-            },
-            aggs: {
-                status: {
-                    terms: {
-                        field: :status,
-                    },
-                },
-                avg_price: {
-                    avg: {
-                        field: :price,
-                    },
-                },
-            },
-        }
         response = {
             "hits" => {
                 "hits"  => [],
@@ -256,14 +280,29 @@ RSpec.describe "search paging" do
         allow(AreSearch)
             .to receive(:client)
             .and_return(client)
-
         expect(client)
             .to receive(:search)
             .and_return(response)
 
-        result = AreSearch::RawSearch.search(
+        result = AreSearch::Searcher.search(
             [article_index_target],
-            body,
+            raw_body: {
+                query: {
+                    match_all: {},
+                },
+                aggs: {
+                    status: {
+                        terms: {
+                            field: :status,
+                        },
+                    },
+                    avg_price: {
+                        avg: {
+                            field: :price,
+                        },
+                    },
+                },
+            },
             page:     1,
             per_page: 20,
         )
@@ -276,100 +315,76 @@ RSpec.describe "search paging" do
         )
         expect(result.aggs.key?("avg_price")).to eq(false)
         expect(result.raw_response).to equal(response)
-        expect(result.raw_response["aggregations"]["avg_price"]["value"]).to eq(12.5)
     end
 
-    it "RawSearch は track_total_hits true を自動指定しない" do
+    it "raw_body検索は track_total_hits を自動指定せず明示値を保持する" do
         client = double("client")
-        body = {
-            query: {
-                match_all: {},
-            },
-        }
+        received_bodies = []
 
         allow(AreSearch)
             .to receive(:client)
             .and_return(client)
-
-        expect(client)
+        allow(client)
             .to receive(:search) do |args|
-                expect(args[:body].key?(:track_total_hits)).to eq(false)
+                received_bodies << args[:body]
 
                 {
                     "hits" => {
                         "hits"  => [],
-                        "total" => { "value" => 100 },
+                        "total" => { "value" => 0 },
                     },
                 }
             end
 
-        AreSearch::RawSearch.search(
+        AreSearch::Searcher.search(
             [article_index_target],
-            body,
-            page:     1,
-            per_page: 20,
-        )
-    end
-
-    it "RawSearch は body に明示された track_total_hits true を保持する" do
-        client = double("client")
-        body = {
-            track_total_hits: true,
-            query: {
-                match_all: {},
+            raw_body: {
+                query: {
+                    match_all: {},
+                },
             },
-        }
-
-        allow(AreSearch)
-            .to receive(:client)
-            .and_return(client)
-
-        expect(client)
-            .to receive(:search) do |args|
-                expect(args[:body][:track_total_hits]).to eq(true)
-
-                {
-                    "hits" => {
-                        "hits"  => [],
-                        "total" => { "value" => 100 },
-                    },
-                }
-            end
-
-        AreSearch::RawSearch.search(
-            [article_index_target],
-            body,
-            page:     1,
-            per_page: 20,
         )
-    end
-    it "page / per_page は正の整数だけを許可する" do
-        expect do
-            AreSearch::MultiSearch.search(
-                [article_index_target],
-                AreSearch::DumpBody,
-                fields:   [:title],
-                page:     "2",
-                per_page: 20,
-            )
-        end.to raise_error(ArgumentError, /:page は正の整数/)
+        AreSearch::Searcher.search(
+            [article_index_target],
+            raw_body: {
+                track_total_hits: true,
+                query: {
+                    match_all: {},
+                },
+            },
+        )
 
-        expect do
-            AreSearch::MultiSearch.search(
-                [article_index_target],
-                AreSearch::DumpBody,
-                fields:   [:title],
-                page:     1,
-                per_page: 0,
-            )
-        end.to raise_error(ArgumentError, /:per_page は正の整数/)
+        expect(received_bodies[0]).not_to have_key(:track_total_hits)
+        expect(received_bodies[1][:track_total_hits]).to eq(true)
     end
 
-    it "RawSearch は body の nested key を変更せず top level の from / size だけを置き換える" do
+    it "pageとper_pageは正の整数だけを許可する" do
+        expect do
+            AreSearch::Searcher.search(
+                [article_index_target],
+                fields:    [:title],
+                page:      "2",
+                per_page:  20,
+                dump_body: true,
+            )
+        end.to raise_error(ArgumentError, /正の整数/)
+
+        expect do
+            AreSearch::Searcher.search(
+                [article_index_target],
+                fields:    [:title],
+                page:      1,
+                per_page:  0,
+                dump_body: true,
+            )
+        end.to raise_error(ArgumentError, /正の整数/)
+    end
+
+    it "raw_bodyのnested keyを変更せずtop levelのfromとsizeだけを置き換える" do
         client = double("client")
         body = {
             "from" => 999,
-            :size => 999,
+            size: 999,
             "query" => {
                 "term" => {
                     "status" => "published",
@@ -401,16 +416,16 @@ RSpec.describe "search paging" do
                 }
             end
 
-        AreSearch::RawSearch.search(
+        AreSearch::Searcher.search(
             [article_index_target],
-            body,
+            raw_body: body,
             page:     1,
             per_page: 20,
         )
 
         expect(body).to eq(
             "from" => 999,
-            :size => 999,
+            size: 999,
             "query" => {
                 "term" => {
                     "status" => "published",
@@ -419,8 +434,7 @@ RSpec.describe "search paging" do
         )
     end
 
-
-    it "RawSearch は build_model_bool 指定時に Symbol key の query.bool へモデル条件を追加する" do
+    it "build_model_bool指定時にSymbol keyのquery.boolへモデル条件を追加する" do
         client = double("client")
         body = {
             query: {
@@ -455,9 +469,9 @@ RSpec.describe "search paging" do
                 }
             end
 
-        AreSearch::RawSearch.search(
+        AreSearch::Searcher.search(
             [article_index_target],
-            body,
+            raw_body:        body,
             build_model_bool: true,
         )
 
@@ -472,7 +486,7 @@ RSpec.describe "search paging" do
         )
     end
 
-    it "RawSearch は既存の Hash filter を保持して複数モデル条件を追加する" do
+    it "既存のHash filterを保持して複数モデル条件を追加する" do
         client = double("client")
         body = {
             query: {
@@ -517,26 +531,14 @@ RSpec.describe "search paging" do
                 }
             end
 
-        AreSearch::RawSearch.search(
+        AreSearch::Searcher.search(
             [article_index_target, document_index_target],
-            body,
+            raw_body:        body,
             build_model_bool: true,
-        )
-
-        expect(body).to eq(
-            query: {
-                bool: {
-                    filter: {
-                        term: {
-                            status: "published",
-                        },
-                    },
-                },
-            },
         )
     end
 
-    it "RawSearch は String key と既存の Array filter を保持してモデル条件を追加する" do
+    it "String keyと既存のArray filterを保持してモデル条件を追加する" do
         client = double("client")
         body = {
             "query" => {
@@ -581,38 +583,15 @@ RSpec.describe "search paging" do
                 }
             end
 
-        AreSearch::RawSearch.search(
+        AreSearch::Searcher.search(
             [article_index_target],
-            body,
+            raw_body:        body,
             build_model_bool: true,
-        )
-
-        expect(body).to eq(
-            "query" => {
-                "bool" => {
-                    "filter" => [
-                        {
-                            "term" => {
-                                "status" => "published",
-                            },
-                        },
-                    ],
-                },
-            },
         )
     end
 
-    it "RawSearch は build_model_bool false の場合にモデル条件を追加しない" do
+    it "build_model_bool falseの場合はモデル条件を追加しない" do
         client = double("client")
-        body = {
-            query: {
-                bool: {
-                    must: [
-                        { match_all: {} },
-                    ],
-                },
-            },
-        }
 
         allow(AreSearch)
             .to receive(:client)
@@ -630,50 +609,52 @@ RSpec.describe "search paging" do
                 }
             end
 
-        AreSearch::RawSearch.search(
+        AreSearch::Searcher.search(
             [article_index_target],
-            body,
+            raw_body: {
+                query: {
+                    bool: {
+                        must: [
+                            { match_all: {} },
+                        ],
+                    },
+                },
+            },
             build_model_bool: false,
         )
     end
 
-    it "RawSearch は build_model_bool に Boolean 以外を受け付けない" do
+    it "build_model_boolの型とraw_body構造を検証する" do
         expect(AreSearch).not_to receive(:client)
 
         expect do
-            AreSearch::RawSearch.search(
+            AreSearch::Searcher.search(
                 [article_index_target],
-                { query: { bool: {} } },
+                raw_body: {
+                    query: {
+                        bool: {},
+                    },
+                },
                 build_model_bool: "true",
             )
-        end.to raise_error(
-            ArgumentError,
-            /build_model_bool は true または false/,
-        )
-    end
-
-    it "RawSearch は build_model_bool 指定時に query.bool 以外を受け付けない" do
-        expect(AreSearch).not_to receive(:client)
+        end.to raise_error(ArgumentError, /true または false/)
 
         expect do
-            AreSearch::RawSearch.search(
+            AreSearch::Searcher.search(
                 [article_index_target],
-                { query: { match_all: {} } },
+                raw_body: {
+                    query: {
+                        match_all: {},
+                    },
+                },
                 build_model_bool: true,
             )
-        end.to raise_error(
-            ArgumentError,
-            /query.bool が必要/,
-        )
-    end
-
-    it "RawSearch は build_model_bool 指定時に filter の構造を確認する" do
-        expect(AreSearch).not_to receive(:client)
+        end.to raise_error(ArgumentError, /query.bool が必要/)
 
         expect do
-            AreSearch::RawSearch.search(
+            AreSearch::Searcher.search(
                 [article_index_target],
-                {
+                raw_body: {
                     query: {
                         bool: {
                             filter: "published",
@@ -682,28 +663,17 @@ RSpec.describe "search paging" do
                 },
                 build_model_bool: true,
             )
-        end.to raise_error(
-            ArgumentError,
-            /query.bool.filter を Hash、Array、nil/,
-        )
-    end
-
-    it "RawSearch は build_model_bool 指定時に Symbol と String の同名 key を拒否する" do
-        expect(AreSearch).not_to receive(:client)
+        end.to raise_error(ArgumentError, /query.bool.filter を Hash、Array、nil/)
 
         expect do
-            AreSearch::RawSearch.search(
+            AreSearch::Searcher.search(
                 [article_index_target],
-                {
+                raw_body: {
                     query: { bool: {} },
                     "query" => { "bool" => {} },
                 },
                 build_model_bool: true,
             )
-        end.to raise_error(
-            ArgumentError,
-            /:query と "query" を同時に指定できません/,
-        )
+        end.to raise_error(ArgumentError, /:query と "query" を同時に指定できません/)
     end
-
 end

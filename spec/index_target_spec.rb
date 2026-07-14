@@ -140,15 +140,15 @@ RSpec.describe AreSearch::IndexTarget do
                 .and_return(true)
         end
 
-        it "単一 target とAR用オプションを MultiSearch 用へ変換する" do
+        it "単一 target とAR用オプションを Searcher 用へ変換する" do
             includes = [:user, :tags]
             results_where = { published: true }
 
-            expect(AreSearch::MultiSearch)
-                .to receive(:search) do |index_targets, query, **actual_options|
+            expect(AreSearch::Searcher)
+                .to receive(:search) do |index_targets, **actual_options|
                     expect(index_targets).to eq([index_target])
-                    expect(query).to eq("Rails")
                     expect(actual_options).to eq(
+                        query_string:        "Rails",
                         fields:              [:title],
                         model_includes:      { model_class => includes },
                         model_results_where: { model_class => results_where },
@@ -167,15 +167,11 @@ RSpec.describe AreSearch::IndexTarget do
             expect(result).to eq(:search_result)
         end
 
-        it "未指定のAR用オプションも対象モデルのHashへ変換する" do
-            expect(AreSearch::MultiSearch)
-                .to receive(:search) do |_index_targets, _query, **actual_options|
-                    expect(actual_options[:model_includes]).to eq(
-                        model_class => nil,
-                    )
-                    expect(actual_options[:model_results_where]).to eq(
-                        model_class => nil,
-                    )
+        it "未指定のAR用オプションはSearcherへ追加しない" do
+            expect(AreSearch::Searcher)
+                .to receive(:search) do |_index_targets, **actual_options|
+                    expect(actual_options).not_to have_key(:model_includes)
+                    expect(actual_options).not_to have_key(:model_results_where)
 
                     :search_result
                 end
@@ -206,43 +202,84 @@ RSpec.describe AreSearch::IndexTarget do
             end.to raise_error(ArgumentError, /未知のオプション.*model_results_where/)
         end
 
-        it "同じ検索オプションを渡した MultiSearch と同じ ES body を作る" do
+        it "ショートハンドとSearcherが現行オプション定義から同じbodyを作る" do
+            search_model = Class.new do
+                def self.name
+                    "Article"
+                end
+
+                def self.table_name
+                    "articles"
+                end
+
+                def self.include?(mod)
+                    return true if mod == AreSearch::Searchable
+
+                    super
+                end
+
+                def self.are_search_es_mappings
+                    {
+                        default: {
+                            index_settings: {
+                                max_result_window: 2_000,
+                            },
+                            properties: {
+                                id:    { type: "long" },
+                                title: { type: "text" },
+                            },
+                        },
+                    }
+                end
+            end
+            search_target = AreSearch::IndexTarget.new(search_model, :default)
             search_options = {
                 fields: {
                     title: 2.0,
                 },
                 where: {
-                    id: 1,
+                    id: {
+                        term: 1,
+                    },
                 },
-                where_not: [
-                    { field: :id, value: 2 },
-                ],
-                where_or: [
-                    { field: :id, value: [3, 4], boost: 1.5 },
-                ],
+                where_not: {
+                    id: {
+                        term: 2,
+                    },
+                },
+                where_or: {
+                    id: {
+                        terms: [3, 4],
+                    },
+                },
                 aggs: [:id],
                 page: 2,
                 per_page: 20,
-                sort: { id: :desc },
+                sort: {
+                    id: :desc,
+                },
                 highlight: {
                     fields: [:title],
                 },
             }
 
-            shortcut_body = index_target.are_search_es_search(
-                AreSearch::DumpBody,
+            shortcut_body = search_target.are_search_es_search(
+                "Rails",
                 **search_options,
+                dump_body: true,
             )
 
-            multi_search_body = AreSearch::MultiSearch.search(
-                [index_target],
-                AreSearch::DumpBody,
+            searcher_body = AreSearch::Searcher.search(
+                [search_target],
+                query_string: "Rails",
                 **search_options,
-                model_includes: { model_class => nil },
-                model_results_where: { model_class => nil },
+                dump_body: true,
             )
 
-            expect(shortcut_body).to eq(multi_search_body)
+            expect(shortcut_body).to eq(searcher_body)
+            expect(
+                shortcut_body.dig(:query, :bool, :must, :combined_fields, :fields),
+            ).to eq(["title^2.0"])
         end
     end
 

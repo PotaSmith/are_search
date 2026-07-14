@@ -280,6 +280,62 @@ RSpec.describe AreSearch::Searchable do
             end.to raise_error(ArgumentError, /key は Symbol/)
         end
 
+        it "properties の script 系フィールド名は同じポリシーで拒否する" do
+            script_field_names = [
+                :script,
+                :_script,
+                :script_score,
+                :map_script,
+            ]
+
+            script_field_names.each do |script_field_name|
+                model_class = build_searchable_class
+                model_class.include(described_class)
+
+                allow(model_class)
+                    .to receive(:are_search_es_mappings)
+                    .and_return(
+                        default: {
+                            index_settings: {
+                                max_result_window: 2_000,
+                            },
+                            properties: {
+                                script_field_name => { type: "keyword" },
+                            },
+                        },
+                    )
+
+                expect do
+                    model_class.are_search_index_targets
+                end.to raise_error(
+                    ArgumentError,
+                    /script 系フィールド名は指定できません: #{script_field_name}/,
+                )
+            end
+        end
+
+        it "properties の通常フィールド名にscriptが途中で含まれていても許可する" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            allow(model_class)
+                .to receive(:are_search_es_mappings)
+                .and_return(
+                    default: {
+                        index_settings: {
+                            max_result_window: 2_000,
+                        },
+                        properties: {
+                            description: { type: "text" },
+                            transcript:  { type: "text" },
+                            subscription: { type: "keyword" },
+                        },
+                    },
+                )
+
+            expect(model_class.are_search_index_targets.size).to eq(1)
+        end
+
         it "properties に予約フィールドがあればエラーにする" do
             model_class = build_searchable_class
             model_class.include(described_class)

@@ -3,37 +3,61 @@
 require "spec_helper"
 
 RSpec.describe "search option flow" do
-    let(:article_mappings) do
-        {
-            properties: {
-                title:  { type: "text" },
-                status: { type: "keyword" },
-                count:  { type: "integer" },
-            },
-            runtime: {
-                runtime_score: { type: "double" },
-            },
-        }
-    end
     let(:article_model) do
-        class_double("Article", name: "Article")
+        Class.new do
+            attr_reader :id
+
+            def self.name
+                "Article"
+            end
+
+            def self.table_name
+                "articles"
+            end
+
+            def self.include?(mod)
+                return true if mod == AreSearch::Searchable
+
+                super
+            end
+
+            def self.are_search_es_mappings
+                {
+                    default: {
+                        index_settings: {
+                            max_result_window: 2_000,
+                        },
+                        properties: {
+                            title:  { type: "text" },
+                            status: { type: "keyword" },
+                            count:  { type: "integer" },
+                        },
+                        runtime: {
+                            runtime_title: { type: "text" },
+                            runtime_score: { type: "double" },
+                        },
+                    },
+                }
+            end
+
+            def initialize
+                @id = 1
+            end
+        end
     end
+
+    let(:article) do
+        article_model.new
+    end
+
     let(:article_index_target) do
-        double(
-            "article_index_target",
-            model_class:                  article_model,
-            target_name:                  :default,
-            are_search_es_index_name:     "test_articles_default",
-            are_search_es_mappings:       article_mappings,
-            are_search_es_index_settings: { max_result_window: 2_000 },
-        )
+        AreSearch::IndexTarget.new(article_model, :default)
     end
 
     before do
-        allow(article_model)
-            .to receive(:include?)
-            .with(AreSearch::Searchable)
-            .and_return(true)
+        allow(AreSearch)
+            .to receive(:index_prefix)
+            .and_return("test")
 
         allow(AreSearch::IndexManager)
             .to receive(:es_index_alias_exists?)
@@ -41,102 +65,76 @@ RSpec.describe "search option flow" do
             .and_return(true)
     end
 
-
-    it "MultiSearch は query に String、nil、DumpBody を受け付ける" do
-        allow(AreSearch::MultiSearch)
+    it "query_stringにStringとnilを受け付ける" do
+        allow(AreSearch::Searcher)
             .to receive(:execute_and_build_result)
             .and_return(:search_result)
 
-        string_result = AreSearch::MultiSearch.search(
+        string_result = AreSearch::Searcher.search(
             [article_index_target],
-            "Rails",
-            fields: [:title],
+            query_string: "Rails",
+            fields:       [:title],
         )
-        nil_result = AreSearch::MultiSearch.search(
+        nil_result = AreSearch::Searcher.search(
             [article_index_target],
-            nil,
-            fields: [:title],
-        )
-        dump_body = AreSearch::MultiSearch.search(
-            [article_index_target],
-            AreSearch::DumpBody,
-            fields: [:title],
+            query_string: nil,
+            fields:       [:title],
         )
 
         expect(string_result).to eq(:search_result)
         expect(nil_result).to eq(:search_result)
-        expect(dump_body).to be_instance_of(Hash)
     end
 
-    it "MultiSearch は nil と空文字列の query では combined_fields 句を作らない" do
-        bodies = []
-
-        allow(AreSearch::MultiSearch)
-            .to receive(:execute_and_build_result) do |_search_index, body, _result_context|
-                bodies << body
-
-                :search_result
-            end
-
-        AreSearch::MultiSearch.search(
+    it "nilと空文字列ではcombined_fields句を作らない" do
+        nil_body = AreSearch::Searcher.search(
             [article_index_target],
-            nil,
-            fields: [:title],
+            query_string: nil,
+            fields:       [:title],
+            dump_body:    true,
         )
-        AreSearch::MultiSearch.search(
+        empty_body = AreSearch::Searcher.search(
             [article_index_target],
-            "",
-            fields: [:title],
+            query_string: "",
+            fields:       [:title],
+            dump_body:    true,
         )
 
-        expect(bodies.size).to eq(2)
-        expect(bodies[0].dig(:query, :bool)).not_to have_key(:must)
-        expect(bodies[1].dig(:query, :bool)).not_to have_key(:must)
+        expect(nil_body.dig(:query, :bool)).not_to have_key(:must)
+        expect(empty_body.dig(:query, :bool)).not_to have_key(:must)
     end
 
-    it "MultiSearch は query の非文字列値を拒否する" do
-        invalid_queries = [
-            {},
-            [],
-            1,
-            :query,
-            true,
-            false,
-        ]
-
-        invalid_queries.each do |query|
+    it "query_stringの非String値を拒否する" do
+        [{}, [], 1, :query, true, false].each do |query_string|
             expect do
-                AreSearch::MultiSearch.search(
+                AreSearch::Searcher.search(
                     [article_index_target],
-                    query,
-                    fields: [:title],
+                    query_string: query_string,
+                    fields:       [:title],
                 )
-            end.to raise_error(
-                ArgumentError,
-                /multi_search query は String または nil/,
-            )
+            end.to raise_error(ArgumentError, /String/)
         end
     end
 
-    it "MultiSearch は query の型より未知オプションを先に確認する" do
+    it "未知のオプションを拒否する" do
         expect do
-            AreSearch::MultiSearch.search(
+            AreSearch::Searcher.search(
                 [article_index_target],
-                {},
                 fields:  [:title],
                 unknown: true,
             )
-        end.to raise_error(ArgumentError, /未知のオプション.*unknown/)
+        end.to raise_error(ArgumentError, /未知の検索オプション/)
     end
 
-    it "単一 target の MultiSearch は検証後に ES 固有値を変更せず body へ渡す" do
-        body = AreSearch::MultiSearch.search(
+    it "検証済みのElasticsearch値を変更せずbodyへ渡す" do
+        body = AreSearch::Searcher.search(
             [article_index_target],
-            AreSearch::DumpBody,
+            query_string: "検索語",
             fields: {
-                status: "ESで判定するboost",
+                title: 2.5,
             },
-            sort: "status",
+            sort: {
+                status: "desc",
+            },
             aggs: [
                 {
                     status: {
@@ -145,32 +143,36 @@ RSpec.describe "search option flow" do
                 },
             ],
             highlight: {
-                fields: [:status],
+                fields: {
+                    status: {
+                        number_of_fragments: 0,
+                    },
+                },
                 max_analyzed_offset: 0,
             },
             where: {
-                count: { gte: 0 },
+                count: {
+                    range: {
+                        gte: 0,
+                    },
+                },
             },
-            where_not: [
-                {
-                    field: :status,
-                    value: ["deleted"],
-                    boost: "ESで判定するboost",
+            where_not: {
+                status: {
+                    terms: ["deleted"],
                 },
-            ],
-            where_or: [
-                {
-                    field: :status,
-                    value: "published",
-                    boost: "ESで判定するboost",
+            },
+            where_or: {
+                status: {
+                    term: "published",
                 },
-            ],
+            },
+            dump_body: true,
         )
 
         expect(body.dig(:query, :bool, :must, :combined_fields, :fields)).to eq([
-            "status^ESで判定するboost",
+            "title^2.5",
         ])
-        expect(body.dig(:query, :bool, :minimum_should_match)).to eq(1)
         expect(body.dig(:query, :bool, :filter)).to include(
             {
                 range: {
@@ -179,188 +181,298 @@ RSpec.describe "search option flow" do
                     },
                 },
             },
+            {
+                bool: {
+                    should: [
+                        {
+                            term: {
+                                status: "published",
+                            },
+                        },
+                    ],
+                    minimum_should_match: 1,
+                },
+            },
         )
         expect(body.dig(:query, :bool, :must_not)).to eq([
             {
                 terms: {
                     status: ["deleted"],
-                    boost: "ESで判定するboost",
                 },
             },
         ])
-        expect(body.dig(:query, :bool, :should)).to eq([
-            {
-                term: {
-                    status: {
-                        value: "published",
-                        boost: "ESで判定するboost",
-                    },
-                },
-            },
-        ])
-        expect(body[:sort]).to eq("status")
+        expect(body[:sort]).to eq(
+            status: "desc",
+        )
         expect(body.dig(:aggs, :status, :terms, :size)).to eq(-1)
         expect(body[:highlight]).to include(
             fields: {
-                status: {},
+                status: {
+                    number_of_fragments: 0,
+                },
             },
             max_analyzed_offset: 0,
         )
     end
 
-
-    it "MultiSearch / MoreLikeThis は where_or を同じ条件として処理する" do
-        search_bodies = []
-
-        search_bodies << AreSearch::MultiSearch.search(
+    it "単純検索とMore Like This検索でwhere_orをfilter内のbool.shouldへ入れる" do
+        simple_body = AreSearch::Searcher.search(
             [article_index_target],
-            AreSearch::DumpBody,
-            fields:   [:title],
-            where_or: { status: "published" },
-        )
-        search_bodies << AreSearch::MoreLikeThis.search(
-            [article_index_target],
-            AreSearch::DumpBody,
-            article_index_target,
-            fields:   [:title],
-            where_or: { status: "published" },
-        )
-
-        search_bodies.each do |body|
-            expect(body.dig(:query, :bool, :should)).to eq([
-                {
-                    term: {
-                        status: "published",
-                    },
-                },
-            ])
-            expect(body.dig(:query, :bool, :minimum_should_match)).to eq(1)
-        end
-    end
-
-    it "MultiSearch と MoreLikeThis は where_or を受け付け、should オプションを持たない" do
-        search_modules = [
-            AreSearch::MultiSearch,
-            AreSearch::MoreLikeThis,
-        ]
-
-        search_modules.each do |search_module|
-            expect(search_module::VALID_OPTION_KEYS).to include(
-                :where,
-                :where_not,
-                :where_or,
-            )
-            expect(search_module::VALID_OPTION_KEYS).not_to include(:should)
-        end
-
-        expect(AreSearch::MultiSearch::VALID_OPTION_KEYS).not_to include(:minimum_should_match)
-        expect(AreSearch::MoreLikeThis::VALID_OPTION_KEYS).to include(:minimum_should_match)
-    end
-
-    it "should は未知のオプションとして扱う" do
-        expect do
-            AreSearch::MultiSearch.search(
-                [article_index_target],
-                AreSearch::DumpBody,
-                fields: [:title],
-                should: [],
-            )
-        end.to raise_error(ArgumentError, /未知のオプション.*should/)
-
-        expect do
-            AreSearch::MoreLikeThis.search(
-                [article_index_target],
-                AreSearch::DumpBody,
-                article_index_target,
-                fields: [:title],
-                should: [],
-            )
-        end.to raise_error(ArgumentError, /未知のオプション.*should/)
-    end
-
-    it "MultiSearch は minimum_should_match を未知のオプションとして扱う" do
-        expect do
-            AreSearch::MultiSearch.search(
-                [article_index_target],
-                AreSearch::DumpBody,
-                fields:               [:title],
-                minimum_should_match: 1,
-            )
-        end.to raise_error(ArgumentError, /未知のオプション.*minimum_should_match/)
-    end
-
-    it "runtime field を通常のフィールド指定として認識する" do
-        body = AreSearch::MultiSearch.search(
-            [article_index_target],
-            AreSearch::DumpBody,
-            fields: [:runtime_score],
-        )
-
-        expect(body.dig(:query, :bool, :must, :combined_fields, :fields)).to eq([
-            "runtime_score",
-        ])
-    end
-
-    it "MoreLikeThis は fields の mapping 型と MLT オプションを ES に任せる" do
-        body = AreSearch::MoreLikeThis.search(
-            [article_index_target],
-            AreSearch::DumpBody,
-            article_index_target,
-            fields:               [:count],
-            min_term_freq:        0,
-            min_doc_freq:         -1,
-            max_query_terms:      0,
-            min_word_length:      0,
-            minimum_should_match: "ESで判定する値",
-        )
-
-        mlt = body.dig(:query, :bool, :must, :more_like_this)
-
-        expect(mlt[:fields]).to eq(["count"])
-        expect(mlt[:min_term_freq]).to eq(0)
-        expect(mlt[:min_doc_freq]).to eq(-1)
-        expect(mlt[:max_query_terms]).to eq(0)
-        expect(mlt[:min_word_length]).to eq(0)
-        expect(mlt[:minimum_should_match]).to eq("ESで判定する値")
-    end
-
-    it "MoreLikeThis は minimum_should_match 未指定時に MLT 句へ出力しない" do
-        body = AreSearch::MoreLikeThis.search(
-            [article_index_target],
-            AreSearch::DumpBody,
-            article_index_target,
             fields: [:title],
+            where_or: {
+                status: {
+                    term: "published",
+                },
+            },
+            dump_body: true,
+        )
+        mlt_body = AreSearch::Searcher.search(
+            [article_index_target],
+            mlt_instance:     article,
+            mlt_index_target: article_index_target,
+            mlt_params: {
+                fields: [:title, :status],
+            },
+            where_or: {
+                status: {
+                    term: "published",
+                },
+            },
+            dump_body: true,
         )
 
-        mlt = body.dig(:query, :bool, :must, :more_like_this)
+        [simple_body, mlt_body].each do |body|
+            where_or_bool = body.dig(:query, :bool, :filter).find do |filter_clause|
+                filter_clause.key?(:bool)
+            end
 
-        expect(mlt).not_to have_key(:minimum_should_match)
+            expect(where_or_bool).to eq(
+                bool: {
+                    should: [
+                        {
+                            term: {
+                                status: "published",
+                            },
+                        },
+                    ],
+                    minimum_should_match: 1,
+                },
+            )
+        end
     end
 
-    it "MoreLikeThis は where_or と MLT の minimum_should_match を別の階層へ出力する" do
-        body = AreSearch::MoreLikeThis.search(
+    it "where系オプションを持ち、shouldを未知のオプションとして扱う" do
+        expect(AreSearch::Searcher::OPTION_DEFINITIONS.keys).to include(
+            :where,
+            :where_not,
+            :where_or,
+        )
+        expect(AreSearch::Searcher::OPTION_DEFINITIONS.keys).not_to include(:should)
+
+        expect do
+            AreSearch::Searcher.search(
+                [article_index_target],
+                fields: [:title],
+                should: [],
+            )
+        end.to raise_error(ArgumentError, /未知の検索オプション/)
+    end
+
+    it "MLT固有パラメーターはmlt_params配下だけで受け付ける" do
+        expect do
+            AreSearch::Searcher.search(
+                [article_index_target],
+                mlt_instance:          article,
+                mlt_index_target:      article_index_target,
+                mlt_params: {
+                    fields: [:title, :status],
+                },
+                minimum_should_match:  "50%",
+                dump_body:             true,
+            )
+        end.to raise_error(ArgumentError, /未知の検索オプション/)
+
+        body = AreSearch::Searcher.search(
             [article_index_target],
-            AreSearch::DumpBody,
-            article_index_target,
-            fields:               [:title],
-            where_or:             { status: "published" },
-            minimum_should_match: "50%",
+            mlt_instance:     article,
+            mlt_index_target: article_index_target,
+            mlt_params: {
+                fields:               [:title, :status],
+                minimum_should_match: "50%",
+            },
+            dump_body: true,
         )
 
-        expect(body.dig(:query, :bool, :minimum_should_match)).to eq(1)
         expect(
             body.dig(:query, :bool, :must, :more_like_this, :minimum_should_match),
         ).to eq("50%")
     end
 
-    it "複数モデル用のARオプションは Hash 構造を先に確認する" do
+    it "runtimeのtextフィールドを検索対象にできる" do
+        body = AreSearch::Searcher.search(
+            [article_index_target],
+            query_string: "検索語",
+            fields:       [:runtime_title],
+            dump_body:    true,
+        )
+
+        expect(body.dig(:query, :bool, :must, :combined_fields, :fields)).to eq([
+            "runtime_title",
+        ])
+
         expect do
-            AreSearch::MultiSearch.search(
+            AreSearch::Searcher.search(
                 [article_index_target],
-                AreSearch::DumpBody,
+                query_string: "検索語",
+                fields:       [:runtime_score],
+                dump_body:    true,
+            )
+        end.to raise_error(ArgumentError, /any_valid_text_fields/)
+    end
+
+    it "mappingsに無いフィールドを表記に関係なく拒否する" do
+        search_fields = [
+            :"title.keyword",
+            :Title,
+            :"title*",
+        ]
+
+        search_fields.each do |field_name|
+            expect do
+                AreSearch::Searcher.search(
+                    [article_index_target],
+                    query_string: "検索語",
+                    fields:       [field_name],
+                    dump_body:    true,
+                )
+            end.to raise_error(ArgumentError, /any_valid_text_fields/)
+        end
+
+        expect do
+            AreSearch::Searcher.search(
+                [article_index_target],
+                where: {
+                    :"OtherModel.secret" => {
+                        term: "value",
+                    },
+                },
+                dump_body: true,
+            )
+        end.to raise_error(ArgumentError, /any_valid_non_text_fields/)
+    end
+
+    it "More Like Thisはmlt_paramsをmore_like_this句へ渡す" do
+        body = AreSearch::Searcher.search(
+            [article_index_target],
+            mlt_instance:     article,
+            mlt_index_target: article_index_target,
+            mlt_params: {
+                fields:               [:title, :status],
+                min_term_freq:        0,
+                min_doc_freq:         -1,
+                max_query_terms:      0,
+                min_word_length:      0,
+                minimum_should_match: "ESで判定する値",
+                boost_terms:          1,
+                max_word_length:       30,
+                include:               true,
+            },
+            dump_body: true,
+        )
+
+        mlt = body.dig(:query, :bool, :must, :more_like_this)
+
+        expect(mlt[:fields]).to eq(["title", "status"])
+        expect(mlt[:min_term_freq]).to eq(0)
+        expect(mlt[:min_doc_freq]).to eq(-1)
+        expect(mlt[:max_query_terms]).to eq(0)
+        expect(mlt[:min_word_length]).to eq(0)
+        expect(mlt[:minimum_should_match]).to eq("ESで判定する値")
+        expect(mlt[:boost_terms]).to eq(1)
+        expect(mlt[:max_word_length]).to eq(30)
+        expect(mlt[:include]).to eq(true)
+
+        expect do
+            AreSearch::Searcher.search(
+                [article_index_target],
+                mlt_instance:     article,
+                mlt_index_target: article_index_target,
+                mlt_params: {
+                    fields: [:count],
+                },
+                dump_body: true,
+            )
+        end.to raise_error(ArgumentError, /any_valid_text_or_keyword_fields/)
+
+        expect do
+            AreSearch::Searcher.search(
+                [article_index_target],
+                mlt_instance:     article,
+                mlt_index_target: article_index_target,
+                mlt_params: {
+                    fields: [:title],
+                    like:   "other document",
+                },
+                dump_body: true,
+            )
+        end.to raise_error(ArgumentError, /指定できないキー.*like/)
+    end
+
+    it "mlt_paramsの省略値をMore Like This句へ設定する" do
+        body = AreSearch::Searcher.search(
+            [article_index_target],
+            mlt_instance:     article,
+            mlt_index_target: article_index_target,
+            mlt_params: {
+                fields: [:title],
+            },
+            dump_body: true,
+        )
+
+        mlt = body.dig(:query, :bool, :must, :more_like_this)
+
+        expect(mlt[:min_term_freq]).to eq(2)
+        expect(mlt[:min_doc_freq]).to eq(5)
+        expect(mlt[:max_query_terms]).to eq(25)
+        expect(mlt).not_to have_key(:minimum_should_match)
+        expect(mlt).not_to have_key(:boost_terms)
+    end
+
+    it "where_orとMLTのminimum_should_matchを別階層へ出力する" do
+        body = AreSearch::Searcher.search(
+            [article_index_target],
+            mlt_instance:     article,
+            mlt_index_target: article_index_target,
+            mlt_params: {
+                fields:               [:title],
+                minimum_should_match: "50%",
+            },
+            where_or: {
+                status: {
+                    term: "published",
+                },
+            },
+            dump_body: true,
+        )
+
+        where_or_bool = body.dig(:query, :bool, :filter).find do |filter_clause|
+            filter_clause.key?(:bool)
+        end
+
+        expect(where_or_bool.dig(:bool, :minimum_should_match)).to eq(1)
+        expect(
+            body.dig(:query, :bool, :must, :more_like_this, :minimum_should_match),
+        ).to eq("50%")
+    end
+
+    it "複数モデル用のARオプションはHash構造を必要とする" do
+        expect do
+            AreSearch::Searcher.search(
+                [article_index_target],
                 fields: [:title],
                 model_results_where: [],
+                dump_body: true,
             )
-        end.to raise_error(ArgumentError, /model_results_where は Hash/)
+        end.to raise_error(ArgumentError, /Hash/)
     end
 end

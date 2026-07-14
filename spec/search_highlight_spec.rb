@@ -3,59 +3,95 @@
 require "spec_helper"
 
 RSpec.describe "search highlight" do
-    let(:article_mappings) do
-        {
-            properties: {
-                title: { type: "text" },
-                body:  { type: "text" },
-            },
-        }
-    end
-    let(:document_mappings) do
-        {
-            properties: {
-                title: { type: "text" },
-                body:  { type: "text" },
-            },
-        }
-    end
     let(:article_model) do
-        class_double("Article", name: "Article")
+        Class.new do
+            attr_reader :id
+
+            def self.name
+                "Article"
+            end
+
+            def self.table_name
+                "articles"
+            end
+
+            def self.include?(mod)
+                return true if mod == AreSearch::Searchable
+
+                super
+            end
+
+            def self.are_search_es_mappings
+                {
+                    default: {
+                        index_settings: {
+                            max_result_window: 2_000,
+                        },
+                        properties: {
+                            title:  { type: "text" },
+                            body:   { type: "text" },
+                            status: { type: "keyword" },
+                            count:  { type: "integer" },
+                        },
+                    },
+                }
+            end
+
+            def initialize
+                @id = 1
+            end
+        end
     end
+
     let(:document_model) do
-        class_double("Document", name: "Document")
+        Class.new do
+            def self.name
+                "Document"
+            end
+
+            def self.table_name
+                "documents"
+            end
+
+            def self.include?(mod)
+                return true if mod == AreSearch::Searchable
+
+                super
+            end
+
+            def self.are_search_es_mappings
+                {
+                    default: {
+                        index_settings: {
+                            max_result_window: 2_000,
+                        },
+                        properties: {
+                            title:  { type: "text" },
+                            body:   { type: "text" },
+                            status: { type: "keyword" },
+                        },
+                    },
+                }
+            end
+        end
     end
+
+    let(:article) do
+        article_model.new
+    end
+
     let(:article_index_target) do
-        double(
-            "article_index_target",
-            model_class:                  article_model,
-            target_name:                  :default,
-            are_search_es_index_name:     "test_articles_default",
-            are_search_es_mappings:       article_mappings,
-            are_search_es_index_settings: { max_result_window: 2_000 },
-        )
+        AreSearch::IndexTarget.new(article_model, :default)
     end
+
     let(:document_index_target) do
-        double(
-            "document_index_target",
-            model_class:                  document_model,
-            target_name:                  :default,
-            are_search_es_index_name:     "test_documents_default",
-            are_search_es_mappings:       document_mappings,
-            are_search_es_index_settings: { max_result_window: 2_000 },
-        )
+        AreSearch::IndexTarget.new(document_model, :default)
     end
 
     before do
-        allow(article_model)
-            .to receive(:include?)
-            .with(AreSearch::Searchable)
-            .and_return(true)
-
-        allow(document_model)
-            .to receive(:include?)
-            .with(AreSearch::Searchable)
-            .and_return(true)
+        allow(AreSearch)
+            .to receive(:index_prefix)
+            .and_return("test")
 
         allow(AreSearch::IndexManager)
             .to receive(:es_index_alias_exists?)
@@ -68,109 +104,146 @@ RSpec.describe "search highlight" do
             .and_return(true)
     end
 
-    it "単一 target の MultiSearch は highlight fields が無ければ highlight body を作らない" do
-        body = AreSearch::MultiSearch.search(
+    it "highlight未指定時はhighlight bodyを作らない" do
+        body = AreSearch::Searcher.search(
             [article_index_target],
-            AreSearch::DumpBody,
-            fields: [:title, :body],
-            highlight: {
-                fragment_size: 150,
-            },
+            fields:    [:title, :body],
+            dump_body: true,
         )
 
         expect(body).not_to have_key(:highlight)
     end
 
-    it "単一 target の MultiSearch は highlight の全オプションを body に渡す" do
-        body = AreSearch::MultiSearch.search(
+    it "highlightにはfieldsを必須とする" do
+        expect do
+            AreSearch::Searcher.search(
+                [article_index_target],
+                fields: [:title, :body],
+                highlight: {
+                    fragment_size: 150,
+                },
+                dump_body: true,
+            )
+        end.to raise_error(ArgumentError, /必要なキー.*fields/)
+    end
+
+    it "fieldsのArray形式を空オプションのHashへ変換する" do
+        body = AreSearch::Searcher.search(
             [article_index_target],
-            AreSearch::DumpBody,
             fields: [:title, :body],
             highlight: {
-                fields:              { body: {} },
-                fragment_size:       150,
-                number_of_fragments: 3,
-                type:                "unified",
+                fields: [:title, :body],
+                type: "unified",
+                require_field_match: false,
             },
+            dump_body: true,
         )
 
         expect(body[:highlight]).to eq(
-            pre_tags:            ["<em>"],
-            post_tags:           ["</em>"],
-            encoder:             "html",
-            fields:              { body: {} },
-            fragment_size:       150,
-            number_of_fragments: 3,
-            type:                "unified",
+            pre_tags:  ["<em>"],
+            post_tags: ["</em>"],
+            encoder:   "html",
+            type: "unified",
+            require_field_match: false,
+            fields: {
+                title: {},
+                body:  {},
+            },
         )
     end
 
-    it "MultiSearch は highlight fields が無ければ highlight body を作らない" do
-        body = AreSearch::MultiSearch.search(
+    it "fieldsのHash形式はフィールド別オプションを保持する" do
+        body = AreSearch::Searcher.search(
             [article_index_target, document_index_target],
-            AreSearch::DumpBody,
             fields: [:title, :body],
             highlight: {
-                fragment_size: 150,
+                fields: {
+                    body: {
+                        fragment_size: 150,
+                        number_of_fragments: 3,
+                    },
+                    status: {
+                        number_of_fragments: 0,
+                    },
+                },
+                max_analyzed_offset: 1_000_000,
             },
-        )
-
-        expect(body).not_to have_key(:highlight)
-    end
-
-    it "MultiSearch は利用側の highlight タグ設定を優先する" do
-        body = AreSearch::MultiSearch.search(
-            [article_index_target, document_index_target],
-            AreSearch::DumpBody,
-            fields: [:title, :body],
-            highlight: {
-                fields:    { body: {} },
-                pre_tags:  ["<mark>"],
-                post_tags: ["</mark>"],
-                encoder:   "default",
-            },
+            dump_body: true,
         )
 
         expect(body[:highlight]).to eq(
-            pre_tags:  ["<mark>"],
-            post_tags: ["</mark>"],
-            encoder:   "default",
-            fields:    { body: {} },
+            pre_tags:  ["<em>"],
+            post_tags: ["</em>"],
+            encoder:   "html",
+            max_analyzed_offset: 1_000_000,
+            fields: {
+                body: {
+                    fragment_size: 150,
+                    number_of_fragments: 3,
+                },
+                status: {
+                    number_of_fragments: 0,
+                },
+            },
         )
     end
 
-    it "MoreLikeThis は highlight fields が無ければ highlight body を作らない" do
-        body = AreSearch::MoreLikeThis.search(
-            [article_index_target],
-            AreSearch::DumpBody,
-            article_index_target,
-            fields: [:title, :body],
-            highlight: {
-                fragment_size: 150,
-            },
-        )
-
-        expect(body).not_to have_key(:highlight)
+    it "fieldsのHash形式では空のフィールドオプションを受け付けない" do
+        expect do
+            AreSearch::Searcher.search(
+                [article_index_target],
+                fields: [:title],
+                highlight: {
+                    fields: {
+                        title: {},
+                    },
+                },
+                dump_body: true,
+            )
+        end.to raise_error(ArgumentError, /1件以上/)
     end
 
-    it "MoreLikeThis は highlight fields があれば highlight body を作る" do
-        body = AreSearch::MoreLikeThis.search(
+    it "textまたはkeyword以外のフィールドをhighlight対象にできない" do
+        expect do
+            AreSearch::Searcher.search(
+                [article_index_target],
+                fields: [:title],
+                highlight: {
+                    fields: {
+                        count: {
+                            number_of_fragments: 0,
+                        },
+                    },
+                },
+                dump_body: true,
+            )
+        end.to raise_error(ArgumentError, /any_valid_text_or_keyword_fields/)
+    end
+
+    it "More Like This検索でも同じhighlight定義を使用する" do
+        body = AreSearch::Searcher.search(
             [article_index_target],
-            AreSearch::DumpBody,
-            article_index_target,
-            fields: [:title, :body],
+            mlt_instance:     article,
+            mlt_index_target: article_index_target,
+            mlt_params: {
+                fields: [:title, :status],
+            },
             highlight: {
-                fields:        [:body],
+                fields: [:body, :status],
                 fragment_size: 150,
             },
+            dump_body: true,
         )
 
         expect(body[:highlight]).to eq(
             pre_tags:     ["<em>"],
             post_tags:    ["</em>"],
             encoder:      "html",
-            fields:       { body: {} },
             fragment_size: 150,
+            fields: {
+                body:   {},
+                status: {},
+            },
         )
     end
 end

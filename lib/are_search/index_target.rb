@@ -96,8 +96,8 @@ module AreSearch
             AreSearch::Reindexer.reindex_index_target(self)
         end
 
-        # 単一の index target を MultiSearch で検索する。
-        # includes / results_where は、対象モデルを key にした
+        # 単一の index target を Searcher で検索する。
+        # 指定された includes / results_where は、対象モデルを key にした
         # model_includes / model_results_where へ変換して渡す。
         #
         # @return [SearchResult]
@@ -122,16 +122,21 @@ module AreSearch
             includes_opt = options.delete(:includes)
             results_where_opt = options.delete(:results_where)
 
-            options[:model_includes] = {
-                model => includes_opt,
-            }
-            options[:model_results_where] = {
-                model => results_where_opt,
-            }
+            if includes_opt.nil? == false
+                options[:model_includes] = {
+                    model => includes_opt,
+                }
+            end
 
-            AreSearch::MultiSearch.search(
+            if results_where_opt.nil? == false
+                options[:model_results_where] = {
+                    model => results_where_opt,
+                }
+            end
+
+            AreSearch::Searcher.search(
                 index_targets,
-                query,
+                query_string: query,
                 **options,
             )
         end

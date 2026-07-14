@@ -14,13 +14,30 @@ require_relative "are_search/reindexer"
 require_relative "are_search/es_data_validator"
 require_relative "are_search/searchable"
 
-require_relative "are_search/search/dump_body"
-require_relative "are_search/search/search_result"
-require_relative "are_search/search/search_base"
-require_relative "are_search/search/search_utils"
-require_relative "are_search/search/multi_search"
-require_relative "are_search/search/more_like_this"
-require_relative "are_search/search/raw_search"
+
+require_relative "are_search/searcher/search_result"
+require_relative "are_search/searcher/searcher_utils"
+require_relative "are_search/searcher/es_search_body_policy"
+
+require_relative "are_search/searcher/validator/search_option_definition"
+require_relative "are_search/searcher/validator/search_option_validator"
+require_relative "are_search/searcher/validator/search_option_definition_checker"
+require_relative "are_search/searcher/validator/search_param_validator"
+
+require_relative "are_search/searcher/query_builder/query_builder_base"
+require_relative "are_search/searcher/query_builder/simple_query_builder"
+require_relative "are_search/searcher/query_builder/complex_field_query_builder"
+require_relative "are_search/searcher/query_builder/more_like_this_query_builder"
+require_relative "are_search/searcher/query_builder/raw_query_builder"
+require_relative "are_search/searcher/query_builder_selector"
+
+require_relative "are_search/searcher/body_builder/body_builder_base"
+require_relative "are_search/searcher/body_builder/standard_body_builder"
+require_relative "are_search/searcher/body_builder/raw_body_builder"
+require_relative "are_search/searcher/body_builder_selector"
+
+require_relative "are_search/searcher/searcher"
+
 
 require_relative "are_search/rake_utils" if defined?(Rails::Railtie)
 require_relative "are_search/railtie" if defined?(Rails::Railtie)
@@ -257,12 +274,25 @@ module AreSearch
         @index_prefix
     end
 
+    # 複数 target 検索のショートハンド。
+    # query は Searcher の query_string として渡す。
     def self.multi_search(index_targets, query, **options)
-        AreSearch::MultiSearch.search(index_targets, query, **options)
+        AreSearch::Searcher.search(
+            index_targets,
+            query_string: query,
+            **options,
+        )
     end
 
+    # More Like This 検索のショートハンド。
+    # instance と index_target は Searcher の MLT 用オプションとして渡す。
     def self.more_like_this(index_targets, instance, index_target, **options)
-        AreSearch::MoreLikeThis.search(index_targets, instance, index_target, **options)
+        AreSearch::Searcher.search(
+            index_targets,
+            mlt_instance:     instance,
+            mlt_index_target: index_target,
+            **options,
+        )
     end
 
     def self.mark_index!(es_index_name)

@@ -7,7 +7,7 @@ AreSearch is a small search and synchronization template for using Elasticsearch
 It is not a gem for hiding Elasticsearch.
 It provides Rails models with indexing, reindexing, asynchronous synchronization, and basic search helpers for Elasticsearch.
 
-For complex searches, the intended approach is to write Elasticsearch Query DSL directly with `RawSearch` after understanding the DSL.
+For complex searches, the intended approach is to write Elasticsearch Query DSL directly in the `raw_body` option of `AreSearch::Searcher.search` after understanding the DSL.
 
 ## Policy
 
@@ -52,7 +52,7 @@ The first switch should be the application-side search entry point, not the alia
 Add this to your Gemfile.
 
 ```ruby
-gem "are_search", git: "https://github.com/PotaSmith/are_search.git", tag: "v0.2.0"
+gem "are_search", git: "https://github.com/PotaSmith/are_search.git", tag: "v0.3.0"
 ```
 
 To use the latest development version directly, specify `branch: "main"`.
@@ -154,7 +154,7 @@ result.records.each do |article|
 end
 ```
 
-For complex searches, pass an Elasticsearch body directly with `RawSearch`.
+For complex searches, pass an Elasticsearch body directly with `raw_body`.
 
 ```ruby
 body = {
@@ -169,9 +169,9 @@ body = {
 
 article_index = Article.are_search_index_target(:default)
 
-result = AreSearch::RawSearch.search(
+result = AreSearch::Searcher.search(
     [article_index],
-    body,
+    raw_body: body,
 )
 ```
 
