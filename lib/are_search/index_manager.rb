@@ -157,7 +157,7 @@ module AreSearch
 
                 if failed_ids.empty?
                     # 旧方式（alias 名と同名の実体 index）が残っている場合、
-                    # alias を作れないため create_physical_index 前で削除する。
+                    # alias を作れないため bulk 投入成功後、alias 切り替え前に削除する。
                     delete_legacy_index_if_exists!(es_index_name)
 
                     switch_alias!(es_index_name, physical_es_index_name)

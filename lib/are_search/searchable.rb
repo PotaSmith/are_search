@@ -287,6 +287,11 @@ module AreSearch
                     errors << "#{name}.are_search_ar_table_name は小文字の英字で始まり、小文字の英字とアンダーバーだけを使用した String を返してください: #{ar_table_name.inspect}"
                 end
 
+                if ar_table_name.to_s.include?(AreSearch::ES_INDEX_NAME_DELIMITER)
+                    errors << "#{name}.are_search_ar_table_name に " \
+                        "#{AreSearch::ES_INDEX_NAME_DELIMITER.inspect} は使用できません: #{ar_table_name.inspect}"
+                end
+
                 errors
             end
 

@@ -119,6 +119,27 @@ RSpec.describe AreSearch::Searchable do
         end
     end
 
+    describe ".are_search_ar_table_name_errors" do
+        it "index 名の区切り文字が含まれていればエラーを追加する" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+            stub_const("DelimiterArticle", model_class)
+
+            model_class.define_singleton_method(:are_search_ar_table_name) do
+                "search__articles"
+            end
+
+            errors = []
+
+            result = model_class.are_search_ar_table_name_errors(errors)
+
+            expect(result).to equal(errors)
+            expect(errors).to eq([
+                'DelimiterArticle.are_search_ar_table_name に "__" は使用できません: "search__articles"',
+            ])
+        end
+    end
+
     describe ".are_search_index_targets" do
         it "are_search_ar_table_name が不正ならエラーにする" do
             model_class = build_searchable_class

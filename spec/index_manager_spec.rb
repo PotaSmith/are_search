@@ -263,7 +263,7 @@ RSpec.describe AreSearch::IndexManager do
             expect(AreSearch::IndexMarker.find_by(es_index_name: es_index_name)).to eq(nil)
         end
 
-        it "旧方式の同名実体 index があれば作成前に削除する" do
+        it "旧方式の同名実体 index があれば bulk 投入成功後、alias 切り替え前に削除する" do
             deleted_indices = []
 
             allow(indices)
