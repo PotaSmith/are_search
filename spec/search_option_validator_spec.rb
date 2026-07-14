@@ -8,11 +8,11 @@ RSpec.describe AreSearch::SearchOptionValidator do
             models: [],
             any_fields: [],
             all_fields: [],
-            any_valid_text_fields: [],
+            any_text_without_non_text_fields: [],
             all_valid_text_fields: [],
-            any_valid_text_or_keyword_fields: [],
+            any_text_or_keyword_without_other_type_fields: [],
             all_valid_text_or_keyword_fields: [],
-            any_valid_non_text_fields: [],
+            any_non_text_without_text_fields: [],
             all_valid_non_text_fields: [],
         }
 
@@ -637,11 +637,11 @@ RSpec.describe AreSearch::SearchOptionValidator do
                 models: [article_model],
                 any_fields: [:title, :status, :article_only],
                 all_fields: [:title, :status],
-                any_valid_text_fields: [:title, :article_only],
+                any_text_without_non_text_fields: [:title, :article_only],
                 all_valid_text_fields: [:title],
-                any_valid_text_or_keyword_fields: [:title, :status, :article_only],
+                any_text_or_keyword_without_other_type_fields: [:title, :status, :article_only],
                 all_valid_text_or_keyword_fields: [:title, :status],
-                any_valid_non_text_fields: [:status],
+                any_non_text_without_text_fields: [:status],
                 all_valid_non_text_fields: [:status],
             )
         end
@@ -921,7 +921,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
     describe "OPTION_DEFINITIONS固有の正規化" do
         it "トップレベルfieldsのHash形式をfieldとboostのArrayへ揃える" do
             context = build_context(
-                any_valid_text_fields: [:title, :body],
+                any_text_without_non_text_fields: [:title, :body],
             )
 
             result = described_class.validate(
@@ -949,7 +949,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
 
         it "queries配下のfieldsは定義に従ったArrayまたはHashの形を保つ" do
             context = build_context(
-                any_valid_text_fields: [:title, :body],
+                any_text_without_non_text_fields: [:title, :body],
             )
 
             result = described_class.validate(

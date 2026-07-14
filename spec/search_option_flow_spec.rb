@@ -327,7 +327,7 @@ RSpec.describe "search option flow" do
                 fields:       [:runtime_score],
                 dump_body:    true,
             )
-        end.to raise_error(ArgumentError, /any_valid_text_fields/)
+        end.to raise_error(ArgumentError, /any_text_without_non_text_fields/)
     end
 
     it "mappingsに無いフィールドを表記に関係なく拒否する" do
@@ -345,7 +345,7 @@ RSpec.describe "search option flow" do
                     fields:       [field_name],
                     dump_body:    true,
                 )
-            end.to raise_error(ArgumentError, /any_valid_text_fields/)
+            end.to raise_error(ArgumentError, /any_text_without_non_text_fields/)
         end
 
         expect do
@@ -358,7 +358,7 @@ RSpec.describe "search option flow" do
                 },
                 dump_body: true,
             )
-        end.to raise_error(ArgumentError, /any_valid_non_text_fields/)
+        end.to raise_error(ArgumentError, /any_non_text_without_text_fields/)
     end
 
     it "More Like Thisはmlt_paramsをmore_like_this句へ渡す" do
@@ -402,7 +402,7 @@ RSpec.describe "search option flow" do
                 },
                 dump_body: true,
             )
-        end.to raise_error(ArgumentError, /any_valid_text_or_keyword_fields/)
+        end.to raise_error(ArgumentError, /any_text_or_keyword_without_other_type_fields/)
 
         expect do
             AreSearch::Searcher.search(

@@ -29,16 +29,16 @@ module AreSearch
             "sort_field",
             "any_valid_search_field",
             "all_valid_search_field",
-            "any_valid_text_search_field",
+            "any_text_search_without_non_text_fields",
             "all_valid_text_search_field",
             "field_name",
             "any_valid_field",
             "all_valid_field",
-            "any_valid_text_field",
+            "any_text_without_non_text_fields",
             "all_valid_text_field",
-            "any_valid_text_or_keyword_field",
+            "any_text_or_keyword_without_other_type_fields",
             "all_valid_text_or_keyword_field",
-            "any_valid_non_text_field",
+            "any_non_text_without_text_fields",
             "all_valid_non_text_field",
             "model_class",
             "valid_model",
@@ -53,11 +53,11 @@ module AreSearch
             "sort_field",
             "any_valid_field",
             "all_valid_field",
-            "any_valid_text_field",
+            "any_text_without_non_text_fields",
             "all_valid_text_field",
-            "any_valid_text_or_keyword_field",
+            "any_text_or_keyword_without_other_type_fields",
             "all_valid_text_or_keyword_field",
-            "any_valid_non_text_field",
+            "any_non_text_without_text_fields",
             "all_valid_non_text_field",
             "model_class",
             "valid_model",
@@ -162,7 +162,7 @@ module AreSearch
             # SearchOptionValidator外で収集した検索対象情報を検査用に正規化する。
             #
             # any_fields / all_fields は、フィールドが存在するtargetの範囲を表す。
-            # any_valid_* は、未定義targetを許容しつつ、同名フィールドの型混在を除外した集合。
+            # any_*_without_*_fields は、未定義targetを許容しつつ、同名フィールドの型混在を除外した集合。
             # all_valid_* は、すべてのtargetで指定型として定義されているフィールドの集合。
             #
             # context未指定時は定義単体の検査だけを行う。
@@ -178,11 +178,11 @@ module AreSearch
                     :models,
                     :any_fields,
                     :all_fields,
-                    :any_valid_text_fields,
+                    :any_text_without_non_text_fields,
                     :all_valid_text_fields,
-                    :any_valid_text_or_keyword_fields,
+                    :any_text_or_keyword_without_other_type_fields,
                     :all_valid_text_or_keyword_fields,
-                    :any_valid_non_text_fields,
+                    :any_non_text_without_text_fields,
                     :all_valid_non_text_fields,
                 ]
                 missing_keys = context_keys - context.keys
@@ -668,21 +668,21 @@ module AreSearch
                 when "all_valid_field"
                     field_name = normalize_field_name(raw_key, path)
                     validate_context_field(field_name, context, :all_fields, path)
-                when "any_valid_text_field"
+                when "any_text_without_non_text_fields"
                     field_name = normalize_field_name(raw_key, path)
-                    validate_context_field(field_name, context, :any_valid_text_fields, path)
+                    validate_context_field(field_name, context, :any_text_without_non_text_fields, path)
                 when "all_valid_text_field"
                     field_name = normalize_field_name(raw_key, path)
                     validate_context_field(field_name, context, :all_valid_text_fields, path)
-                when "any_valid_text_or_keyword_field"
+                when "any_text_or_keyword_without_other_type_fields"
                     field_name = normalize_field_name(raw_key, path)
-                    validate_context_field(field_name, context, :any_valid_text_or_keyword_fields, path)
+                    validate_context_field(field_name, context, :any_text_or_keyword_without_other_type_fields, path)
                 when "all_valid_text_or_keyword_field"
                     field_name = normalize_field_name(raw_key, path)
                     validate_context_field(field_name, context, :all_valid_text_or_keyword_fields, path)
-                when "any_valid_non_text_field"
+                when "any_non_text_without_text_fields"
                     field_name = normalize_field_name(raw_key, path)
-                    validate_context_field(field_name, context, :any_valid_non_text_fields, path)
+                    validate_context_field(field_name, context, :any_non_text_without_text_fields, path)
                 when "all_valid_non_text_field"
                     field_name = normalize_field_name(raw_key, path)
                     validate_context_field(field_name, context, :all_valid_non_text_fields, path)
@@ -750,9 +750,9 @@ module AreSearch
                 when "all_valid_search_field"
                     search_field = normalize_search_field(value, path)
                     validate_context_search_field(search_field, context, :all_fields, path)
-                when "any_valid_text_search_field"
+                when "any_text_search_without_non_text_fields"
                     search_field = normalize_search_field(value, path)
-                    validate_context_search_field(search_field, context, :any_valid_text_fields, path)
+                    validate_context_search_field(search_field, context, :any_text_without_non_text_fields, path)
                 when "all_valid_text_search_field"
                     search_field = normalize_search_field(value, path)
                     validate_context_search_field(search_field, context, :all_valid_text_fields, path)
@@ -764,21 +764,21 @@ module AreSearch
                 when "all_valid_field"
                     field_name = normalize_field_name(value, path)
                     validate_context_field(field_name, context, :all_fields, path)
-                when "any_valid_text_field"
+                when "any_text_without_non_text_fields"
                     field_name = normalize_field_name(value, path)
-                    validate_context_field(field_name, context, :any_valid_text_fields, path)
+                    validate_context_field(field_name, context, :any_text_without_non_text_fields, path)
                 when "all_valid_text_field"
                     field_name = normalize_field_name(value, path)
                     validate_context_field(field_name, context, :all_valid_text_fields, path)
-                when "any_valid_text_or_keyword_field"
+                when "any_text_or_keyword_without_other_type_fields"
                     field_name = normalize_field_name(value, path)
-                    validate_context_field(field_name, context, :any_valid_text_or_keyword_fields, path)
+                    validate_context_field(field_name, context, :any_text_or_keyword_without_other_type_fields, path)
                 when "all_valid_text_or_keyword_field"
                     field_name = normalize_field_name(value, path)
                     validate_context_field(field_name, context, :all_valid_text_or_keyword_fields, path)
-                when "any_valid_non_text_field"
+                when "any_non_text_without_text_fields"
                     field_name = normalize_field_name(value, path)
-                    validate_context_field(field_name, context, :any_valid_non_text_fields, path)
+                    validate_context_field(field_name, context, :any_non_text_without_text_fields, path)
                 when "all_valid_non_text_field"
                     field_name = normalize_field_name(value, path)
                     validate_context_field(field_name, context, :all_valid_non_text_fields, path)

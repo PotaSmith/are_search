@@ -217,7 +217,7 @@ RSpec.describe "search highlight" do
                 },
                 dump_body: true,
             )
-        end.to raise_error(ArgumentError, /any_valid_text_or_keyword_fields/)
+        end.to raise_error(ArgumentError, /any_text_or_keyword_without_other_type_fields/)
     end
 
     it "More Like This検索でも同じhighlight定義を使用する" do

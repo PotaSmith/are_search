@@ -299,7 +299,7 @@ RSpec.describe AreSearch::Searcher, "filters" do
                 },
                 dump_body: true,
             )
-        end.to raise_error(ArgumentError, /any_valid_non_text_fields/)
+        end.to raise_error(ArgumentError, /any_non_text_without_text_fields/)
     end
 
     it "model_results_whereに一致するDBレコードだけを検索結果へ残す" do

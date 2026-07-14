@@ -122,9 +122,9 @@
 #         context[:all_fields] と照合する。
 #         すべてのtargetに存在する場合だけ許可する。
 #
-#     any_valid_text_search_field
+#     any_text_search_without_non_text_fields
 #         search_field と同じ検査と正規化を行い、field を
-#         context[:any_valid_text_fields] と照合する。
+#         context[:any_text_without_non_text_fields] と照合する。
 #
 #     all_valid_text_search_field
 #         search_field と同じ検査と正規化を行い、field を
@@ -144,25 +144,25 @@
 #         context[:all_fields] と照合する。
 #         すべてのtargetに存在する場合だけ許可する。
 #
-#     any_valid_text_field
+#     any_text_without_non_text_fields
 #         field_name と同じ検査と正規化を行い、
-#         context[:any_valid_text_fields] と照合する。
+#         context[:any_text_without_non_text_fields] と照合する。
 #
 #     all_valid_text_field
 #         field_name と同じ検査と正規化を行い、
 #         context[:all_valid_text_fields] と照合する。
 #
-#     any_valid_text_or_keyword_field
+#     any_text_or_keyword_without_other_type_fields
 #         field_name と同じ検査と正規化を行い、
-#         context[:any_valid_text_or_keyword_fields] と照合する。
+#         context[:any_text_or_keyword_without_other_type_fields] と照合する。
 #
 #     all_valid_text_or_keyword_field
 #         field_name と同じ検査と正規化を行い、
 #         context[:all_valid_text_or_keyword_fields] と照合する。
 #
-#     any_valid_non_text_field
+#     any_non_text_without_text_fields
 #         field_name と同じ検査と正規化を行い、
-#         context[:any_valid_non_text_fields] と照合する。
+#         context[:any_non_text_without_text_fields] と照合する。
 #
 #     all_valid_non_text_field
 #         field_name と同じ検査と正規化を行い、
@@ -192,13 +192,13 @@
 #             item_type: Array,
 #             items: [
 #                 {
-#                     item_type: "any_valid_text_or_keyword_field",
+#                     item_type: "any_text_or_keyword_without_other_type_fields",
 #                 },
 #             ],
 #         },
 #     ],
 #
-# この定義では、Array の全要素を any_valid_text_or_keyword_field として検査する。
+# この定義では、Array の全要素を any_text_or_keyword_without_other_type_fields として検査する。
 # :items に複数の定義を並べると、各要素はそのいずれかに一致すればよい。
 #
 # Array は標準では1件以上を必要とする。
@@ -375,20 +375,20 @@
 #     all_valid_field
 #         SearchOptionValidator::NAMED_ITEM_TYPES の all_valid_field と同じ。
 #
-#     any_valid_text_field
-#         SearchOptionValidator::NAMED_ITEM_TYPES の any_valid_text_field と同じ。
+#     any_text_without_non_text_fields
+#         SearchOptionValidator::NAMED_ITEM_TYPES の any_text_without_non_text_fields と同じ。
 #
 #     all_valid_text_field
 #         SearchOptionValidator::NAMED_ITEM_TYPES の all_valid_text_field と同じ。
 #
-#     any_valid_text_or_keyword_field
-#         SearchOptionValidator::NAMED_ITEM_TYPES の any_valid_text_or_keyword_field と同じ。
+#     any_text_or_keyword_without_other_type_fields
+#         SearchOptionValidator::NAMED_ITEM_TYPES の any_text_or_keyword_without_other_type_fields と同じ。
 #
 #     all_valid_text_or_keyword_field
 #         SearchOptionValidator::NAMED_ITEM_TYPES の all_valid_text_or_keyword_field と同じ。
 #
-#     any_valid_non_text_field
-#         SearchOptionValidator::NAMED_ITEM_TYPES の any_valid_non_text_field と同じ。
+#     any_non_text_without_text_fields
+#         SearchOptionValidator::NAMED_ITEM_TYPES の any_non_text_without_text_fields と同じ。
 #
 #     all_valid_non_text_field
 #         SearchOptionValidator::NAMED_ITEM_TYPES の all_valid_non_text_field と同じ。
@@ -403,7 +403,7 @@
 # 8. context を必要とする定義
 # ================================================================================
 #
-# any_valid_ / all_valid_ で始まる item_type / key_type と valid_model は、
+# フィールド一覧を参照する item_type / key_type と valid_model は、
 # SearchOptionValidator.validate の context を参照する。
 # context は SearchOptionValidator の外側でtargetごとのmappingsから収集し、
 # 次の形式で渡す。
@@ -412,11 +412,11 @@
 #         models: [Article, Comment],
 #         any_fields: [:title, :status, :published_at],
 #         all_fields: [:title],
-#         any_valid_text_fields: [:title, :body],
+#         any_text_without_non_text_fields: [:title, :body],
 #         all_valid_text_fields: [:title],
-#         any_valid_text_or_keyword_fields: [:title, :body, :status],
+#         any_text_or_keyword_without_other_type_fields: [:title, :body, :status],
 #         all_valid_text_or_keyword_fields: [:title],
-#         any_valid_non_text_fields: [:status, :published_at],
+#         any_non_text_without_text_fields: [:status, :published_at],
 #         all_valid_non_text_fields: [],
 #     }
 #
@@ -431,7 +431,7 @@
 #         すべてのtargetに存在するフィールド名の積集合。
 #         同名フィールドの型は判定しない。
 #
-#     :any_valid_text_fields
+#     :any_text_without_non_text_fields
 #         1つ以上のtargetでtext型として定義され、ほかのtargetで
 #         同名フィールドが非text型として定義されていないフィールド。
 #         同名フィールドが未定義のtargetは許容する。
@@ -439,7 +439,7 @@
 #     :all_valid_text_fields
 #         すべてのtargetでtext型として定義されているフィールド。
 #
-#     :any_valid_text_or_keyword_fields
+#     :any_text_or_keyword_without_other_type_fields
 #         1つ以上のtargetでtext型またはkeyword型として定義され、
 #         ほかのtargetで同名フィールドが別の型として定義されていないフィールド。
 #         同名フィールドが未定義のtargetは許容する。
@@ -447,7 +447,7 @@
 #     :all_valid_text_or_keyword_fields
 #         すべてのtargetでtext型またはkeyword型として定義されているフィールド。
 #
-#     :any_valid_non_text_fields
+#     :any_non_text_without_text_fields
 #         1つ以上のtargetで非text型として定義され、ほかのtargetで
 #         同名フィールドがtext型として定義されていないフィールド。
 #         同名フィールドが未定義のtargetは許容する。
@@ -455,11 +455,11 @@
 #     :all_valid_non_text_fields
 #         すべてのtargetで非text型として定義されているフィールド。
 #
-# any_valid_* は単純な型別和集合ではない。
+# any_*_without_*_fields は単純な型別和集合ではない。
 # 許容型の和集合から不許容型の和集合を除外し、同名フィールドの型混在を拒否する。
 # all_valid_* はtargetごとの型別フィールド一覧の積集合を使用する。
 #
-# any_valid_* / all_valid_* は、フィールド名の表記に関係なく
+# contextを参照するフィールド型は、フィールド名の表記に関係なく
 # context の対応するフィールド一覧と必ず照合する。
 # mappings の properties / runtime 直下に存在しないフィールド名や、
 # ドット・ワイルドカード等を使った Elasticsearch 固有表記は許可しない。
@@ -539,7 +539,7 @@ module AreSearch
         # }
         CONDITION_FIELD_DEFINITION = [
             {
-                key_type: "any_valid_non_text_field",
+                key_type: "any_non_text_without_text_fields",
                 item_type: Hash,
                 item_count: 1,
                 items: [
@@ -615,7 +615,7 @@ module AreSearch
                 item_type: Array,
                 items: [
                     {
-                        item_type: "any_valid_text_field",
+                        item_type: "any_text_without_non_text_fields",
                     },
                 ],
             },
@@ -623,7 +623,7 @@ module AreSearch
                 item_type: Hash,
                 items: [
                     {
-                        key_type: "any_valid_text_field",
+                        key_type: "any_text_without_non_text_fields",
                         item_type: "positive_number",
                     },
                 ],
@@ -690,7 +690,7 @@ module AreSearch
                                     item_type: Array,
                                     items: [
                                         {
-                                            item_type: "any_valid_text_field",
+                                            item_type: "any_text_without_non_text_fields",
                                         },
                                     ],
                                 },
@@ -699,7 +699,7 @@ module AreSearch
                                     item_type: Hash,
                                     items: [
                                         {
-                                            key_type: "any_valid_text_field",
+                                            key_type: "any_text_without_non_text_fields",
                                             item_type: "positive_number",
                                         },
                                     ],
@@ -741,7 +741,7 @@ module AreSearch
                             item_type: Array,
                             items: [
                                 {
-                                    item_type: "any_valid_text_or_keyword_field",
+                                    item_type: "any_text_or_keyword_without_other_type_fields",
                                 },
                             ],
                         },
@@ -799,14 +799,14 @@ module AreSearch
                     item_type: Array,
                     items: [
                         {
-                            item_type: "any_valid_field",
+                            item_type: "any_non_text_without_text_fields",
                         },
                         {
                             item_type: Hash,
                             item_count: 1,
                             items: [
                                 {
-                                    key_type: "any_valid_field",
+                                    key_type: "any_non_text_without_text_fields",
                                     item_type: Hash,
                                     items: [
                                         {
@@ -933,7 +933,7 @@ module AreSearch
                             item_type: Hash,
                             items: [
                                 {
-                                    key_type: "any_valid_text_or_keyword_field",
+                                    key_type: "any_text_or_keyword_without_other_type_fields",
                                     item_type: Hash,
                                     items: [
                                         {
@@ -949,7 +949,7 @@ module AreSearch
                             item_type: Array,
                             items: [
                                 {
-                                    item_type: "any_valid_text_or_keyword_field",
+                                    item_type: "any_text_or_keyword_without_other_type_fields",
                                 },
                             ],
                         },

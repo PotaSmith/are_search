@@ -34,7 +34,7 @@ module AreSearch
             # all_fields:
             #   すべてのtargetに存在するフィールド。
             #
-            # any_valid_text_fields:
+            # any_text_without_non_text_fields:
             #   1つ以上のtargetでtext型として定義され、
             #   ほかのtargetで同名フィールドが非text型として定義されていないフィールド。
             #   同名フィールドが未定義のtargetは許容する。
@@ -42,7 +42,7 @@ module AreSearch
             # all_valid_text_fields:
             #   すべてのtargetでtext型として定義されているフィールド。
             #
-            # any_valid_text_or_keyword_fields:
+            # any_text_or_keyword_without_other_type_fields:
             #   1つ以上のtargetでtext型またはkeyword型として定義され、
             #   ほかのtargetで同名フィールドが別の型として定義されていないフィールド。
             #   同名フィールドが未定義のtargetは許容する。
@@ -50,7 +50,7 @@ module AreSearch
             # all_valid_text_or_keyword_fields:
             #   すべてのtargetでtext型またはkeyword型として定義されているフィールド。
             #
-            # any_valid_non_text_fields:
+            # any_non_text_without_text_fields:
             #   1つ以上のtargetで非text型として定義され、
             #   ほかのtargetで同名フィールドがtext型として定義されていないフィールド。
             #   同名フィールドが未定義のtargetは許容する。
@@ -70,7 +70,7 @@ module AreSearch
                         target_field_contexts,
                         :fields,
                     ),
-                    any_valid_text_fields: collect_exclusive_union_fields(
+                    any_text_without_non_text_fields: collect_exclusive_union_fields(
                         target_field_contexts,
                         :text_fields,
                         :non_text_fields,
@@ -79,16 +79,16 @@ module AreSearch
                         target_field_contexts,
                         :text_fields,
                     ),
-                    any_valid_text_or_keyword_fields: collect_exclusive_union_fields(
+                    any_text_or_keyword_without_other_type_fields: collect_exclusive_union_fields(
                         target_field_contexts,
                         :text_or_keyword_fields,
-                        :non_text_or_keyword_fields,
+                        :other_type_fields,
                     ),
                     all_valid_text_or_keyword_fields: collect_intersection_fields(
                         target_field_contexts,
                         :text_or_keyword_fields,
                     ),
-                    any_valid_non_text_fields: collect_exclusive_union_fields(
+                    any_non_text_without_text_fields: collect_exclusive_union_fields(
                         target_field_contexts,
                         :non_text_fields,
                         :text_fields,
@@ -114,7 +114,7 @@ module AreSearch
                         text_fields: text_fields,
                         text_or_keyword_fields: text_or_keyword_fields,
                         non_text_fields: fields - text_fields,
-                        non_text_or_keyword_fields: fields - text_or_keyword_fields,
+                        other_type_fields: fields - text_or_keyword_fields,
                     }
                 end
 

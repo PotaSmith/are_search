@@ -109,7 +109,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                     [article_model],
                     fields: [:status],
                 )
-            end.to raise_error(ArgumentError, /any_valid_text_fields/)
+            end.to raise_error(ArgumentError, /any_text_without_non_text_fields/)
 
             expect do
                 described_class.validate(
@@ -137,7 +137,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                         [article_model],
                         fields: [field_name],
                     )
-                end.to raise_error(ArgumentError, /any_valid_text_fields/)
+                end.to raise_error(ArgumentError, /any_text_without_non_text_fields/)
             end
         end
 
@@ -226,7 +226,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                         fields: [:runtime_score],
                     },
                 )
-            end.to raise_error(ArgumentError, /any_valid_text_or_keyword_fields/)
+            end.to raise_error(ArgumentError, /any_text_or_keyword_without_other_type_fields/)
 
             expect do
                 described_class.validate(
@@ -334,7 +334,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                         },
                     },
                 )
-            end.to raise_error(ArgumentError, /any_valid_non_text_fields/)
+            end.to raise_error(ArgumentError, /any_non_text_without_text_fields/)
 
             expect do
                 described_class.validate(
@@ -428,7 +428,7 @@ RSpec.describe AreSearch::SearchParamValidator do
             end.to raise_error(ArgumentError, /all_valid_non_text_fields/)
         end
 
-        it "aggsは存在フィールド、highlightはtextまたはkeywordフィールドを検査する" do
+        it "aggsは非textフィールド、highlightはtextまたはkeywordフィールドを検査する" do
             result = described_class.validate(
                 [article_index_target],
                 [article_model],
@@ -481,6 +481,30 @@ RSpec.describe AreSearch::SearchParamValidator do
                     [article_index_target],
                     [article_model],
                     fields: [:title],
+                    aggs: [:title],
+                )
+            end.to raise_error(ArgumentError, /any_non_text_without_text_fields/)
+
+            expect do
+                described_class.validate(
+                    [article_index_target],
+                    [article_model],
+                    fields: [:title],
+                    aggs: [
+                        {
+                            title: {
+                                size: 10,
+                            },
+                        },
+                    ],
+                )
+            end.to raise_error(ArgumentError, /any_non_text_without_text_fields/)
+
+            expect do
+                described_class.validate(
+                    [article_index_target],
+                    [article_model],
+                    fields: [:title],
                     highlight: {
                         type: "unified",
                     },
@@ -500,7 +524,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                         },
                     },
                 )
-            end.to raise_error(ArgumentError, /any_valid_text_or_keyword_fields/)
+            end.to raise_error(ArgumentError, /any_text_or_keyword_without_other_type_fields/)
         end
 
         it "pageとper_pageは正のIntegerだけを受け付ける" do
@@ -638,7 +662,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                     [article_model, document_model],
                     fields: [:title],
                 )
-            end.to raise_error(ArgumentError, /any_valid_text_fields/)
+            end.to raise_error(ArgumentError, /any_text_without_non_text_fields/)
 
             expect do
                 described_class.validate(
@@ -650,7 +674,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                         },
                     },
                 )
-            end.to raise_error(ArgumentError, /any_valid_non_text_fields/)
+            end.to raise_error(ArgumentError, /any_non_text_without_text_fields/)
         end
     end
 end

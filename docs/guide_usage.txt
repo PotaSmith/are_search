@@ -286,13 +286,95 @@ model_includes / model_results_where を使用する。
         すべての target に存在する非 text フィールド。
 
     aggs
-        1つ以上の target に存在するフィールド。
+        1つ以上の target に存在する非 text フィールド。
 
 標準検索オプションで指定するフィールド名は、表記に関係なく mappings と照合する。
 指定できるのは各 target の properties / runtime 直下に定義されたフィールドだけ。
 ドット、ワイルドカード、大文字などを使った未定義の Elasticsearch 固有表記も拒否する。
 このような指定が必要な検索は raw_body で明示的に組み立てる。
 
+
+## 3-1. 外部入力として使用できる値
+----------------------------------------------------------------
+
+以下の値は、フォームやAPIなどの外部入力から受け取って検索に使用できる。
+
+    query_string
+    queries の query_string
+    where / where_not / where_or の条件値
+    page
+
+sort の並び順、fields の boost、per_page はアプリケーション側で指定する。
+
+page は正の Integer に変換してから渡す。
+page から計算した検索開始位置が target の max_result_window 以上になる場合、
+AreSearch は Elasticsearch へ from: max_result_window、size: 0 を渡して0件を返す。
+そのため、外部入力から極端に大きいページ番号を指定されても、
+max_result_window を超える深いページングは行わない。
+
+以下のフィールド名指定はフィールド名は mappings と照合される。
+
+    fields のフィールド名
+    queries の フィールド名
+    where / where_not / where_or のフィールド名
+    sort のフィールド名
+
+ただ、想定外のフィールドでの検索をされる可能性があるので基本は外部入力としない。
+
+
+単純検索。
+
+    result = AreSearch::Searcher.search(
+        [article_index],
+        query_string: params[:q],
+        fields: [
+            params[:field],
+        ],
+    )
+
+複合フィールド検索。
+
+    result = AreSearch::Searcher.search(
+        [article_index],
+        queries: [
+            {
+                query_string: params[:title_q],
+                fields: [
+                    params[:title_field],
+                ],
+            },
+            {
+                query_string: params[:body_q],
+                fields: [
+                    params[:body_field],
+                ],
+            },
+        ],
+    )
+
+絞り込み。
+
+    result = AreSearch::Searcher.search(
+        [article_index],
+        query_string: params[:q],
+        fields:       [:title, :body],
+        where: {
+            params[:filter_field] => {
+                term: params[:filter_value],
+            },
+        },
+    )
+
+並び順、ページング。
+
+    result = AreSearch::Searcher.search(
+        [article_index],
+        query_string: params[:q],
+        fields:       [:title, :body],
+        sort:         params[:sort_field],
+        page:         params.fetch(:page, 1).to_i,
+        per_page:     20,
+    )
 
 # 4. where / where_not / where_or
 ================================================================
@@ -402,6 +484,7 @@ Elasticsearch の hit を ActiveRecord から復元するときに、追加の w
 ================================================================
 
 指定フィールドの値を terms aggregation で集計する。
+text 型フィールドは指定できない。
 
     result = AreSearch::Searcher.search(
         [article_index],

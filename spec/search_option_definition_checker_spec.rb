@@ -31,7 +31,7 @@ RSpec.describe AreSearch::SearchOptionDefinitionChecker do
                             item_type: Array,
                             items: [
                                 {
-                                    item_type: "any_valid_text_field",
+                                    item_type: "any_text_without_non_text_fields",
                                 },
                             ],
                         },
@@ -92,7 +92,7 @@ RSpec.describe AreSearch::SearchOptionDefinitionChecker do
                                             item_type: Array,
                                             items: [
                                                 {
-                                                    item_type: "any_valid_text_field",
+                                                    item_type: "any_text_without_non_text_fields",
                                                 },
                                             ],
                                         },
@@ -101,7 +101,7 @@ RSpec.describe AreSearch::SearchOptionDefinitionChecker do
                                             item_type: Hash,
                                             items: [
                                                 {
-                                                    key_type: "any_valid_text_field",
+                                                    key_type: "any_text_without_non_text_fields",
                                                     item_type: "positive_number",
                                                 },
                                             ],
@@ -131,7 +131,7 @@ RSpec.describe AreSearch::SearchOptionDefinitionChecker do
                                     item_type: Array,
                                     items: [
                                         {
-                                            item_type: "any_valid_text_or_keyword_field",
+                                            item_type: "any_text_or_keyword_without_other_type_fields",
                                         },
                                     ],
                                 },
@@ -157,7 +157,7 @@ RSpec.describe AreSearch::SearchOptionDefinitionChecker do
                             item_count: 1,
                             items: [
                                 {
-                                    key_type: "any_valid_non_text_field",
+                                    key_type: "any_non_text_without_text_fields",
                                     item_type: Hash,
                                 },
                             ],
@@ -188,7 +188,7 @@ RSpec.describe AreSearch::SearchOptionDefinitionChecker do
                             item_type: Array,
                             items: [
                                 {
-                                    item_type: "any_valid_text_field",
+                                    item_type: "any_text_without_non_text_fields",
                                 },
                                 {
                                     item_type: "all_valid_text_search_field",
@@ -201,7 +201,7 @@ RSpec.describe AreSearch::SearchOptionDefinitionChecker do
                             item_type: Hash,
                             items: [
                                 {
-                                    key_type: "any_valid_non_text_field",
+                                    key_type: "any_non_text_without_text_fields",
                                     item_type: "str_or_int_or_bool",
                                 },
                             ],
