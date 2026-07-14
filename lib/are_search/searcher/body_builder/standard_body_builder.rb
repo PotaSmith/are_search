@@ -25,11 +25,9 @@ module AreSearch
 
 
                 # --- 変換 ---
-                normalized_aggs      = normalize_aggs(aggs_opts)
-
                 page                 = AreSearch::SearcherUtils.resolve_default_option(page_opt, 1)
                 per_page             = AreSearch::SearcherUtils.resolve_default_option(per_page_opt, 25)
-                normalized_sort      = sort_opts
+                normalized_sort      = normalize_sort_options(sort_opts)
                 normalized_highlight = normalize_highlight_options(highlight_opts)
 
                 from = (page - 1) * per_page
@@ -42,7 +40,9 @@ module AreSearch
                     size:  es_size,
                     query: query,
                 }
-                body[:aggs] = build_aggs(normalized_aggs) if normalized_aggs.any?
+                if aggs_opts.nil? == false
+                    body[:aggs] = build_aggs(aggs_opts)
+                end
                 body[:sort] = normalized_sort if normalized_sort.present?
                 body[:highlight] = build_highlight_body(normalized_highlight) unless normalized_highlight.nil?
 
@@ -51,31 +51,20 @@ module AreSearch
 
             private
 
-            # aggs を共通の field / terms_options 形式へ変換する
-            def normalize_aggs(aggs_opts)
-                normalized_aggs = []
-                return normalized_aggs if aggs_opts.nil?
+            # Hash形式のsortを、記述順を維持したElasticsearch用Arrayへ変換する。
+            def normalize_sort_options(sort_opts)
+                return nil if sort_opts.nil?
+                return sort_opts unless sort_opts.instance_of?(Hash)
 
-                aggs_opts.each do |entry|
-                    if entry.instance_of?(Hash)
-                        entry.each do |field, terms_options|
-                            normalized_options = { size: AreSearch.default_aggs_size }
+                normalized_sort = []
 
-                            terms_options.each do |key, value|
-                                normalized_options[key] = value
-                            end
-
-                            normalized_aggs << { field: field, terms_options: normalized_options }
-                        end
-                    else
-                        normalized_aggs << {
-                            field: entry,
-                            terms_options: { size: AreSearch.default_aggs_size },
-                        }
-                    end
+                sort_opts.each do |field_name, order|
+                    normalized_sort << {
+                        field_name => order,
+                    }
                 end
 
-                normalized_aggs
+                normalized_sort
             end
 
             # highlight を fields が Hash の共通形式へ変換する
@@ -146,16 +135,15 @@ module AreSearch
                 model_index_settings[:max_result_window]
             end
 
-            # normalized_aggs から ES リクエスト用の aggs ハッシュを組み立てる
-            def build_aggs(normalized_aggs)
+            # フィールド別の terms オプションから ES リクエスト用の aggs を組み立てる。
+            def build_aggs(aggs_opts)
                 result = {}
 
-                normalized_aggs.each do |agg|
-                    field = agg[:field]
-                    terms_options = agg[:terms_options].dup
-                    terms_options[:field] = field
+                aggs_opts.each do |field, terms_options|
+                    es_terms_options = terms_options.dup
+                    es_terms_options[:field] = field
 
-                    result[field] = { terms: terms_options }
+                    result[field] = { terms: es_terms_options }
                 end
 
                 result

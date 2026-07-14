@@ -11,7 +11,6 @@ RSpec.describe AreSearch, "configuration" do
         original_max_retry_count = described_class.max_retry_count
         original_sync_request_process_hang_wait = described_class.sync_request_process_hang_wait
         original_max_force_attempt_count = described_class.max_force_attempt_count
-        original_default_aggs_size = described_class.default_aggs_size
         original_validate_es_data = described_class.validate_es_data
         original_after_commit_mode = described_class.after_commit_mode
         original_index_operation_enabled = described_class.index_operation_enabled
@@ -31,7 +30,6 @@ RSpec.describe AreSearch, "configuration" do
         described_class.max_retry_count = original_max_retry_count
         described_class.sync_request_process_hang_wait = original_sync_request_process_hang_wait
         described_class.max_force_attempt_count = original_max_force_attempt_count
-        described_class.default_aggs_size = original_default_aggs_size
         described_class.validate_es_data = original_validate_es_data
         described_class.after_commit_mode = original_after_commit_mode
         described_class.index_operation_enabled = original_index_operation_enabled
@@ -130,7 +128,6 @@ RSpec.describe AreSearch, "configuration" do
         described_class.max_retry_count = 7
         described_class.sync_request_process_hang_wait = 600
         described_class.max_force_attempt_count = 7
-        described_class.default_aggs_size = 50
         described_class.validate_es_data = false
         described_class.after_commit_mode = :job
         described_class.index_operation_enabled = false
@@ -141,7 +138,6 @@ RSpec.describe AreSearch, "configuration" do
         expect(described_class.max_retry_count).to eq(7)
         expect(described_class.sync_request_process_hang_wait).to eq(600)
         expect(described_class.max_force_attempt_count).to eq(7)
-        expect(described_class.default_aggs_size).to eq(50)
         expect(described_class.validate_es_data).to eq(false)
         expect(described_class.after_commit_mode).to eq(:job)
         expect(described_class.index_operation_enabled).to eq(false)

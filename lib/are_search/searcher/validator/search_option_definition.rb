@@ -786,34 +786,30 @@ module AreSearch
             #     },
             # ]
             where_or: CONDITION_DEFINITIONS,
-            # aggs: [
-            #     :status,
-            #     {
-            #         category: {
-            #             size: 50,
-            #         },
+            # aggs: {
+            #     status: {
+            #         size: 20,
             #     },
-            # ]
+            #     category: {
+            #         size: 50,
+            #     },
+            # }
             aggs: [
                 {
-                    item_type: Array,
+                    item_type: Hash,
                     items: [
                         {
-                            item_type: "any_non_text_without_text_fields",
-                        },
-                        {
+                            key_type: "any_non_text_without_text_fields",
                             item_type: Hash,
-                            item_count: 1,
+                            must_keys: [:size],
                             items: [
                                 {
-                                    key_type: "any_non_text_without_text_fields",
-                                    item_type: Hash,
-                                    items: [
-                                        {
-                                            key_type: "symbol_key",
-                                            item_type: "str_or_int_or_bool",
-                                        },
-                                    ],
+                                    key_name: :size,
+                                    item_type: "positive_integer",
+                                },
+                                {
+                                    key_type: "symbol_key",
+                                    item_type: "str_or_int_or_bool",
                                 },
                             ],
                         },
@@ -866,15 +862,11 @@ module AreSearch
             #
             # sort: {
             #     updated_at: :desc,
+            #     id:         :desc,
             # }
             #
-            # sort: [
-            #     { updated_at: :desc },
-            #     { _score: :desc },
-            #     { _doc: :asc },
-            # ]
-            #
-            # Hash形式の値は :asc / :desc のStringまたはSymbolを指定する。
+            # Hash形式ではキーの記述順をsortの優先順位として扱う。
+            # 値は :asc / :desc のStringまたはSymbolを指定する。
             sort: [
                 {
                     item_type: "sort_field",
@@ -885,23 +877,6 @@ module AreSearch
                         {
                             key_type: "sort_field",
                             item_type: "str_or_sym",
-                        },
-                    ],
-                },
-                {
-                    item_type: Array,
-                    items: [
-                        {
-                            item_type: "sort_field",
-                        },
-                        {
-                            item_type: Hash,
-                            items: [
-                                {
-                                    key_type: "sort_field",
-                                    item_type: "str_or_sym",
-                                },
-                            ],
                         },
                     ],
                 },

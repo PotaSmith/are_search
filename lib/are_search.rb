@@ -120,8 +120,6 @@ module AreSearch
     @sync_request_process_hang_wait = 1800
     @max_force_attempt_count = 5
 
-    @default_aggs_size = 200
-
     @validate_es_data  = true
 
 
@@ -199,14 +197,6 @@ module AreSearch
 
     def self.max_force_attempt_count=(value)
         @max_force_attempt_count = value
-    end
-
-    def self.default_aggs_size
-        @default_aggs_size
-    end
-
-    def self.default_aggs_size=(value)
-        @default_aggs_size = value
     end
 
     def self.validate_es_data

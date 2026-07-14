@@ -386,28 +386,33 @@ RSpec.describe AreSearch::SearchParamValidator do
                 [article_index_target, document_index_target],
                 [article_model, document_model],
                 fields: [:title],
-                sort: [
-                    :status,
-                    {
-                        count: :desc,
-                    },
-                    {
-                        _score: "desc",
-                    },
-                    :_doc,
-                ],
+                sort: {
+                    status: :asc,
+                    count:  :desc,
+                    _score:  "desc",
+                    _doc:    :asc,
+                },
             )
 
-            expect(result[:sort]).to eq([
-                :status,
-                {
-                    count: :desc,
-                },
-                {
-                    _score: "desc",
-                },
-                :_doc,
-            ])
+            expect(result[:sort]).to eq(
+                status: :asc,
+                count:  :desc,
+                _score:  "desc",
+                _doc:    :asc,
+            )
+
+            expect do
+                described_class.validate(
+                    [article_index_target, document_index_target],
+                    [article_model, document_model],
+                    fields: [:title],
+                    sort: [
+                        {
+                            status: :desc,
+                        },
+                    ],
+                )
+            end.to raise_error(ArgumentError)
 
             expect do
                 described_class.validate(
@@ -433,14 +438,14 @@ RSpec.describe AreSearch::SearchParamValidator do
                 [article_index_target],
                 [article_model],
                 fields: [:title],
-                aggs: [
-                    :status,
-                    {
-                        count: {
-                            size: 10,
-                        },
+                aggs: {
+                    status: {
+                        size: 20,
                     },
-                ],
+                    count: {
+                        size: 10,
+                    },
+                },
                 highlight: {
                     fields: {
                         title: {
@@ -455,14 +460,14 @@ RSpec.describe AreSearch::SearchParamValidator do
                 },
             )
 
-            expect(result[:aggs]).to eq([
-                :status,
-                {
-                    count: {
-                        size: 10,
-                    },
+            expect(result[:aggs]).to eq(
+                status: {
+                    size: 20,
                 },
-            ])
+                count: {
+                    size: 10,
+                },
+            )
             expect(result[:highlight]).to eq(
                 fields: {
                     title: {
@@ -481,7 +486,11 @@ RSpec.describe AreSearch::SearchParamValidator do
                     [article_index_target],
                     [article_model],
                     fields: [:title],
-                    aggs: [:title],
+                    aggs: {
+                        title: {
+                            size: 10,
+                        },
+                    },
                 )
             end.to raise_error(ArgumentError, /any_non_text_without_text_fields/)
 
@@ -490,15 +499,35 @@ RSpec.describe AreSearch::SearchParamValidator do
                     [article_index_target],
                     [article_model],
                     fields: [:title],
-                    aggs: [
-                        {
-                            title: {
-                                size: 10,
-                            },
+                    aggs: {
+                        status: {
+                            include: "published.*",
                         },
-                    ],
+                    },
                 )
-            end.to raise_error(ArgumentError, /any_non_text_without_text_fields/)
+            end.to raise_error(ArgumentError, /必要なキー.*size/)
+
+            expect do
+                described_class.validate(
+                    [article_index_target],
+                    [article_model],
+                    fields: [:title],
+                    aggs: {
+                        status: {
+                            size: 0,
+                        },
+                    },
+                )
+            end.to raise_error(ArgumentError, /正の整数で指定してください/)
+
+            expect do
+                described_class.validate(
+                    [article_index_target],
+                    [article_model],
+                    fields: [:title],
+                    aggs: [:status],
+                )
+            end.to raise_error(ArgumentError, /Hash/)
 
             expect do
                 described_class.validate(

@@ -134,14 +134,14 @@ RSpec.describe "search option flow" do
             },
             sort: {
                 status: "desc",
+                count:  :asc,
             },
-            aggs: [
-                {
-                    status: {
-                        size: -1,
-                    },
+            aggs: {
+                status: {
+                    size:          10,
+                    min_doc_count: 0,
                 },
-            ],
+            },
             highlight: {
                 fields: {
                     status: {
@@ -201,10 +201,19 @@ RSpec.describe "search option flow" do
                 },
             },
         ])
-        expect(body[:sort]).to eq(
-            status: "desc",
+        expect(body[:sort]).to eq([
+            {
+                status: "desc",
+            },
+            {
+                count: :asc,
+            },
+        ])
+        expect(body.dig(:aggs, :status, :terms)).to eq(
+            size:          10,
+            min_doc_count: 0,
+            field:         :status,
         )
-        expect(body.dig(:aggs, :status, :terms, :size)).to eq(-1)
         expect(body[:highlight]).to include(
             fields: {
                 status: {

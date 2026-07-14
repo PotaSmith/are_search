@@ -387,7 +387,11 @@ RSpec.describe AreSearch::IndexTarget do
                         terms: [3, 4],
                     },
                 },
-                aggs: [:id],
+                aggs: {
+                    id: {
+                        size: 20,
+                    },
+                },
                 page: 2,
                 per_page: 20,
                 sort: {

@@ -19,7 +19,6 @@ config/initializers/are_search.rb の AreSearch.setup 後に指定する。
     AreSearch.index_operation_enabled        = false
     AreSearch.validate_es_data               = true
     AreSearch.after_commit_mode              = :direct
-    AreSearch.default_aggs_size              = 200
     AreSearch.batch_size                     = 500
 
 
@@ -100,22 +99,7 @@ DB commit 後の同期方法。
 どのモードでも、保存・削除時には sync request が記録される。
 
 
-## 1-9. default_aggs_size
-----------------------------------------------------------------
-
-aggs にフィールド名だけを指定した場合の terms aggregation の size。
-デフォルトは200。
-
-    AreSearch.default_aggs_size = 200
-
-検索ごとに変更する場合。
-
-    aggs: [
-        { category: { size: 50 } },
-    ]
-
-
-## 1-10. batch_size
+## 1-9. batch_size
 ----------------------------------------------------------------
 
 reindex 時に DB から一度に読み込む件数。
@@ -127,7 +111,7 @@ reindex 時に DB から一度に読み込む件数。
 この設定は reindex にだけ使われる。
 
 
-## 1-11. analyzer_settings
+## 1-10. analyzer_settings
 ----------------------------------------------------------------
 
 index 作成時に Elasticsearch の settings へ渡す analyzer 設定。

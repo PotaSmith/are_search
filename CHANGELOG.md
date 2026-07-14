@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- `sort` の Array 形式を廃止し、複数条件は記述順を優先順位とする Hash 形式へ統一
+- `aggs` をフィールド名をキーとする Hash 形式へ変更し、各フィールドの `size` を必須化。`AreSearch.default_aggs_size` を削除
 - Elasticsearch index 名を `{index_prefix}__{are_search_ar_table_name}__{target_name}` 形式へ変更し、物理 index の timestamp 前も `__` へ統一。`are_search_ar_table_name` は既定で `table_name` を返し、Searchable 継承系統ごとに変更可能。index 名の各要素は小文字英字で始まり、小文字英字とアンダーバーだけを使用する形式に限定。※reindexが必要
 - index target単位で flock と marker を取得してブロックを実行する `are_search_es_with_index_guard` を追加
 
