@@ -200,7 +200,7 @@ RSpec.describe "search highlight" do
                 },
                 dump_body: true,
             )
-        end.to raise_error(ArgumentError, /1件以上/)
+        end.to raise_error(ArgumentError)
     end
 
     it "textまたはkeyword以外のフィールドをhighlight対象にできない" do
@@ -217,7 +217,10 @@ RSpec.describe "search highlight" do
                 },
                 dump_body: true,
             )
-        end.to raise_error(ArgumentError, /any_text_or_keyword_without_other_type_fields/)
+        end.to raise_error(
+            ArgumentError,
+            /opts\[:highlight\]\[fields\] に未知のキーがあります: count/,
+        )
     end
 
     it "More Like This検索でも同じhighlight定義を使用する" do

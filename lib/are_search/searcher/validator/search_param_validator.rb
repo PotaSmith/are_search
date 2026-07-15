@@ -15,7 +15,7 @@ module AreSearch
                 options = AreSearch::SearchOptionValidator.validate(
                     dirty_options,
                     AreSearch::Searcher::OPTION_DEFINITIONS,
-                    context: context,
+                    context,
                 )
 
                 validate_option_relations!(options)

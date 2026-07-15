@@ -65,46 +65,33 @@ RSpec.describe "search option flow" do
             .and_return(true)
     end
 
-    it "query_stringにStringとnilを受け付ける" do
+    it "query_stringにStringを受け付ける" do
         allow(AreSearch::Searcher)
             .to receive(:execute_and_build_result)
             .and_return(:search_result)
 
-        string_result = AreSearch::Searcher.search(
+        result = AreSearch::Searcher.search(
             [article_index_target],
             query_string: "Rails",
             fields:       [:title],
         )
-        nil_result = AreSearch::Searcher.search(
-            [article_index_target],
-            query_string: nil,
-            fields:       [:title],
-        )
 
-        expect(string_result).to eq(:search_result)
-        expect(nil_result).to eq(:search_result)
+        expect(result).to eq(:search_result)
     end
 
-    it "nilと空文字列ではcombined_fields句を作らない" do
-        nil_body = AreSearch::Searcher.search(
-            [article_index_target],
-            query_string: nil,
-            fields:       [:title],
-            dump_body:    true,
-        )
-        empty_body = AreSearch::Searcher.search(
+    it "空文字列ではcombined_fields句を作らない" do
+        body = AreSearch::Searcher.search(
             [article_index_target],
             query_string: "",
             fields:       [:title],
             dump_body:    true,
         )
 
-        expect(nil_body.dig(:query, :bool)).not_to have_key(:must)
-        expect(empty_body.dig(:query, :bool)).not_to have_key(:must)
+        expect(body.dig(:query, :bool)).not_to have_key(:must)
     end
 
-    it "query_stringの非String値を拒否する" do
-        [{}, [], 1, :query, true, false].each do |query_string|
+    it "query_stringの非String scalar値を拒否する" do
+        [1, :query, true, false].each do |query_string|
             expect do
                 AreSearch::Searcher.search(
                     [article_index_target],
@@ -112,6 +99,21 @@ RSpec.describe "search option flow" do
                     fields:       [:title],
                 )
             end.to raise_error(ArgumentError, /String/)
+        end
+    end
+
+    it "query_stringに定義されていないnode_typeを拒否する" do
+        [{}, []].each do |query_string|
+            expect do
+                AreSearch::Searcher.search(
+                    [article_index_target],
+                    query_string: query_string,
+                    fields:       [:title],
+                )
+            end.to raise_error(
+                ArgumentError,
+                /node_type .* は定義されていません/,
+            )
         end
     end
 
@@ -367,7 +369,10 @@ RSpec.describe "search option flow" do
                 },
                 dump_body: true,
             )
-        end.to raise_error(ArgumentError, /any_non_text_without_text_fields/)
+        end.to raise_error(
+            ArgumentError,
+            /opts\[:where\] に未知のキーがあります: OtherModel\.secret/,
+        )
     end
 
     it "More Like Thisはmlt_paramsをmore_like_this句へ渡す" do
@@ -474,7 +479,7 @@ RSpec.describe "search option flow" do
         ).to eq("50%")
     end
 
-    it "複数モデル用のARオプションはHash構造を必要とする" do
+    it "複数モデル用のARオプションに定義されていないnode_typeを拒否する" do
         expect do
             AreSearch::Searcher.search(
                 [article_index_target],
@@ -482,6 +487,9 @@ RSpec.describe "search option flow" do
                 model_results_where: [],
                 dump_body: true,
             )
-        end.to raise_error(ArgumentError, /Hash/)
+        end.to raise_error(
+            ArgumentError,
+            /node_type :array は定義されていません/,
+        )
     end
 end

@@ -19,21 +19,44 @@ RSpec.describe AreSearch::SearchOptionValidator do
         context.merge(overrides)
     end
 
+    # 単一nodeをトップレベルオプションとして検査し、nodeの結果だけを返す。
+    def validate_node(value, definition, context: nil)
+        result = described_class.validate(
+            {
+                value: value,
+            },
+            {
+                value: definition,
+            },
+            context,
+        )
+
+        result[:value]
+    end
+
+    # scalar node用の定義を作る。
+    def scalar_definition(type)
+        {
+            scalar: {
+                type: type,
+            },
+        }
+    end
+
     describe ".validate のオプション定義Map処理" do
-        it "オプション名をSymbolへ統一し、nilをそのまま残す" do
+        it "Symbolのオプション名を扱い、nilをそのまま残す" do
             definitions = {
-                query_string: [
-                    {
-                        item_type: String,
-                    },
-                ],
+                query_string: {
+                    type: "any",
+                },
             }
 
             result = described_class.validate(
                 {
-                    "query_string" => nil,
+                    query_string: nil,
                 },
                 definitions,
+                nil,
             )
 
             expect(result).to eq(
@@ -41,13 +64,27 @@ RSpec.describe AreSearch::SearchOptionValidator do
             )
         end
 
-        it "未知のオプションと正規化後の重複を拒否する" do
+        it "typeというオプション名も定義Mapとして扱う" do
             definitions = {
-                page: [
-                    {
-                        item_type: Integer,
-                    },
-                ],
+                type: scalar_definition("positive_integer"),
+            }
+
+            result = described_class.validate(
+                {
+                    type: 1,
+                },
+                definitions,
+                nil,
+            )
+
+            expect(result).to eq(
+                type: 1,
+            )
+        end
+
+        it "未知のオプションを拒否する" do
+            definitions = {
+                page: scalar_definition("positive_integer"),
             }
 
             expect do
@@ -56,59 +93,80 @@ RSpec.describe AreSearch::SearchOptionValidator do
                         unknown: 1,
                     },
                     definitions,
+                    nil,
                 )
-            end.to raise_error(ArgumentError, /未知の検索オプション/)
+            end.to raise_error(
+                ArgumentError,
+                "未知の検索オプションが指定されています: unknown",
+            )
+        end
+
+        it "Stringのオプション名をSymbolへ変換せず拒否する" do
+            definitions = {
+                page: scalar_definition("positive_integer"),
+            }
 
             expect do
                 described_class.validate(
                     {
                         "page" => 1,
-                        page: 2,
                     },
                     definitions,
+                    nil,
                 )
-            end.to raise_error(ArgumentError, /重複しています/)
+            end.to raise_error(
+                ArgumentError,
+                'opts[:page] は Symbol で指定してください: "page"',
+            )
         end
     end
 
     describe ".validate の候補定義処理" do
-        it "先に一致した候補の正規化結果を返す" do
-            definitions = [
-                {
-                    item_type: Integer,
+        it "nodeの実体型に対応する定義を選択する" do
+            definition = {
+                scalar: {
+                    type: "string",
                 },
-                {
-                    item_type: "field_name",
+                array: {
+                    children: scalar_definition("str_or_sym"),
                 },
-            ]
+            }
 
-            result = described_class.validate("title", definitions)
+            scalar_result = validate_node("title", definition)
+            array_result = validate_node([:title, "body"], definition)
 
-            expect(result).to eq(:title)
+            expect(scalar_result).to eq("title")
+            expect(array_result).to eq([:title, "body"])
         end
 
-        it "候補が空、または全候補不一致なら拒否する" do
+        it "対応するnode_type定義が無ければ拒否する" do
             expect do
-                described_class.validate("title", [])
-            end.to raise_error(ArgumentError, /1件以上の Array/)
+                validate_node(
+                    "title",
+                    {},
+                )
+            end.to raise_error(
+                ArgumentError,
+                /node_type :scalar は定義されていません/,
+            )
 
             expect do
-                described_class.validate(
+                validate_node(
                     :title,
-                    [
-                        {
-                            item_type: Integer,
+                    {
+                        array: {
+                            children: scalar_definition("string"),
                         },
-                        {
-                            item_type: String,
-                        },
-                    ],
+                    },
                 )
-            end.to raise_error(ArgumentError, /定義に一致しません/)
+            end.to raise_error(
+                ArgumentError,
+                /node_type :scalar は定義されていません/,
+            )
         end
     end
 
-    describe ".validate の名前付きitem_type処理" do
+    describe ".validate の名前付きtype処理" do
         it "anyはHashとArrayを再帰的に複製する" do
             value = {
                 "query" => [
@@ -118,10 +176,10 @@ RSpec.describe AreSearch::SearchOptionValidator do
                 ],
             }
 
-            result = described_class.validate(
+            result = validate_node(
                 value,
                 {
-                    item_type: "any",
+                    type: "any",
                 },
             )
 
@@ -132,10 +190,10 @@ RSpec.describe AreSearch::SearchOptionValidator do
         end
 
         it "anyはnilもそのまま許可する" do
-            result = described_class.validate(
+            result = validate_node(
                 nil,
                 {
-                    item_type: "any",
+                    type: "any",
                 },
             )
 
@@ -146,156 +204,99 @@ RSpec.describe AreSearch::SearchOptionValidator do
             value = {
                 "includes" => [:user, :tags],
             }
+            definition = {
+                type: "not_nil",
+            }
 
-            result = described_class.validate(
-                value,
-                {
-                    item_type: "not_nil",
-                },
-            )
+            result = validate_node(value, definition)
 
             expect(result).to eq(value)
             expect(result).not_to equal(value)
             expect(result["includes"]).not_to equal(value["includes"])
-
-            expect(
-                described_class.validate(
-                    false,
-                    {
-                        item_type: "not_nil",
-                    },
-                ),
-            ).to eq(false)
+            expect(validate_node(false, definition)).to eq(false)
 
             expect do
-                described_class.validate(
-                    nil,
-                    {
-                        item_type: "not_nil",
-                    },
-                )
-            end.to raise_error(ArgumentError, /nil は指定できません/)
+                validate_node(nil, definition)
+            end.to raise_error(ArgumentError)
         end
 
         it "boolean、文字列系、数値系の独自型を検査する" do
             expect(
-                described_class.validate(
+                validate_node(
                     false,
-                    {
-                        item_type: "boolean",
-                    },
+                    scalar_definition("boolean"),
                 ),
             ).to eq(false)
 
             expect(
-                described_class.validate(
+                validate_node(
                     :desc,
-                    {
-                        item_type: "str_or_sym",
-                    },
+                    scalar_definition("str_or_sym"),
                 ),
             ).to eq(:desc)
 
             expect(
-                described_class.validate(
+                validate_node(
                     10,
-                    {
-                        item_type: "str_or_int",
-                    },
+                    scalar_definition("str_or_int"),
                 ),
             ).to eq(10)
 
             expect(
-                described_class.validate(
+                validate_node(
                     true,
-                    {
-                        item_type: "str_or_int_or_bool",
-                    },
+                    scalar_definition("str_or_int_or_bool"),
                 ),
             ).to eq(true)
 
             expect(
-                described_class.validate(
+                validate_node(
                     2.5,
-                    {
-                        item_type: "positive_number",
-                    },
+                    scalar_definition("positive_number"),
                 ),
             ).to eq(2.5)
 
             expect(
-                described_class.validate(
+                validate_node(
                     2,
-                    {
-                        item_type: "positive_integer",
-                    },
+                    scalar_definition("positive_integer"),
                 ),
             ).to eq(2)
         end
 
         it "独自型が許可しない値を拒否する" do
             invalid_values = [
-                ["boolean", 1],
-                ["str_or_sym", 1],
-                ["str_or_int", false],
-                ["str_or_int_or_bool", 1.5],
-                ["positive_number", 0],
-                ["positive_integer", 1.5],
+                ["boolean", 1, /true または false/],
+                ["str_or_sym", 1, /String または Symbol/],
+                ["str_or_int", false, /String または Integer/],
+                ["str_or_int_or_bool", 1.5, /String、Integer、true、false/],
+                ["positive_number", 0, /正の数/],
+                ["positive_integer", 1.5, /正の整数/],
             ]
 
-            invalid_values.each do |item_type, value|
+            invalid_values.each do |definition_type, value, expected_message|
                 expect do
-                    described_class.validate(
+                    validate_node(
                         value,
-                        {
-                            item_type: item_type,
-                        },
+                        scalar_definition(definition_type),
                     )
-                end.to raise_error(ArgumentError)
+                end.to raise_error(ArgumentError, expected_message)
             end
         end
 
-        it "search_fieldをfieldとboostへ正規化する" do
-            plain = described_class.validate(
-                :title,
-                {
-                    item_type: "search_field",
-                },
-            )
-            boosted = described_class.validate(
-                "body^2.5",
-                {
-                    item_type: "search_field",
-                },
-            )
-
-            expect(plain).to eq(
-                field: :title,
-                boost: nil,
-            )
-            expect(boosted).to eq(
-                field: :body,
-                boost: 2.5,
-            )
-        end
-
-        it "field_nameはboostを持たないStringまたはSymbolだけを許可する" do
+        it "symbol_keyは形式に合うSymbolだけを許可する" do
             expect(
-                described_class.validate(
-                    "title",
-                    {
-                        item_type: "field_name",
-                    },
+                validate_node(
+                    :title,
+                    scalar_definition("symbol_key"),
                 ),
             ).to eq(:title)
 
-            ["", "title^2", 1].each do |value|
+            ["title", :_title, :title_, :"title.keyword", 1].each do |value|
                 expect do
-                    described_class.validate(
+                    validate_node(
                         value,
-                        {
-                            item_type: "field_name",
-                        },
+                        scalar_definition("symbol_key"),
                     )
                 end.to raise_error(ArgumentError)
             end
@@ -303,49 +304,40 @@ RSpec.describe AreSearch::SearchOptionValidator do
     end
 
     describe ".validate のArray処理" do
-        it "各要素を候補定義で検査して正規化する" do
+        it "各要素をchildren定義で検査する" do
             definition = {
-                item_type: Array,
-                items: [
-                    {
-                        item_type: "field_name",
-                    },
-                ],
+                array: {
+                    children: scalar_definition("str_or_sym"),
+                },
             }
 
-            result = described_class.validate(
+            result = validate_node(
                 ["title", :body],
                 definition,
             )
 
-            expect(result).to eq([:title, :body])
+            expect(result).to eq(["title", :body])
         end
 
         it "標準では空配列を拒否し、allow_empty指定時だけ許可する" do
             expect do
-                described_class.validate(
+                validate_node(
                     [],
                     {
-                        item_type: Array,
-                        items: [
-                            {
-                                item_type: Integer,
-                            },
-                        ],
+                        array: {
+                            children: scalar_definition("positive_integer"),
+                        },
                     },
                 )
-            end.to raise_error(ArgumentError, /1件以上/)
+            end.to raise_error(ArgumentError)
 
-            result = described_class.validate(
+            result = validate_node(
                 [],
                 {
-                    item_type: Array,
-                    allow_empty: true,
-                    items: [
-                        {
-                            item_type: Integer,
-                        },
-                    ],
+                    array: {
+                        allow_empty: true,
+                        children: scalar_definition("positive_integer"),
+                    },
                 },
             )
 
@@ -354,31 +346,35 @@ RSpec.describe AreSearch::SearchOptionValidator do
     end
 
     describe ".validate のkey_name Hash処理" do
-        it "必須の固定キーを検査し、StringキーをSymbolへ正規化する" do
+        it "必須の固定キーを検査する" do
             definition = {
-                item_type: Hash,
-                must_keys: [:query_string, :fields],
-                items: [
-                    {
-                        key_name: :query_string,
-                        item_type: String,
-                    },
-                    {
-                        key_name: :fields,
-                        item_type: Array,
-                        items: [
-                            {
-                                item_type: "field_name",
+                hash: {
+                    must_keys: [:query_string, :fields],
+                    key_values: [
+                        {
+                            key: {
+                                key_name: :query_string,
                             },
-                        ],
-                    },
-                ],
+                            value: scalar_definition("string"),
+                        },
+                        {
+                            key: {
+                                key_name: :fields,
+                            },
+                            value: {
+                                array: {
+                                    children: scalar_definition("str_or_sym"),
+                                },
+                            },
+                        },
+                    ],
+                },
             }
 
-            result = described_class.validate(
+            result = validate_node(
                 {
-                    "fields" => ["title"],
-                    "query_string" => "Rails",
+                    fields: [:title],
+                    query_string: "Rails",
                 },
                 definition,
             )
@@ -389,40 +385,42 @@ RSpec.describe AreSearch::SearchOptionValidator do
             )
         end
 
-        it "同じkey_nameへ複数の値形式を定義できる" do
+        it "同じkey_nameのvalueへ複数のnode_typeを定義できる" do
             definition = {
-                item_type: Hash,
-                must_keys: [:fields],
-                items: [
-                    {
-                        key_name: :fields,
-                        item_type: Array,
-                        items: [
-                            {
-                                item_type: "field_name",
+                hash: {
+                    must_keys: [:fields],
+                    key_values: [
+                        {
+                            key: {
+                                key_name: :fields,
                             },
-                        ],
-                    },
-                    {
-                        key_name: :fields,
-                        item_type: Hash,
-                        items: [
-                            {
-                                key_type: "field_name",
-                                item_type: "positive_number",
+                            value: {
+                                array: {
+                                    children: scalar_definition("str_or_sym"),
+                                },
+                                hash: {
+                                    key_values: [
+                                        {
+                                            key: {
+                                                type: "symbol_key",
+                                            },
+                                            value: scalar_definition("positive_number"),
+                                        },
+                                    ],
+                                },
                             },
-                        ],
-                    },
-                ],
+                        },
+                    ],
+                },
             }
 
-            array_result = described_class.validate(
+            array_result = validate_node(
                 {
                     fields: [:title],
                 },
                 definition,
             )
-            hash_result = described_class.validate(
+            hash_result = validate_node(
                 {
                     fields: {
                         title: 2.0,
@@ -441,52 +439,111 @@ RSpec.describe AreSearch::SearchOptionValidator do
             )
         end
 
+        it "固定キー候補にもtype候補にも一致しないキーを未知のキーとして拒否する" do
+            definition = {
+                hash: {
+                    item_count: 1,
+                    key_values: [
+                        {
+                            key: {
+                                key_name: :term,
+                            },
+                            value: scalar_definition("str_or_int_or_bool"),
+                        },
+                        {
+                            key: {
+                                type: "all_valid_non_text_field",
+                            },
+                            value: scalar_definition("positive_integer"),
+                        },
+                    ],
+                },
+            }
+            context = build_context(
+                all_valid_non_text_fields: [:status],
+            )
+
+            expect do
+                validate_node(
+                    {
+                        foo: 1,
+                    },
+                    definition,
+                    context: context,
+                )
+            end.to raise_error(
+                ArgumentError,
+                "opts[:value] に未知のキーがあります: foo",
+            )
+        end
+
         it "must_keysに指定したキーが無ければ拒否する" do
             definition = {
-                item_type: Hash,
-                must_keys: [:fields],
-                items: [
-                    {
-                        key_name: :fields,
-                        item_type: Array,
-                    },
-                ],
+                hash: {
+                    must_keys: [:fields],
+                    key_values: [
+                        {
+                            key: {
+                                key_name: :fields,
+                            },
+                            value: {
+                                array: {
+                                    allow_empty: true,
+                                    children: scalar_definition("str_or_sym"),
+                                },
+                            },
+                        },
+                        {
+                            key: {
+                                key_name: :type,
+                            },
+                            value: scalar_definition("string"),
+                        },
+                    ],
+                },
             }
 
             expect do
-                described_class.validate(
+                validate_node(
                     {
-                        unknown: true,
+                        type: "unified",
                     },
                     definition,
                 )
-            end.to raise_error(ArgumentError, /必要なキー/)
+            end.to raise_error(
+                ArgumentError,
+                "opts[:value] に必要なキーがありません: [:fields]",
+            )
         end
 
-        it "must_not_keysに指定したキーをStringキーも含めて拒否する" do
+        it "must_not_keysに指定したキーを拒否する" do
             definition = {
-                item_type: Hash,
-                must_not_keys: [:like],
-                items: [
-                    {
-                        key_type: "symbol_key",
-                        item_type: "str_or_int_or_bool",
-                    },
-                ],
+                hash: {
+                    must_not_keys: [:like],
+                    key_values: [
+                        {
+                            key: {
+                                type: "symbol_key",
+                            },
+                            value: scalar_definition("str_or_int_or_bool"),
+                        },
+                    ],
+                },
             }
 
-            [:like, "like"].each do |prohibited_key|
-                expect do
-                    described_class.validate(
-                        {
-                            prohibited_key => "other document",
-                        },
-                        definition,
-                    )
-                end.to raise_error(ArgumentError, /指定できないキー.*like/)
-            end
+            expect do
+                validate_node(
+                    {
+                        like: "other document",
+                    },
+                    definition,
+                )
+            end.to raise_error(
+                ArgumentError,
+                "opts[:value] に指定できないキーがあります: [:like]",
+            )
 
-            result = described_class.validate(
+            result = validate_node(
                 {
                     min_term_freq: 1,
                 },
@@ -500,79 +557,70 @@ RSpec.describe AreSearch::SearchOptionValidator do
 
         it "定義されていないキーを拒否する" do
             definition = {
-                item_type: Hash,
-                must_keys: [:fields],
-                items: [
-                    {
-                        key_name: :fields,
-                        item_type: Array,
-                        allow_empty: true,
-                    },
-                ],
+                hash: {
+                    must_keys: [:fields],
+                    key_values: [
+                        {
+                            key: {
+                                key_name: :fields,
+                            },
+                            value: {
+                                array: {
+                                    allow_empty: true,
+                                    children: scalar_definition("str_or_sym"),
+                                },
+                            },
+                        },
+                    ],
+                },
             }
 
             expect do
-                described_class.validate(
+                validate_node(
                     {
                         fields: [],
                         unknown: true,
                     },
                     definition,
                 )
-            end.to raise_error(ArgumentError, /定義に一致しません/)
+            end.to raise_error(
+                ArgumentError,
+                "opts[:value] に未知のキーがあります: unknown",
+            )
         end
 
-        it "Symbol化後に同じキーになる入力を拒否する" do
-            definition = {
-                item_type: Hash,
-                must_keys: [:fields],
-                items: [
-                    {
-                        key_name: :fields,
-                        item_type: Array,
-                        allow_empty: true,
-                    },
-                ],
-            }
-
-            expect do
-                described_class.validate(
-                    {
-                        fields: [],
-                        "fields" => [],
-                    },
-                    definition,
-                )
-            end.to raise_error(ArgumentError, /重複/)
-        end
     end
 
     describe ".validate の可変キーHash処理" do
-        it "key_nameを優先し、key_typeで残りのキーを検査する" do
+        it "key_nameを優先し、typeで残りのキーを検査する" do
             definition = {
-                item_type: Hash,
-                must_keys: [:fields],
-                items: [
-                    {
-                        key_name: :fields,
-                        item_type: Array,
-                        items: [
-                            {
-                                item_type: "field_name",
+                hash: {
+                    must_keys: [:fields],
+                    key_values: [
+                        {
+                            key: {
+                                key_name: :fields,
                             },
-                        ],
-                    },
-                    {
-                        key_type: "symbol_key",
-                        item_type: "str_or_int_or_bool",
-                    },
-                ],
+                            value: {
+                                array: {
+                                    children: scalar_definition("str_or_sym"),
+                                },
+                            },
+                        },
+                        {
+                            key: {
+                                type: "symbol_key",
+                            },
+                            value: scalar_definition("str_or_int_or_bool"),
+                        },
+                    ],
+                },
             }
 
-            result = described_class.validate(
+            result = validate_node(
                 {
-                    "fields" => ["title"],
-                    "type" => "unified",
+                    fields: [:title],
+                    type: "unified",
                 },
                 definition,
             )
@@ -585,45 +633,57 @@ RSpec.describe AreSearch::SearchOptionValidator do
 
         it "item_countとmust_keysを検査する" do
             count_definition = {
-                item_type: Hash,
-                item_count: 1,
-                items: [
-                    {
-                        key_type: "symbol_key",
-                        item_type: Integer,
-                    },
-                ],
+                hash: {
+                    item_count: 1,
+                    key_values: [
+                        {
+                            key: {
+                                type: "symbol_key",
+                            },
+                            value: scalar_definition("positive_integer"),
+                        },
+                    ],
+                },
             }
 
             expect do
-                described_class.validate(
+                validate_node(
                     {
                         one: 1,
                         two: 2,
                     },
                     count_definition,
                 )
-            end.to raise_error(ArgumentError, /1 件/)
+            end.to raise_error(
+                ArgumentError,
+                /opts\[:value\] は 1 件で指定してください/,
+            )
 
             required_definition = {
-                item_type: Hash,
-                must_keys: [:fields],
-                items: [
-                    {
-                        key_type: "symbol_key",
-                        item_type: Integer,
-                    },
-                ],
+                hash: {
+                    must_keys: [:fields],
+                    key_values: [
+                        {
+                            key: {
+                                type: "symbol_key",
+                            },
+                            value: scalar_definition("positive_integer"),
+                        },
+                    ],
+                },
             }
 
             expect do
-                described_class.validate(
+                validate_node(
                     {
                         size: 10,
                     },
                     required_definition,
                 )
-            end.to raise_error(ArgumentError, /必要なキー/)
+            end.to raise_error(
+                ArgumentError,
+                "opts[:value] に必要なキーがありません: [:fields]",
+            )
         end
     end
 
@@ -647,47 +707,37 @@ RSpec.describe AreSearch::SearchOptionValidator do
         end
 
         it "anyとallのフィールド集合をそれぞれ参照する" do
-            any_result = described_class.validate(
+            any_result = validate_node(
                 :article_only,
-                {
-                    item_type: "any_valid_field",
-                },
+                scalar_definition("any_valid_field"),
                 context: context,
             )
 
             expect(any_result).to eq(:article_only)
 
             expect do
-                described_class.validate(
+                validate_node(
                     :article_only,
-                    {
-                        item_type: "all_valid_field",
-                    },
+                    scalar_definition("all_valid_field"),
                     context: context,
                 )
-            end.to raise_error(ArgumentError, /all_fields/)
+            end.to raise_error(ArgumentError)
         end
 
         it "text、textまたはkeyword、非textの集合を区別する" do
-            text_result = described_class.validate(
+            text_result = validate_node(
                 :title,
-                {
-                    item_type: "all_valid_text_field",
-                },
+                scalar_definition("all_valid_text_field"),
                 context: context,
             )
-            text_or_keyword_result = described_class.validate(
+            text_or_keyword_result = validate_node(
                 :status,
-                {
-                    item_type: "all_valid_text_or_keyword_field",
-                },
+                scalar_definition("all_valid_text_or_keyword_field"),
                 context: context,
             )
-            non_text_result = described_class.validate(
+            non_text_result = validate_node(
                 :status,
-                {
-                    item_type: "all_valid_non_text_field",
-                },
+                scalar_definition("all_valid_non_text_field"),
                 context: context,
             )
 
@@ -696,107 +746,81 @@ RSpec.describe AreSearch::SearchOptionValidator do
             expect(non_text_result).to eq(:status)
 
             expect do
-                described_class.validate(
+                validate_node(
                     :title,
-                    {
-                        item_type: "all_valid_non_text_field",
-                    },
+                    scalar_definition("all_valid_non_text_field"),
                     context: context,
                 )
-            end.to raise_error(ArgumentError, /all_valid_non_text_fields/)
-        end
-
-        it "search_fieldのboostを保持してcontextへ照合する" do
-            result = described_class.validate(
-                "title^2.5",
-                {
-                    item_type: "all_valid_text_search_field",
-                },
-                context: context,
-            )
-
-            expect(result).to eq(
-                field: :title,
-                boost: 2.5,
-            )
+            end.to raise_error(ArgumentError)
         end
 
         it "sort_fieldは全targetの非textフィールドと特別値だけを許可する" do
             expect(
-                described_class.validate(
+                validate_node(
                     :status,
-                    {
-                        item_type: "sort_field",
-                    },
+                    scalar_definition("sort_field"),
                     context: context,
                 ),
             ).to eq(:status)
             expect(
-                described_class.validate(
+                validate_node(
                     :_score,
-                    {
-                        item_type: "sort_field",
-                    },
+                    scalar_definition("sort_field"),
                     context: context,
                 ),
             ).to eq(:_score)
             expect(
-                described_class.validate(
+                validate_node(
                     :_doc,
-                    {
-                        item_type: "sort_field",
-                    },
+                    scalar_definition("sort_field"),
                     context: context,
                 ),
             ).to eq(:_doc)
 
             expect do
-                described_class.validate(
+                validate_node(
                     :title,
-                    {
-                        item_type: "sort_field",
-                    },
+                    scalar_definition("sort_field"),
                     context: context,
                 )
-            end.to raise_error(ArgumentError, /all_valid_non_text_fields/)
+            end.to raise_error(ArgumentError)
         end
 
         it "valid_modelはcontext内のClassだけを許可する" do
-            result = described_class.validate(
+            result = validate_node(
                 article_model,
-                {
-                    item_type: "valid_model",
-                },
+                scalar_definition("valid_model"),
                 context: context,
             )
 
             expect(result).to equal(article_model)
 
             expect do
-                described_class.validate(
+                validate_node(
                     Class.new,
-                    {
-                        item_type: "valid_model",
-                    },
+                    scalar_definition("valid_model"),
                     context: context,
                 )
-            end.to raise_error(ArgumentError, /context\[:models\]/)
+            end.to raise_error(ArgumentError)
         end
 
-        it "key_typeでも同じcontext集合を使用する" do
+        it "Hash keyのtypeでも同じcontext集合を使用する" do
             definition = {
-                item_type: Hash,
-                items: [
-                    {
-                        key_type: "all_valid_non_text_field",
-                        item_type: Integer,
-                    },
-                ],
+                hash: {
+                    key_values: [
+                        {
+                            key: {
+                                type: "all_valid_non_text_field",
+                            },
+                            value: scalar_definition("positive_integer"),
+                        },
+                    ],
+                },
             }
 
-            result = described_class.validate(
+            result = validate_node(
                 {
-                    "status" => 1,
+                    status: 1,
                 },
                 definition,
                 context: context,
@@ -817,14 +841,12 @@ RSpec.describe AreSearch::SearchOptionValidator do
 
             values.each do |value|
                 expect do
-                    described_class.validate(
+                    validate_node(
                         value,
-                        {
-                            item_type: "any_valid_field",
-                        },
+                        scalar_definition("any_valid_field"),
                         context: context,
                     )
-                end.to raise_error(ArgumentError, /context\[:any_fields\]/)
+                end.to raise_error(ArgumentError)
             end
         end
 
@@ -838,11 +860,9 @@ RSpec.describe AreSearch::SearchOptionValidator do
             )
 
             special_context[:any_fields].each do |value|
-                result = described_class.validate(
+                result = validate_node(
                     value,
-                    {
-                        item_type: "any_valid_field",
-                    },
+                    scalar_definition("any_valid_field"),
                     context: special_context,
                 )
 
@@ -850,55 +870,121 @@ RSpec.describe AreSearch::SearchOptionValidator do
             end
         end
 
-        it "context未指定、欠落キー、未知キー、値型不正を拒否する" do
+        it "contextは第3位置引数として必須" do
             expect do
                 described_class.validate(
-                    :title,
-                    {
-                        item_type: "any_valid_field",
-                    },
+                    {},
+                    {},
                 )
-            end.to raise_error(ArgumentError, /context\[:any_fields\]/)
+            end.to raise_error(ArgumentError, /wrong number of arguments/)
+        end
+
+        it "context参照型は必要なcontextが無ければ拒否する" do
+            expect do
+                validate_node(
+                    :title,
+                    scalar_definition("any_valid_field"),
+                )
+            end.to raise_error(
+                ArgumentError,
+                "opts[:value] の検査には context[:any_fields] が必要です",
+            )
+        end
+
+        it "contextのHash形式、必要キー、未知キーを検査する" do
+            expect do
+                validate_node(
+                    :title,
+                    scalar_definition("any_valid_field"),
+                    context: [],
+                )
+            end.to raise_error(
+                ArgumentError,
+                "context は Hash で指定してください: []",
+            )
 
             expect do
-                described_class.validate(
+                validate_node(
                     :title,
-                    {
-                        item_type: "any_valid_field",
-                    },
+                    scalar_definition("any_valid_field"),
                     context: {
                         models: [],
                     },
                 )
-            end.to raise_error(ArgumentError, /必要なキー/)
+            end.to raise_error(ArgumentError, /context に必要なキーがありません/)
 
             invalid_context = build_context(
                 unknown: [],
             )
 
             expect do
-                described_class.validate(
+                validate_node(
                     :title,
-                    {
-                        item_type: "any_valid_field",
-                    },
+                    scalar_definition("any_valid_field"),
                     context: invalid_context,
                 )
-            end.to raise_error(ArgumentError, /未知のキー/)
+            end.to raise_error(
+                ArgumentError,
+                "context に未知のキーがあります: [:unknown]",
+            )
+        end
 
-            invalid_fields_context = build_context(
-                any_fields: nil,
+        it "contextのmodelsをモデルClassのArrayに限定する" do
+            expect do
+                validate_node(
+                    :title,
+                    scalar_definition("any_valid_field"),
+                    context: build_context(
+                        models: nil,
+                    ),
+                )
+            end.to raise_error(
+                ArgumentError,
+                "context[:models] は Array で指定してください: nil",
+            )
+
+            invalid_model = Object.new
+
+            expect do
+                validate_node(
+                    :title,
+                    scalar_definition("any_valid_field"),
+                    context: build_context(
+                        models: [invalid_model],
+                    ),
+                )
+            end.to raise_error(
+                ArgumentError,
+                /context\[:models\] はモデルClassのArrayで指定してください/,
+            )
+        end
+
+        it "contextのフィールド集合をStringまたはSymbolのArrayに限定する" do
+            expect do
+                validate_node(
+                    :title,
+                    scalar_definition("any_valid_field"),
+                    context: build_context(
+                        any_fields: nil,
+                    ),
+                )
+            end.to raise_error(
+                ArgumentError,
+                "context[:any_fields] は Array で指定してください: nil",
             )
 
             expect do
-                described_class.validate(
+                validate_node(
                     :title,
-                    {
-                        item_type: "any_valid_field",
-                    },
-                    context: invalid_fields_context,
+                    scalar_definition("any_valid_field"),
+                    context: build_context(
+                        any_fields: [:title, 1],
+                    ),
                 )
-            end.to raise_error(ArgumentError, /Array/)
+            end.to raise_error(
+                ArgumentError,
+                "context[:any_fields] は String または Symbol のArrayで指定してください: 1",
+            )
         end
 
         it "contextのフィールド名をSymbolへ統一し重複を除く" do
@@ -906,11 +992,9 @@ RSpec.describe AreSearch::SearchOptionValidator do
                 any_fields: ["title", :title],
             )
 
-            result = described_class.validate(
+            result = validate_node(
                 :title,
-                {
-                    item_type: "any_valid_field",
-                },
+                scalar_definition("any_valid_field"),
                 context: string_context,
             )
 
@@ -918,8 +1002,8 @@ RSpec.describe AreSearch::SearchOptionValidator do
         end
     end
 
-    describe "OPTION_DEFINITIONS固有の正規化" do
-        it "トップレベルfieldsのHash形式をfieldとboostのArrayへ揃える" do
+    describe "OPTION_DEFINITIONSによるfields検査" do
+        it "トップレベルfieldsのHash形式を維持する" do
             context = build_context(
                 any_text_without_non_text_fields: [:title, :body],
             )
@@ -932,22 +1016,32 @@ RSpec.describe AreSearch::SearchOptionValidator do
                     },
                 },
                 AreSearch::Searcher::OPTION_DEFINITIONS,
-                context: context,
+                context,
             )
 
-            expect(result[:fields]).to eq([
-                {
-                    field: :title,
-                    boost: 2.0,
-                },
-                {
-                    field: :body,
-                    boost: 1,
-                },
-            ])
+            expect(result[:fields]).to eq(
+                title: 2.0,
+                body: 1,
+            )
         end
 
-        it "queries配下のfieldsは定義に従ったArrayまたはHashの形を保つ" do
+        it "トップレベルfieldsのArray形式を維持する" do
+            context = build_context(
+                any_text_without_non_text_fields: [:title, :body],
+            )
+
+            result = described_class.validate(
+                {
+                    fields: [:title, :body],
+                },
+                AreSearch::Searcher::OPTION_DEFINITIONS,
+                context,
+            )
+
+            expect(result[:fields]).to eq([:title, :body])
+        end
+
+        it "トップレベルとqueries配下のfieldsの入力形式を維持する" do
             context = build_context(
                 any_text_without_non_text_fields: [:title, :body],
             )
@@ -968,13 +1062,121 @@ RSpec.describe AreSearch::SearchOptionValidator do
                     ],
                 },
                 AreSearch::Searcher::OPTION_DEFINITIONS,
-                context: context,
+                context,
             )
 
             expect(result[:queries][0][:fields]).to eq([:title, :body])
             expect(result[:queries][1][:fields]).to eq(
                 title: 2.0,
             )
+        end
+
+        it "標準検索オプションのフィールド名はStringをSymbolへ変換せず拒否する" do
+            context = build_context(
+                any_text_without_non_text_fields: [:title],
+                any_text_or_keyword_without_other_type_fields: [:title, :status],
+                any_non_text_without_text_fields: [:status],
+                all_valid_non_text_fields: [:status],
+            )
+            invalid_options = [
+                [
+                    {
+                        fields: ["title"],
+                    },
+                    /context\[:any_text_without_non_text_fields\].*"title"/,
+                ],
+                [
+                    {
+                        fields: {
+                            "title" => 2,
+                        },
+                    },
+                    /opts\[:fields\] に未知のキーがあります: title/,
+                ],
+                [
+                    {
+                        queries: [
+                            {
+                                query_string: "Rails",
+                                fields: ["title"],
+                            },
+                        ],
+                    },
+                    /context\[:any_text_without_non_text_fields\].*"title"/,
+                ],
+                [
+                    {
+                        mlt_params: {
+                            fields: ["title"],
+                        },
+                    },
+                    /context\[:any_text_or_keyword_without_other_type_fields\].*"title"/,
+                ],
+                [
+                    {
+                        where: {
+                            "status" => {
+                                term: "published",
+                            },
+                        },
+                    },
+                    /opts\[:where\] に未知のキーがあります: status/,
+                ],
+                [
+                    {
+                        sort: "status",
+                    },
+                    /context\[:all_valid_non_text_fields\].*"status"/,
+                ],
+                [
+                    {
+                        sort: {
+                            "status" => :asc,
+                        },
+                    },
+                    /opts\[:sort\] に未知のキーがあります: status/,
+                ],
+                [
+                    {
+                        aggs: {
+                            "status" => {
+                                size: 10,
+                            },
+                        },
+                    },
+                    /opts\[:aggs\] に未知のキーがあります: status/,
+                ],
+                [
+                    {
+                        highlight: {
+                            fields: ["title"],
+                        },
+                    },
+                    /context\[:any_text_or_keyword_without_other_type_fields\].*"title"/,
+                ],
+                [
+                    {
+                        highlight: {
+                            fields: {
+                                "title" => {
+                                    number_of_fragments: 0,
+                                },
+                            },
+                        },
+                    },
+                    /opts\[:highlight\]\[fields\] に未知のキーがあります: title/,
+                ],
+            ]
+
+            invalid_options.each do |options, expected_message|
+                expect do
+                    described_class.validate(
+                        options,
+                        AreSearch::Searcher::OPTION_DEFINITIONS,
+                        context,
+                    )
+                end.to raise_error(ArgumentError, expected_message)
+            end
         end
     end
 end

@@ -80,14 +80,8 @@ module AreSearch
                         normalized_fields[field_name] = field_options
                     end
                 else
-                    highlight_fields.each do |field_entry|
-                        if field_entry.instance_of?(Hash)
-                            field_entry.each do |field_name, field_options|
-                                normalized_fields[field_name] = field_options
-                            end
-                        else
-                            normalized_fields[field_entry] = {}
-                        end
+                    highlight_fields.each do |field_name|
+                        normalized_fields[field_name] = {}
                     end
                 end
 

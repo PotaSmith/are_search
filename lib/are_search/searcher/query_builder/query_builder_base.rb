@@ -30,18 +30,19 @@ module AreSearch
 
             private
 
-            # Hash または Array<Hash> を共通の field / value / boost 条件へ変換する。
+            # Hash または Array<Hash> を、検証済みの条件種別を保持した
+            # field / query_type / value 条件へ変換する。
             def normalize_condition_options(condition_opts)
                 normalized_conditions = []
                 return normalized_conditions if condition_opts.nil?
 
                 if condition_opts.instance_of?(Hash)
                     condition_opts.each do |field, value|
-                        value.each do |_query_type, query_value|
+                        value.each do |query_type, query_value|
                             normalized_conditions << {
-                                field: field,
-                                value: query_value,
-                                boost: nil,
+                                field:      field,
+                                query_type: query_type,
+                                value:      query_value,
                             }
                         end
                     end
@@ -51,11 +52,11 @@ module AreSearch
 
                 condition_opts.each do |condition_opt|
                     condition_opt.each do |field, value|
-                        value.each do |_query_type, query_value|
+                        value.each do |query_type, query_value|
                             normalized_conditions << {
-                                field: field,
-                                value: query_value,
-                                boost: nil,
+                                field:      field,
+                                query_type: query_type,
+                                value:      query_value,
                             }
                         end
                     end
@@ -64,7 +65,7 @@ module AreSearch
                 normalized_conditions
             end
 
-            # 共通の field / value / boost 条件から ES の query 句配列を組み立てる。
+            # 共通の field / query_type / value 条件から ES の query 句配列を組み立てる。
             def build_field_clauses(conditions)
                 clauses = []
 
@@ -75,58 +76,45 @@ module AreSearch
                 clauses
             end
 
-            # 1件の field / value / boost 条件を term / terms / range のいずれかへ変換する。
+            # 検証時に確定した query_type に従って、1件の条件を ES query 句へ変換する。
+            # value の Ruby 型から条件種別を再推定しない。
             def build_field_clause(condition)
                 field = condition[:field]
+                query_type = condition[:query_type]
                 value = condition[:value]
-                boost = condition[:boost]
 
-                if value.instance_of?(Hash)
-                    range_value = value.dup
-                    range_value[:boost] = boost if boost.nil? == false
-
-                    return { range: { field => range_value } }
-                end
-
-                if value.instance_of?(Array)
-                    terms_value = { field => value }
-                    terms_value[:boost] = boost if boost.nil? == false
-
-                    return { terms: terms_value }
-                end
-
-                if boost.nil?
+                if query_type == :term
                     return { term: { field => value } }
                 end
 
-                { term: { field => { value: value, boost: boost } } }
+                if query_type == :terms
+                    return { terms: { field => value } }
+                end
+
+                if query_type == :range
+                    return { range: { field => value } }
+                end
+
+                raise ArgumentError, "未知の条件種別です: #{query_type.inspect}"
             end
 
-            # OPTION_DEFINITIONSで許可されたfieldsのArray形式とHash形式を、
+            # SearchOptionValidatorで共通形式へ正規化済みのfieldsを、
             # Elasticsearchのcombined_fields用文字列配列へ変換する。
-            #
-            # トップレベルfieldsのHash形式はSearchOptionValidatorが
-            # field / boost HashのArrayへ正規化しているため、その形式もここで扱う。
             def build_es_search_fields(fields_opts)
                 es_fields = []
 
-                if fields_opts.instance_of?(Hash)
-                    fields_opts.each do |field, boost|
-                        es_fields << build_es_search_field(field, boost)
+                if fields_opts.instance_of?(Array)
+                    fields_opts.each do |field|
+                        es_fields << build_es_search_field(field, nil)
                     end
 
                     return es_fields
-                end
-
-                fields_opts.each do |field_opts|
-                    if field_opts.instance_of?(Hash)
-                        field = field_opts[:field]
-                        boost = field_opts[:boost]
+                elsif fields_opts.instance_of?(Hash)
+                    fields_opts.each do |field, boost|
                         es_fields << build_es_search_field(field, boost)
-                        next
                     end
-
-                    es_fields << field_opts.to_s
+                else
+                    raise ArgumentError, "定義とデータが一致していません: #{fields_opts.inspect}"
                 end
 
                 es_fields
@@ -155,7 +143,7 @@ module AreSearch
                 end
 
                 bool_clause = {}
-                bool_clause[:filter] = all_filter_clauses if all_filter_clauses.any?
+                bool_clause[:filter] = all_filter_clauses
                 bool_clause[:must_not] = must_not_clauses if must_not_clauses.any?
 
                 bool_clause

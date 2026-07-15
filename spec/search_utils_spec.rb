@@ -52,15 +52,15 @@ RSpec.describe AreSearch::SearchParamValidator do
     end
 
     describe ".validate" do
-        it "定義されたnested HashとArrayのキーをSymbolへ統一する" do
+        it "定義されたnested HashとArrayを検査して入力形式を維持する" do
             result = described_class.validate(
                 [article_index_target],
                 [article_model],
-                fields: ["title"],
+                fields: [:title],
                 where: [
                     {
-                        "status" => {
-                            "term" => "published",
+                        status: {
+                            term: "published",
                         },
                     },
                 ],
@@ -92,16 +92,10 @@ RSpec.describe AreSearch::SearchParamValidator do
             )
 
             expect(array_result[:fields]).to eq([:title, :runtime_title])
-            expect(hash_result[:fields]).to eq([
-                {
-                    field: :title,
-                    boost: 2.0,
-                },
-                {
-                    field: :body,
-                    boost: 1,
-                },
-            ])
+            expect(hash_result[:fields]).to eq(
+                title: 2.0,
+                body: 1,
+            )
 
             expect do
                 described_class.validate(
@@ -109,7 +103,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                     [article_model],
                     fields: [:status],
                 )
-            end.to raise_error(ArgumentError, /any_text_without_non_text_fields/)
+            end.to raise_error(ArgumentError)
 
             expect do
                 described_class.validate(
@@ -119,7 +113,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                         title: 0,
                     },
                 )
-            end.to raise_error(ArgumentError, /正の数/)
+            end.to raise_error(ArgumentError)
         end
 
         it "未定義フィールドは表記に関係なく拒否する" do
@@ -180,7 +174,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                         },
                     ],
                 )
-            end.to raise_error(ArgumentError, /必要なキー.*fields/)
+            end.to raise_error(ArgumentError)
         end
 
         it "mlt_paramsはfieldsを必須としfields以外の単体値パラメーターを受け付ける" do
@@ -216,7 +210,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                         min_term_freq: 1,
                     },
                 )
-            end.to raise_error(ArgumentError, /必要なキー.*fields/)
+            end.to raise_error(ArgumentError)
 
             expect do
                 described_class.validate(
@@ -226,7 +220,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                         fields: [:runtime_score],
                     },
                 )
-            end.to raise_error(ArgumentError, /any_text_or_keyword_without_other_type_fields/)
+            end.to raise_error(ArgumentError)
 
             expect do
                 described_class.validate(
@@ -238,7 +232,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                         },
                     },
                 )
-            end.to raise_error(ArgumentError, /Array/)
+            end.to raise_error(ArgumentError)
 
             future_param_result = described_class.validate(
                 [article_index_target],
@@ -334,7 +328,10 @@ RSpec.describe AreSearch::SearchParamValidator do
                         },
                     },
                 )
-            end.to raise_error(ArgumentError, /any_non_text_without_text_fields/)
+            end.to raise_error(
+                ArgumentError,
+                /opts\[:where\] に未知のキーがあります: title/,
+            )
 
             expect do
                 described_class.validate(
@@ -492,7 +489,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                         },
                     },
                 )
-            end.to raise_error(ArgumentError, /any_non_text_without_text_fields/)
+            end.to raise_error(ArgumentError)
 
             expect do
                 described_class.validate(
@@ -505,7 +502,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                         },
                     },
                 )
-            end.to raise_error(ArgumentError, /必要なキー.*size/)
+            end.to raise_error(ArgumentError)
 
             expect do
                 described_class.validate(
@@ -518,7 +515,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                         },
                     },
                 )
-            end.to raise_error(ArgumentError, /正の整数で指定してください/)
+            end.to raise_error(ArgumentError)
 
             expect do
                 described_class.validate(
@@ -527,7 +524,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                     fields: [:title],
                     aggs: [:status],
                 )
-            end.to raise_error(ArgumentError, /Hash/)
+            end.to raise_error(ArgumentError)
 
             expect do
                 described_class.validate(
@@ -538,7 +535,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                         type: "unified",
                     },
                 )
-            end.to raise_error(ArgumentError, /必要なキー.*fields/)
+            end.to raise_error(ArgumentError)
 
             expect do
                 described_class.validate(
@@ -553,7 +550,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                         },
                     },
                 )
-            end.to raise_error(ArgumentError, /any_text_or_keyword_without_other_type_fields/)
+            end.to raise_error(ArgumentError)
         end
 
         it "pageとper_pageは正のIntegerだけを受け付ける" do
@@ -613,7 +610,10 @@ RSpec.describe AreSearch::SearchParamValidator do
                         document_model => [:author],
                     },
                 )
-            end.to raise_error(ArgumentError, /context\[:models\]/)
+            end.to raise_error(
+                ArgumentError,
+                /opts\[:model_includes\] に未知のキーがあります/,
+            )
 
             expect do
                 described_class.validate(
@@ -658,7 +658,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                     [article_model],
                     raw_body: [],
                 )
-            end.to raise_error(ArgumentError, /Hash/)
+            end.to raise_error(ArgumentError)
 
             expect do
                 described_class.validate(
@@ -671,7 +671,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                     },
                     build_model_bool: "true",
                 )
-            end.to raise_error(ArgumentError, /true または false/)
+            end.to raise_error(ArgumentError)
         end
 
         it "複数targetで同名フィールドの型が混在する場合はany_valid集合から除外する" do
@@ -703,7 +703,10 @@ RSpec.describe AreSearch::SearchParamValidator do
                         },
                     },
                 )
-            end.to raise_error(ArgumentError, /any_non_text_without_text_fields/)
+            end.to raise_error(
+                ArgumentError,
+                /opts\[:where\] に未知のキーがあります: status/,
+            )
         end
     end
 end

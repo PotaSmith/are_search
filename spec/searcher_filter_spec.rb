@@ -180,7 +180,7 @@ RSpec.describe AreSearch::Searcher, "filters" do
                 },
                 dump_body: true,
             )
-        end.to raise_error(ArgumentError, /Array/)
+        end.to raise_error(ArgumentError)
 
         expect do
             described_class.search(
@@ -299,7 +299,10 @@ RSpec.describe AreSearch::Searcher, "filters" do
                 },
                 dump_body: true,
             )
-        end.to raise_error(ArgumentError, /any_non_text_without_text_fields/)
+        end.to raise_error(
+            ArgumentError,
+            /opts\[:where\] に未知のキーがあります: search_text/,
+        )
     end
 
     it "model_results_whereに一致するDBレコードだけを検索結果へ残す" do

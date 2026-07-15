@@ -40,7 +40,6 @@ require_relative "are_search/searcher/es_search_body_policy"
 
 require_relative "are_search/searcher/validator/search_option_definition"
 require_relative "are_search/searcher/validator/search_option_validator"
-require_relative "are_search/searcher/validator/search_option_definition_checker"
 require_relative "are_search/searcher/validator/search_param_validator"
 
 require_relative "are_search/searcher/query_builder/query_builder_base"
