@@ -208,8 +208,10 @@ module AreSearch
         end
 
         # find_sync_request で取得した sync_request のキー項目は、
-        # sync の引数 model / ar_instance_key / es_index_name から作られているため、実質syncの引数を直接渡すのと同じ。
+        # sync の引数 model / index_target_name / ar_instance_key / es_index_name から作られているため、実質syncの引数を直接渡すのと同じ。
         # 意味的にはsyncの引数を渡すべきだが、引数を減らすため流用。
+        # force の場合は、sync_requestが削除後に再生成されている可能性もあるが、
+        # エラーの発生の記録は残したいので sync_request.id ではなく対象特定条件にする
         #
         # ここでは request_sequence で世代固定せず、同じ同期キーの現在行に last_error を書く。
         def update_sync_request_last_error(sync_request, message)
@@ -222,6 +224,8 @@ module AreSearch
                 ).update_all(last_error: message)
         end
 
+        # 世代が変わっている場合は、次の世代の同期が処理するので記録しない
+        # リクエスト残留時に何が問題なのかわからなくなる
         def update_sync_request_error(sync_request, error)
             current_sync_request_relation(sync_request).update_all(
                 retry_count: sync_request.retry_count + 1,

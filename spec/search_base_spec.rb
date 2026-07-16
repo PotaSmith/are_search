@@ -136,42 +136,154 @@ RSpec.describe AreSearch::Searcher do
         end
     end
 
+
+    describe "検索対象 index target 検証" do
+        it "同じ alias の親子モデルは同時指定を拒否する" do
+            parent_model = Class.new
+            child_model = Class.new(parent_model)
+
+            allow(parent_model).to receive(:name).and_return("Article")
+            allow(child_model).to receive(:name).and_return("SpecialArticle")
+
+            parent_index_target = double(
+                "parent_index_target",
+                model_class:              parent_model,
+                are_search_es_index_name: "test__articles__default",
+            )
+            child_index_target = double(
+                "child_index_target",
+                model_class:              child_model,
+                are_search_es_index_name: "test__articles__default",
+            )
+
+            expect do
+                described_class.send(
+                    :verify_no_parent_child_index_targets!,
+                    [parent_index_target, child_index_target],
+                )
+            end.to raise_error(
+                ArgumentError,
+                /同じ Elasticsearch index に親子関係のあるモデルを同時指定できません/,
+            )
+        end
+
+        it "異なる alias の親子モデルは同時指定を許可する" do
+            parent_model = Class.new
+            child_model = Class.new(parent_model)
+
+            parent_index_target = double(
+                "parent_index_target",
+                model_class:              parent_model,
+                are_search_es_index_name: "test__articles__default",
+            )
+            child_index_target = double(
+                "child_index_target",
+                model_class:              child_model,
+                are_search_es_index_name: "test__special_articles__default",
+            )
+
+            expect do
+                described_class.send(
+                    :verify_no_parent_child_index_targets!,
+                    [parent_index_target, child_index_target],
+                )
+            end.not_to raise_error
+        end
+
+        it "同じ alias の兄弟モデルは同時指定を許可する" do
+            parent_model = Class.new
+            first_child_model = Class.new(parent_model)
+            second_child_model = Class.new(parent_model)
+
+            first_index_target = double(
+                "first_index_target",
+                model_class:              first_child_model,
+                are_search_es_index_name: "test__articles__default",
+            )
+            second_index_target = double(
+                "second_index_target",
+                model_class:              second_child_model,
+                are_search_es_index_name: "test__articles__default",
+            )
+
+            expect do
+                described_class.send(
+                    :verify_no_parent_child_index_targets!,
+                    [first_index_target, second_index_target],
+                )
+            end.not_to raise_error
+        end
+    end
+
     describe "index target 解決" do
         it "alias 名だけを index_target に対応付ける" do
             result = described_class.send(
-                :build_index_to_index_target,
+                :build_index_to_index_targets,
                 [article_index_target, document_index_target],
             )
 
             expect(result).to eq(
-                "test__articles__default"  => article_index_target,
-                "test__documents__default" => document_index_target,
+                "test__articles__default"  => [article_index_target],
+                "test__documents__default" => [document_index_target],
+            )
+        end
+
+
+        it "同じ alias の兄弟モデルは候補として並べる" do
+            parent_model = Class.new
+            first_child_model = Class.new(parent_model)
+            second_child_model = Class.new(parent_model)
+
+            allow(first_child_model).to receive(:name).and_return("FirstArticle")
+            allow(second_child_model).to receive(:name).and_return("SecondArticle")
+
+            first_index_target = double(
+                "first_index_target",
+                model_class:              first_child_model,
+                are_search_es_index_name: "test__articles__default",
+            )
+            second_index_target = double(
+                "second_index_target",
+                model_class:              second_child_model,
+                are_search_es_index_name: "test__articles__default",
+            )
+
+            result = described_class.send(
+                :build_index_to_index_targets,
+                [first_index_target, second_index_target],
+            )
+
+            expect(result).to eq(
+                "test__articles__default" => [
+                    first_index_target,
+                    second_index_target,
+                ],
             )
         end
 
         it "物理 index 名を alias 名へ戻して index_target を返す" do
             index_to_target = described_class.send(
-                :build_index_to_index_target,
+                :build_index_to_index_targets,
                 [article_index_target],
             )
 
             result = described_class.send(
-                :index_target_for_hit_index,
+                :index_targets_for_hit_index,
                 index_to_target,
                 "test__articles__default__2026_07_03_03_10_00_123456",
             )
 
-            expect(result).to equal(article_index_target)
+            expect(result).to eq([article_index_target])
         end
 
         it "timestamp 形式でない未知 index は nil を返す" do
             index_to_target = described_class.send(
-                :build_index_to_index_target,
+                :build_index_to_index_targets,
                 [article_index_target],
             )
 
             result = described_class.send(
-                :index_target_for_hit_index,
+                :index_targets_for_hit_index,
                 index_to_target,
                 "test__articles__default__20260703031000",
             )
@@ -219,7 +331,7 @@ RSpec.describe AreSearch::Searcher do
             result = described_class.send(
                 :build_records,
                 hits,
-                { "test__articles__default" => article_index_target },
+                { "test__articles__default" => [article_index_target] },
                 {},
                 {},
             )
@@ -227,6 +339,91 @@ RSpec.describe AreSearch::Searcher do
             expect(result).to eq(
                 records: [record],
                 records_with_target_names: [[record, :default]],
+            )
+        end
+
+
+        it "同じ alias の兄弟モデルを予約フィールドのモデル名で振り分ける" do
+            parent_model = Class.new
+            first_child_model = Class.new(parent_model)
+            second_child_model = Class.new(parent_model)
+            first_record = double("first_record", id: 1)
+            second_record = double("second_record", id: 2)
+
+            allow(first_child_model).to receive(:name).and_return("FirstArticle")
+            allow(second_child_model).to receive(:name).and_return("SecondArticle")
+
+            first_index_target = double(
+                "first_index_target",
+                model_class:                  first_child_model,
+                target_name:                  :default,
+                are_search_es_index_name:     "test__articles__default",
+                are_search_es_composite_key:  nil,
+            )
+            second_index_target = double(
+                "second_index_target",
+                model_class:                  second_child_model,
+                target_name:                  :default,
+                are_search_es_index_name:     "test__articles__default",
+                are_search_es_composite_key:  nil,
+            )
+
+            allow(first_index_target).to receive(:are_search_es_composite_key) do |id|
+                "test__articles__default/#{id}"
+            end
+            allow(second_index_target).to receive(:are_search_es_composite_key) do |id|
+                "test__articles__default/#{id}"
+            end
+
+            expect(first_child_model)
+                .to receive(:where)
+                .with(id: ["1"])
+                .and_return([first_record])
+            expect(second_child_model)
+                .to receive(:where)
+                .with(id: ["2"])
+                .and_return([second_record])
+
+            hits = [
+                {
+                    "_index" => "test__articles__default",
+                    "_id" => "1",
+                    "_source" => {
+                        AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
+                            "FirstArticle",
+                        ],
+                    },
+                },
+                {
+                    "_index" => "test__articles__default",
+                    "_id" => "2",
+                    "_source" => {
+                        AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
+                            "SecondArticle",
+                        ],
+                    },
+                },
+            ]
+
+            result = described_class.send(
+                :build_records,
+                hits,
+                {
+                    "test__articles__default" => [
+                        first_index_target,
+                        second_index_target,
+                    ],
+                },
+                {},
+                {},
+            )
+
+            expect(result).to eq(
+                records: [first_record, second_record],
+                records_with_target_names: [
+                    [first_record, :default],
+                    [second_record, :default],
+                ],
             )
         end
 
@@ -290,8 +487,8 @@ RSpec.describe AreSearch::Searcher do
                 "test__articles__default",
                 search_body,
                 {
-                    index_to_index_target: {
-                        "test__articles__default" => article_index_target,
+                    index_to_index_targets: {
+                        "test__articles__default" => [article_index_target],
                     },
                     model_includes:       {},
                     model_results_wheres: {},
