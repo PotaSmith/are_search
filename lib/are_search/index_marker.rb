@@ -4,13 +4,6 @@ require "securerandom"
 require "socket"
 
 module AreSearch
-
-# frozen_string_literal: true
-
-require "securerandom"
-require "socket"
-
-module AreSearch
     # Elasticsearch index操作中であることをPostgreSQL上に残すmarker。
     #
     # 1つのes_index_nameにつき、最大1行だけ存在する。
