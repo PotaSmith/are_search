@@ -4,6 +4,88 @@ require "securerandom"
 require "socket"
 
 module AreSearch
+
+# frozen_string_literal: true
+
+require "securerandom"
+require "socket"
+
+module AreSearch
+    # Elasticsearch index操作中であることをPostgreSQL上に残すmarker。
+    #
+    # 1つのes_index_nameにつき、最大1行だけ存在する。
+    #
+    # markerが存在する間は、通常同期、reindex、clean upなど、
+    # 同じindexを書き換える処理を開始しない。
+    # 検索処理自体はmarkerの存在では停止しない。
+    #
+    # flockは、同じlockファイルを参照できるプロセス間の同時実行を防ぐ。
+    # IndexMarkerは、DBから確認できる操作状態と、異常終了時の痕跡を残す。
+    #
+    # 正常終了時にはmarkerを削除する。
+    # プロセス停止などにより削除されなかったmarkerは、
+    # 状態確認と手動復旧の対象になる。
+    #
+    #
+    # owner_token
+    # ----------------------------------------------------------------
+    #
+    # owner_tokenは、markerを作成した処理を識別する所有者token。
+    #
+    # 正常終了時のmarker削除では、idとowner_tokenの両方を条件にする。
+    # markerの所有者が変わっていた場合は、古い処理から削除しない。
+    #
+    # SyncRequestのprocessing_tokenとは役割が異なる。
+    #
+    #     SyncRequest.processing_token
+    #         通常同期の多重実行を防ぐための排他処理用フラグ。
+    #
+    #     IndexMarker.owner_token
+    #         自分が作成したmarkerだけを削除するための所有者識別値。
+    #
+    #
+    # DBフィールド
+    # ----------------------------------------------------------------
+    #
+    # id
+    #     IndexMarker行の主キー。
+    #
+    # es_index_name
+    #     操作対象のElasticsearch alias名。
+    #     unique indexにより、同じindexにはmarkerを1件だけ作成できる。
+    #
+    # operation
+    #     実行中または残留している操作名。
+    #     reindex、clean_up、manualのほか、
+    #     are_search_es_with_index_guardへ渡した操作名を保持する。
+    #
+    # owner_token
+    #     markerを作成した処理の所有者識別値。
+    #     正常終了時に、自分が作成したmarkerだけを削除するために使用する。
+    #
+    # owner_host
+    #     markerを作成したプロセスのホスト名。
+    #     異常終了時の状態確認に使用する。
+    #
+    # owner_pid
+    #     markerを作成したプロセスのPID。
+    #     操作中のプロセスが残っているか確認するために使用する。
+    #
+    # started_at
+    #     index操作を開始してmarkerを作成した時刻。
+    #
+    # message
+    #     markerへ付加する任意の診断メッセージ。
+    #     排他判定や所有者判定には使用しない。
+    #
+    # created_at
+    #     marker行を作成した時刻。
+    #
+    # updated_at
+    #     Railsが管理するmarker行の更新時刻。
+    #     操作開始時刻にはstarted_atを使用する。
+    #
+
     class IndexMarker < ActiveRecord::Base
         self.table_name = "are_search_index_markers"
 
