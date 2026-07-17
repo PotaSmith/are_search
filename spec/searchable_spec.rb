@@ -435,7 +435,7 @@ RSpec.describe AreSearch::Searchable do
             end.to raise_error(ArgumentError, /key は Symbol/)
         end
 
-        it "properties の script 系フィールド名は同じポリシーで拒否する" do
+        it "properties の許可されていないフィールド名は検索body policyで拒否する" do
             script_field_names = [
                 :script,
                 :_script,
@@ -464,7 +464,7 @@ RSpec.describe AreSearch::Searchable do
                     model_class.are_search_index_targets
                 end.to raise_error(
                     ArgumentError,
-                    /script 系フィールド名は指定できません: #{script_field_name}/,
+                    /検索body policyで許可されていないフィールド名は指定できません: #{script_field_name}/,
                 )
             end
         end

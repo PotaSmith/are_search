@@ -612,15 +612,10 @@ highlight を指定する場合は fields が必須。
     }
 
 Hash 形式の各フィールドオプションは1件以上必要で、空 Hash は指定できない。
-フィールド別オプションと highlight 直下の追加オプションは、Symbol キーと
-String、Integer、true、false の値で指定する。
-Array や Hash を値に取るオプションが必要な場合は raw_body を使用する。
-
-AreSearch は以下を追加する。
-
-    pre_tags:  ["<em>"]
-    post_tags: ["</em>"]
-    encoder:   "html"
+フィールド別オプションと highlight 直下の追加オプションは、Symbol キーで指定する。
+通常の追加オプションは String、Integer、true、false の値を指定できる。
+pre_tags と post_tags は String の Array を指定できる。
+AreSearch はタグや encoder の固定値を追加せず、指定された highlight オプションを Elasticsearch へ渡す。
 
 AreSearch の既定の _source 構成では通常フィールドを保存しないため、ハイライト対象の
 mapping には元文字列を取得できるよう store: true を指定する。
@@ -675,25 +670,21 @@ ActiveRecord のレコードを検索順で返す。
     end
 
 
-## 12-2. highlights_html
+## 12-2. highlights
 ----------------------------------------------------------------
 
+Elasticsearch が返したフィールド別 highlight Hash を取得する。
+
     result.records_with_target_names.each do |record, target_name|
-        result.highlights_html(record, target_name).each do |fragment|
-            puts fragment
+        result.highlights(record, target_name).each do |field_name, fragments|
+            fragments.each do |fragment|
+                puts "#{field_name}: #{fragment}"
+            end
         end
     end
 
-表示タグを変更する場合。
-
-    result.highlights_html(
-        record,
-        target_name,
-        tag:        "mark",
-        class_name: "highlight",
-    )
-
-highlight 側で pre_tags / post_tags を独自指定した場合は、そのタグがそのまま残る。
+pre_tags、post_tags、encoder を指定した場合、その結果が加工されずに返る。
+対象 hit に highlight が無い場合は空 Hash を返す。
 
 
 ## 12-3. hit_source

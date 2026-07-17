@@ -74,24 +74,18 @@ module AreSearch
 
     # 検索結果オブジェクト
     #
-    # highlights_html(record, target_name, tag: "em", class_name: nil)
-    #   ハイライトされたフラグメントの配列を返す。
-    #   対象 hit にハイライトが無い場合は []。
-    #   tag        : マッチ箇所を囲むHTMLタグ名。デフォルトは "em"。
-    #   class_name : tag に付与するCSS class文字列。デフォルトは nil。
+    # highlights(record, target_name)
+    #   Elasticsearch が返したフィールド別 highlight Hash を返す。
+    #   対象 hit にハイライトが無い場合は {}。
     #
     # hit_source(record, target_name)
     #   検索時に返された _source を { field: value } の形で返す。
     #   対象 hit が無い場合は {}。highlight の指定有無には依存しない。
     #
     # @param hit_sources [Hash{String => Hash{Symbol => Object}}]
-    # @param highlights [Hash{String => Array<String>}]
+    # @param highlights [Hash{String => Hash{Symbol => Array<String>}}]
     #
     class SearchResult
-        HIGHLIGHT_PRE_TAG    = "<em>"
-        HIGHLIGHT_POST_TAG   = "</em>"
-        HIGHLIGHT_PRE_TAGS   = [HIGHLIGHT_PRE_TAG].freeze
-        HIGHLIGHT_POST_TAGS  = [HIGHLIGHT_POST_TAG].freeze
 
         attr_reader :records_with_target_names, :records, :aggs, :raw_response, :params_invalid
 
@@ -105,23 +99,12 @@ module AreSearch
             @params_invalid             = params_invalid
         end
 
-        # highlight オプションに pre_tags post_tags で独自に指定している場合は
-        # 引数 tag は機能しない
-        def highlights_html(record, target_name, tag: "em", class_name: nil)
-            fragments = @highlights[composite_key_by_record(record, target_name)]
-            return [] if fragments.nil?
-            return [] if fragments.empty?
+        # Elasticsearch が返したフィールド別 highlight をそのまま返す。
+        def highlights(record, target_name)
+            result = @highlights[composite_key_by_record(record, target_name)]
+            return {} if result.nil?
 
-            tag_name = tag.to_s
-            validate_highlight_tag!(tag_name)
-
-            open_tag = build_open_highlight_tag(tag_name, class_name)
-            close_tag = "</#{tag_name}>"
-
-            fragments.map do |f|
-                f.gsub(HIGHLIGHT_PRE_TAG, open_tag)
-                 .gsub(HIGHLIGHT_POST_TAG, close_tag)
-            end
+            result
         end
 
         # 確認用で普通は使わない
@@ -141,39 +124,5 @@ module AreSearch
             index_target.are_search_es_composite_key(record.id)
         end
 
-        def validate_highlight_tag!(tag_name)
-            return if tag_name.match?(/\A[a-z][a-z0-9-]*\z/i)
-
-            raise ArgumentError, "tag は HTML タグ名で指定してください: #{tag_name.inspect}"
-        end
-
-        def validate_highlight_class_name!(class_name)
-            return if class_name.to_s.match?(/\A[a-z0-9_\- ]+\z/i)
-
-            raise ArgumentError, "class_name は CSS class 名で指定してください: #{class_name.inspect}"
-        end
-
-        def build_open_highlight_tag(tag_name, class_name)
-            return "<#{tag_name}>" if class_name.blank?
-
-            validate_highlight_class_name!(class_name)
-
-            escaped_class_name = escape_html_attr(class_name.to_s)
-
-            "<#{tag_name} class=\"#{escaped_class_name}\">"
-        end
-
-        HTML_ESCAPE_MAP = {
-            "&" => "&amp;",
-            '"' => "&quot;",
-            "<" => "&lt;",
-            ">" => "&gt;",
-        }.freeze
-
-        def escape_html_attr(value)
-            value.to_s.gsub(/[&"<>]/) do |char|
-                HTML_ESCAPE_MAP[char]
-            end
-        end
     end
 end

@@ -15,11 +15,14 @@ RSpec.describe AreSearch, "configuration" do
         original_after_commit_mode = described_class.after_commit_mode
         original_index_operation_enabled = described_class.index_operation_enabled
         original_analyzer_settings = described_class.analyzer_settings
+        original_es_search_body_policy = described_class.es_search_body_policy
         original_thread_client = Thread.current.thread_variable_get(:are_search_es_client)
+        original_thread_client_pid = Thread.current.thread_variable_get(:are_search_es_client_pid)
 
         described_class.instance_variable_set(:@client_block, nil)
         described_class.instance_variable_set(:@index_prefix, nil)
         Thread.current.thread_variable_set(:are_search_es_client, nil)
+        Thread.current.thread_variable_set(:are_search_es_client_pid, nil)
 
         example.run
     ensure
@@ -34,7 +37,9 @@ RSpec.describe AreSearch, "configuration" do
         described_class.after_commit_mode = original_after_commit_mode
         described_class.index_operation_enabled = original_index_operation_enabled
         described_class.analyzer_settings = original_analyzer_settings
+        described_class.es_search_body_policy = original_es_search_body_policy
         Thread.current.thread_variable_set(:are_search_es_client, original_thread_client)
+        Thread.current.thread_variable_set(:are_search_es_client_pid, original_thread_client_pid)
     end
 
     it "setup は client 生成ブロック必須" do
@@ -107,6 +112,31 @@ RSpec.describe AreSearch, "configuration" do
         end.to raise_error(AreSearch::NotConfiguredError, "AreSearch.setup が呼ばれていません")
     end
 
+    it "es_search_body_policy は EsSearchBodyPolicy の継承クラスを受け付ける" do
+        policy_class = Class.new(AreSearch::EsSearchBodyPolicy)
+
+        described_class.es_search_body_policy = policy_class
+
+        expect(described_class.es_search_body_policy).to equal(policy_class)
+    end
+
+    it "es_search_body_policy は基底クラスと無関係な値を拒否する" do
+        invalid_values = [
+            AreSearch::EsSearchBodyPolicy,
+            Class.new,
+            Object.new,
+        ]
+
+        invalid_values.each do |invalid_value|
+            expect do
+                described_class.es_search_body_policy = invalid_value
+            end.to raise_error(
+                ArgumentError,
+                "es_search_body_policy は AreSearch::EsSearchBodyPolicy の継承クラスを指定してください",
+            )
+        end
+    end
+
     it "client は同一スレッド内でキャッシュされる" do
         called_count = 0
 
@@ -120,6 +150,33 @@ RSpec.describe AreSearch, "configuration" do
 
         expect(first_client).to equal(second_client)
         expect(called_count).to eq(1)
+    end
+
+    it "fork後に継承したclientは再生成する" do
+        called_count = 0
+        inherited_client = double("inherited_client")
+
+        described_class.setup(index_prefix: "test") do
+            called_count += 1
+            double("new_client")
+        end
+
+        Thread.current.thread_variable_set(
+            :are_search_es_client,
+            inherited_client,
+        )
+        Thread.current.thread_variable_set(
+            :are_search_es_client_pid,
+            Process.pid - 1,
+        )
+
+        client = described_class.client
+
+        expect(client).not_to equal(inherited_client)
+        expect(called_count).to eq(1)
+        expect(
+            Thread.current.thread_variable_get(:are_search_es_client_pid),
+        ).to eq(Process.pid)
     end
 
     it "任意設定を変更できる" do

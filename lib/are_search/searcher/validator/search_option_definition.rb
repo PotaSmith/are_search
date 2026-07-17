@@ -556,6 +556,34 @@ module AreSearch
                         },
                         {
                             key: {
+                                key_name: :pre_tags,
+                            },
+                            value: {
+                                array: {
+                                    children: {
+                                        scalar: {
+                                            type: "string",
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                        {
+                            key: {
+                                key_name: :post_tags,
+                            },
+                            value: {
+                                array: {
+                                    children: {
+                                        scalar: {
+                                            type: "string",
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                        {
+                            key: {
                                 type: "symbol_key",
                             },
                             value: {

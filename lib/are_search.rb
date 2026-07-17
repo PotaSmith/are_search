@@ -37,6 +37,7 @@ require_relative "are_search/searchable"
 require_relative "are_search/searcher/search_result"
 require_relative "are_search/searcher/searcher_utils"
 require_relative "are_search/searcher/es_search_body_policy"
+require_relative "are_search/searcher/script_deny_es_search_body_policy"
 
 require_relative "are_search/searcher/validator/search_option_definition"
 require_relative "are_search/searcher/validator/search_option_validator"
@@ -106,6 +107,7 @@ module AreSearch
     class IndexMarkerUnavailable < Error; end
 
     @analyzer_settings = ANALYZER_SETTINGS
+    @es_search_body_policy = AreSearch::ScriptDenyEsSearchBodyPolicy
     @client_block = nil
     @index_prefix = nil
     @sync_request_delay = 120
@@ -128,6 +130,27 @@ module AreSearch
 
     def self.analyzer_settings=(value)
         @analyzer_settings = value
+    end
+
+    def self.es_search_body_policy
+        @es_search_body_policy
+    end
+
+    # Elasticsearchへ送信するbodyとfield名を検査するpolicyを設定する。
+    # EsSearchBodyPolicy自体ではなく、その継承クラスだけを受け付ける。
+    def self.es_search_body_policy=(policy_class)
+        valid_policy_class = policy_class.instance_of?(Class)
+
+        if valid_policy_class
+            valid_policy_class = policy_class < AreSearch::EsSearchBodyPolicy
+        end
+
+        unless valid_policy_class
+            raise ArgumentError,
+                "es_search_body_policy は AreSearch::EsSearchBodyPolicy の継承クラスを指定してください"
+        end
+
+        @es_search_body_policy = policy_class
     end
 
     def self.sync_request_delay
@@ -283,12 +306,17 @@ module AreSearch
         raise NotConfiguredError, "AreSearch.setup が呼ばれていません" unless @client_block
 
         cached_client = Thread.current.thread_variable_get(:are_search_es_client)
-        return cached_client unless cached_client.nil?
+        cached_pid = Thread.current.thread_variable_get(:are_search_es_client_pid)
+
+        if cached_client != nil && cached_pid == Process.pid
+            return cached_client
+        end
 
         new_client = @client_block.call
         log_client_config(new_client)
 
         Thread.current.thread_variable_set(:are_search_es_client, new_client)
+        Thread.current.thread_variable_set(:are_search_es_client_pid, Process.pid)
 
         new_client
     end

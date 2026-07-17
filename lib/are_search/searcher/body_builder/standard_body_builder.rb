@@ -43,8 +43,9 @@ module AreSearch
                 if aggs_opts.nil? == false
                     body[:aggs] = build_aggs(aggs_opts)
                 end
+
                 body[:sort] = normalized_sort if normalized_sort.present?
-                body[:highlight] = build_highlight_body(normalized_highlight) unless normalized_highlight.nil?
+                body[:highlight] = normalized_highlight if normalized_highlight.nil? == false
 
                 return body
             end
@@ -141,21 +142,6 @@ module AreSearch
                 end
 
                 result
-            end
-
-            # normalized_highlight から ES リクエスト用の highlight body を組み立てる
-            def build_highlight_body(normalized_highlight)
-                body = {
-                    pre_tags:  AreSearch::SearchResult::HIGHLIGHT_PRE_TAGS,
-                    post_tags: AreSearch::SearchResult::HIGHLIGHT_POST_TAGS,
-                    encoder:   "html",
-                }
-
-                normalized_highlight.each do |key, value|
-                    body[key] = value
-                end
-
-                body
             end
         end
     end

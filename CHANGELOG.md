@@ -1,14 +1,19 @@
 ## Planned
 
 - ドット付き等の特殊フィールドの許容オプションを追加
-- 検索データ削減のためのsource と fields の設定
+- 検索のレスポンスデータ削減のための source と fields の設定
 
-## [Unreleased]
+## [0.4.0] - 2026-07-18
 
+- Elasticsearch index 名を `{index_prefix}__{are_search_ar_table_name}__{target_name}` 形式へ変更し、物理 index の timestamp 前も `__` へ統一。index 名の各要素を小文字英字で始まり、小文字英字とアンダーバーだけを使用する形式に限定。※reindexが必要
 - `sort` の Array 形式を廃止し、複数条件は記述順を優先順位とする Hash 形式へ統一
 - `aggs` をフィールド名をキーとする Hash 形式へ変更し、各フィールドの `size` を必須化。`AreSearch.default_aggs_size` を削除
-- Elasticsearch index 名を `{index_prefix}__{are_search_ar_table_name}__{target_name}` 形式へ変更し、物理 index の timestamp 前も `__` へ統一。`are_search_ar_table_name` は既定で `table_name` を返し、Searchable 継承系統ごとに変更可能。index 名の各要素は小文字英字で始まり、小文字英字とアンダーバーだけを使用する形式に限定。※reindexが必要
-- index target単位で flock と marker を取得してブロックを実行する `are_search_es_with_index_guard` を追加
+- index target単位で flock と marker を取得して処理する `are_search_es_with_index_guard` を追加
+- Searchable の継承系統と同一 index 名の所有関係を検査し、STIの検索結果復元を調整
+- highlight オプションを整理し、フィールド別設定、`pre_tags`、`post_tags`、`encoder` をそのまま Elasticsearch へ渡すよう変更
+- Elasticsearchへ送信するbodyとmappingフィールド名を検査する `EsSearchBodyPolicy` を追加。標準の `ScriptDenyEsSearchBodyPolicy` はscript系キーを拒否し、利用側でpolicyを差し替え可能
+- Elasticsearch clientのスレッドキャッシュにPIDを保持し、fork後は親プロセスから継承したclientを再生成
+- sync request、index marker、状態確認、reindex、clean up 周辺の排他・復旧処理とテストを整理
 
 ## [0.3.1] - 2026-07-14
 

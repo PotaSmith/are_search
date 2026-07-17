@@ -498,9 +498,9 @@ RSpec.describe AreSearch::Searcher do
             )
 
             expect(result.hit_source(record, :default)[:title]).to eq("Rails guide")
-            expect(result.highlights_html(record, :default)).to eq([
-                "<em>Rails</em> guide",
-            ])
+            expect(result.highlights(record, :default)).to eq(
+                title: ["<em>Rails</em> guide"],
+            )
         end
     end
 end

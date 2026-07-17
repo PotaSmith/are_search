@@ -86,7 +86,7 @@ RSpec.describe AreSearch::Searcher do
                 body
             end
 
-        expect(AreSearch::EsSearchBodyPolicy)
+        expect(AreSearch.es_search_body_policy)
             .to receive(:valid?)
             .with(body)
             .and_return(false)

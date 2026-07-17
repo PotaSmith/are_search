@@ -140,9 +140,6 @@ RSpec.describe "search highlight" do
         )
 
         expect(body[:highlight]).to eq(
-            pre_tags:  ["<em>"],
-            post_tags: ["</em>"],
-            encoder:   "html",
             type: "unified",
             require_field_match: false,
             fields: {
@@ -172,9 +169,6 @@ RSpec.describe "search highlight" do
         )
 
         expect(body[:highlight]).to eq(
-            pre_tags:  ["<em>"],
-            post_tags: ["</em>"],
-            encoder:   "html",
             max_analyzed_offset: 1_000_000,
             fields: {
                 body: {
@@ -239,9 +233,6 @@ RSpec.describe "search highlight" do
         )
 
         expect(body[:highlight]).to eq(
-            pre_tags:     ["<em>"],
-            post_tags:    ["</em>"],
-            encoder:      "html",
             fragment_size: 150,
             fields: {
                 body:   {},
@@ -249,4 +240,28 @@ RSpec.describe "search highlight" do
             },
         )
     end
+    it "pre_tags・post_tags・encoderをそのまま渡す" do
+        body = AreSearch::Searcher.search(
+            [article_index_target],
+            query_string: "Rails",
+            fields:       [:title],
+            highlight: {
+                fields:    [:title],
+                pre_tags:  ["<mark>"],
+                post_tags: ["</mark>"],
+                encoder:   "default",
+            },
+            dump_body: true,
+        )
+
+        expect(body[:highlight]).to eq(
+            fields: {
+                title: {},
+            },
+            pre_tags:  ["<mark>"],
+            post_tags: ["</mark>"],
+            encoder:   "default",
+        )
+    end
+
 end

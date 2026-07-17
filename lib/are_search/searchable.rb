@@ -382,8 +382,8 @@ module AreSearch
                         end
 
                         target_mappings[:properties].each_key do |field_name|
-                            if AreSearch::EsSearchBodyPolicy.invalid_key?(field_name)
-                                errors << "#{name}.are_search_es_mappings[#{target_name.inspect}][:properties] に script 系フィールド名は指定できません: #{field_name}"
+                            if AreSearch.es_search_body_policy.invalid_key?(field_name)
+                                errors << "#{name}.are_search_es_mappings[#{target_name.inspect}][:properties] に検索body policyで許可されていないフィールド名は指定できません: #{field_name}"
                             end
                         end
                     end

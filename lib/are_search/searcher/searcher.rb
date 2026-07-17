@@ -48,7 +48,7 @@ module AreSearch
             page     = AreSearch::SearcherUtils.resolve_default_option(page_opts, 1)
             per_page = AreSearch::SearcherUtils.resolve_default_option(per_page_opts, 25)
 
-            return empty_search_result(page, per_page, params_invalid: true) unless AreSearch::EsSearchBodyPolicy.valid?(body)
+            return empty_search_result(page, per_page, params_invalid: true) unless AreSearch.es_search_body_policy.valid?(body)
             return empty_search_result(page, per_page)                       unless check_index_exists?(index_targets)
 
             # --- 結果復元情報 ---
@@ -356,7 +356,7 @@ module AreSearch
             result
         end
 
-        # hits から { composite_key => fragments } のハイライト Hash を組み立てる
+        # hits から { composite_key => { field => fragments } } の highlight Hash を組み立てる。
         def build_highlights_hash(hits, index_to_index_targets)
             result = {}
             hits.each do |hit|
@@ -367,8 +367,8 @@ module AreSearch
                 key = index_target.are_search_es_composite_key(hit["_id"])
                 next if key.nil?
 
-                fragments = (hit["highlight"] || {}).values.flatten(1)
-                result[key] = fragments
+                highlight = hit["highlight"] || {}
+                result[key] = highlight.transform_keys(&:to_sym)
             end
             result
         end

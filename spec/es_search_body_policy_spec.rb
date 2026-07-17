@@ -3,6 +3,34 @@
 require "spec_helper"
 
 RSpec.describe AreSearch::EsSearchBodyPolicy do
+    describe ".valid?" do
+        it "継承クラスが実装しなければ例外にする" do
+            policy_class = Class.new(described_class)
+
+            expect do
+                policy_class.valid?({})
+            end.to raise_error(
+                NotImplementedError,
+                /valid\? を実装してください/,
+            )
+        end
+    end
+
+    describe ".invalid_key?" do
+        it "継承クラスが実装しなければ例外にする" do
+            policy_class = Class.new(described_class)
+
+            expect do
+                policy_class.invalid_key?(:script)
+            end.to raise_error(
+                NotImplementedError,
+                /invalid_key\? を実装してください/,
+            )
+        end
+    end
+end
+
+RSpec.describe AreSearch::ScriptDenyEsSearchBodyPolicy do
     describe ".invalid_key?" do
         it "script に完全一致するキーを拒否する" do
             expect(described_class.invalid_key?(:script)).to eq(true)
@@ -26,6 +54,40 @@ RSpec.describe AreSearch::EsSearchBodyPolicy do
     end
 
     describe ".valid?" do
+        it "Elasticsearch serializerでJSON化した後のキーを検査する" do
+            serializer = double("serializer")
+            es_params = Object.new
+
+            allow(Elasticsearch::API)
+                .to receive(:serializer)
+                .and_return(serializer)
+
+            expect(serializer)
+                .to receive(:dump)
+                .with(es_params)
+                .and_return('{"query":{"script_score":{}}}')
+
+            expect(described_class.valid?(es_params)).to eq(false)
+        end
+
+        it "serializerのJSON化に失敗した場合は例外を伝播する" do
+            serializer = double("serializer")
+            es_params = Object.new
+
+            allow(Elasticsearch::API)
+                .to receive(:serializer)
+                .and_return(serializer)
+
+            allow(serializer)
+                .to receive(:dump)
+                .with(es_params)
+                .and_raise(ArgumentError, "cannot serialize")
+
+            expect do
+                described_class.valid?(es_params)
+            end.to raise_error(ArgumentError, "cannot serialize")
+        end
+
         it "script系のキーが無ければtrueを返す" do
             es_params = {
                 query: {
