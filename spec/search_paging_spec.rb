@@ -48,6 +48,11 @@ RSpec.describe "search paging" do
                 super
             end
 
+            # 実際のSearchableモデルと同じ入口からIndexTargetを解決する。
+            def self.are_search_index_target(target_name)
+                AreSearch::IndexTarget.new(self, target_name)
+            end
+
             def initialize(id = 1)
                 @id = id
             end

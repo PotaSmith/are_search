@@ -2,6 +2,9 @@
 
 - `run_sync_requests` の processing token を固定値にし、rake task が異常中断して token を残した場合も、次回実行で通常同期として再開できるよう変更
 - SyncRequest の処理フェーズ、異常中断時の復旧経路、`request_sequence`・`processing_token`・force 処理の役割、`retry_count` が増える条件をガイドへ追加
+- `request_sequence` の採番処理をproviderへ分離し、PostgreSQL sequenceを使う標準実装を維持しつつ、利用側で継承クラスへ差し替え可能に変更
+- More Like This の基準レコードと `mlt_index_target` の対応確認を、モデルクラスの完全一致から Elasticsearch index の一致判定へ変更し、STI 子クラスのレコードを上位モデルの IndexTarget と組み合わせられるよう修正
+
 
 ## Planned
 

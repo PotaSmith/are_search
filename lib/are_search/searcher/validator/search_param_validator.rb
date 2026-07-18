@@ -260,14 +260,20 @@ module AreSearch
                 end
             end
 
-            # More Like Thisの基準インスタンスとindex targetのモデルが一致するか確認する。
+            # More Like Thisの基準インスタンスから同じtargetを解決し、
+            # 指定されたindex targetと同じElasticsearch indexを指すか確認する。
             def validate_mlt_index_target_options!(mlt_instance_options, mlt_index_target_options)
                 return if mlt_instance_options.nil?
                 return if mlt_index_target_options.nil?
 
-                if mlt_instance_options.class != mlt_index_target_options.model_class
+                instance_index_target = mlt_instance_options.class.are_search_index_target(
+                    mlt_index_target_options.target_name,
+                )
+
+                if instance_index_target.nil? ||
+                        instance_index_target.are_search_es_index_name != mlt_index_target_options.are_search_es_index_name
                     raise ArgumentError,
-                        "instance と index_target のモデルが一致していません"
+                        "instance から取得した index_target と指定された index_target が一致していません"
                 end
             end
 

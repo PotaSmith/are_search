@@ -21,6 +21,11 @@ RSpec.describe "search option flow" do
                 super
             end
 
+            # 実際のSearchableモデルと同じ入口からIndexTargetを解決する。
+            def self.are_search_index_target(target_name)
+                AreSearch::IndexTarget.new(self, target_name)
+            end
+
             def self.are_search_es_mappings
                 {
                     default: {
@@ -372,6 +377,71 @@ RSpec.describe "search option flow" do
         end.to raise_error(
             ArgumentError,
             /opts\[:where\] に未知のキーがあります: OtherModel\.secret/,
+        )
+    end
+
+    it "STI子クラスのinstanceと上位モデルのindex targetをMore Like Thisに使用できる" do
+        child_model = Class.new(article_model)
+        child_instance = child_model.new
+
+        body = AreSearch::Searcher.search(
+            [article_index_target],
+            mlt_instance:     child_instance,
+            mlt_index_target: article_index_target,
+            mlt_params: {
+                fields: [:title],
+            },
+            dump_body: true,
+        )
+
+        expect(
+            body.dig(:query, :bool, :must, :more_like_this, :like),
+        ).to eq([
+            {
+                _index: "test__articles__default",
+                _id:    "1",
+            },
+        ])
+    end
+
+    it "instanceから取得したindex targetが指定されたindex targetと異なる場合は拒否する" do
+        other_model = Class.new do
+            attr_reader :id
+
+            def self.include?(mod)
+                return true if mod == AreSearch::Searchable
+
+                super
+            end
+
+            def initialize
+                @id = 2
+            end
+        end
+        other_instance = other_model.new
+        other_index_target = double(
+            "other_index_target",
+            are_search_es_index_name: "test__documents__default",
+        )
+
+        allow(other_model)
+            .to receive(:are_search_index_target)
+            .with(:default)
+            .and_return(other_index_target)
+
+        expect do
+            AreSearch::Searcher.search(
+                [article_index_target],
+                mlt_instance:     other_instance,
+                mlt_index_target: article_index_target,
+                mlt_params: {
+                    fields: [:title],
+                },
+                dump_body: true,
+            )
+        end.to raise_error(
+            ArgumentError,
+            /instance から取得した index_target と指定された index_target が一致していません/,
         )
     end
 
