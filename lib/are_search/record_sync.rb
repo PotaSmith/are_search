@@ -24,6 +24,10 @@ module AreSearch
         end
 
         def sync_with_request(index_target, sync_request, processing_token, on_rake: true, reraise: false)
+            # 同期開始条件の確認と processing の取得。
+            # 条件不一致による false は同期対象外として扱い、retry_count は増やさない。
+            # このブロック内で例外が発生した場合だけ、request_sequence が一致する行の
+            # retry_count と last_error を更新する。
             begin
                 # index_targetがnilの場合は、target_nameがなくなった場合が考えられるが、安易に消すわけにも行かない
                 return false unless check_index_target?(index_target, sync_request)
@@ -41,8 +45,16 @@ module AreSearch
             end
 
             begin
+                # Elasticsearch への同期。
+                # 例外時は processing を解除してから、request_sequence が一致する行の
+                # retry_count と last_error を更新する。
+                # processing の解除自体に失敗した場合は、この復旧処理を完了できないため例外が伝播する。
                 es_sync(index_target, sync_request)
 
+                # 同期済みの SyncRequest 削除と processing 解除。
+                # 同じトランザクションにすることで、どちらかが失敗した場合は削除を確定しない。
+                # 例外時はトランザクション外でもう一度 processing の解除を試し、
+                # request_sequence が一致する行の retry_count と last_error を更新する。
                 AreSearch::SyncRequest.transaction do
                     if on_rake
                         # rake は正規の回収処理なので、ここまで到達した時点で復旧済みとして削除する。
@@ -61,20 +73,18 @@ module AreSearch
                         ).delete_all
                     end
 
-                    # processing を解除する
                     release_current_processing(sync_request)
                 end
 
-                true
-            rescue StandardError => e
-                # processing を解除する
-                release_current_processing(sync_request)
+                return true
 
+            rescue StandardError => e
+                release_current_processing(sync_request)
                 update_sync_request_error(sync_request, e)
 
                 raise e if reraise
 
-                false
+                return false
             end
         end
 

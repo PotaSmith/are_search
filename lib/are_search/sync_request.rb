@@ -134,9 +134,17 @@ module AreSearch
     # updated_at
     #     Railsが管理する行の更新時刻。
     #
+    #
+    # SyncRequest の処理フェーズと各フィールドの役割は、
+    # docs/guide_reference.txt 末尾の
+    # 「SyncRequest のライフサイクル」を参照する。
 
     class SyncRequest < ActiveRecord::Base
         self.table_name = "are_search_sync_requests"
+
+        # run_sync_requests が通常同期で使用する固定 token。
+        # Job / direct が使用する UUID と区別し、rake 異常中断後は次回 rake が再開する。
+        RAKE_PROCESSING_TOKEN = "rake task"
 
         REQUEST_POSTGRESQL_SEQUENCE_SQL =
             "SELECT nextval('are_search_sync_requests_request_sequence'::regclass)"

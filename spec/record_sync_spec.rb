@@ -239,6 +239,44 @@ RSpec.describe AreSearch::RecordSync do
             expect(reloaded.processing_at).to eq(nil)
         end
 
+        it "同期失敗前に request_sequence が変わった場合は retry_count と last_error を更新しない" do
+            sync_request = create_sync_request(
+                request_sequence: 10,
+                retry_count:      3,
+            )
+            error = RuntimeError.new("sync failed")
+
+            allow(model)
+                .to receive(:find_by)
+                .with(id: ar_instance_key)
+                .and_return(record)
+
+            allow(record)
+                .to receive(:are_search_es_sync!) do |actual_index_target|
+                    expect(actual_index_target).to eq(index_target)
+
+                    sync_request.update_columns(request_sequence: 11)
+                    raise error
+                end
+
+            result = described_class.sync(
+                ar_model_class_name,
+                target_name,
+                ar_instance_key,
+                request_es_index_name,
+                processing_token,
+            )
+
+            reloaded = AreSearch::SyncRequest.find(sync_request.id)
+
+            expect(result).to eq(false)
+            expect(reloaded.request_sequence).to eq(11)
+            expect(reloaded.retry_count).to eq(3)
+            expect(reloaded.last_error).to eq(nil)
+            expect(reloaded.processing_token).to eq(nil)
+            expect(reloaded.processing_at).to eq(nil)
+        end
+
         it "reraise が true の場合も retry_count と last_error を更新して processing を解除する" do
             sync_request = create_sync_request(retry_count: 3)
             error = RuntimeError.new("sync failed")
@@ -288,6 +326,31 @@ RSpec.describe AreSearch::RecordSync do
     end
 
     describe ".sync_with_request" do
+        it "processing 取得中の例外は retry_count と last_error を更新する" do
+            sync_request = create_sync_request(retry_count: 2)
+
+            allow(described_class)
+                .to receive(:acquire_sync_request_processing)
+                .with(sync_request, processing_token)
+                .and_raise(RuntimeError, "processing acquire failed")
+
+            expect(model).not_to receive(:find_by)
+
+            result = described_class.sync_with_request(
+                index_target,
+                sync_request,
+                processing_token,
+                on_rake: true,
+            )
+
+            reloaded = AreSearch::SyncRequest.find(sync_request.id)
+
+            expect(result).to eq(false)
+            expect(reloaded.retry_count).to eq(3)
+            expect(reloaded.last_error).to eq("processing acquire failed")
+            expect(reloaded.processing_token).to eq(nil)
+        end
+
         it "processing_token が空なら同期しない" do
             sync_request = create_sync_request
 
@@ -447,6 +510,85 @@ RSpec.describe AreSearch::RecordSync do
             expect(reloaded.processing_token).to eq(nil)
             expect(reloaded.processing_at).to eq(nil)
         end
+
+        it "SyncRequest 削除後の processing 解除に失敗した場合は削除を戻して retry_count を増やす" do
+            sync_request = create_sync_request(retry_count: 1)
+            release_call_count = 0
+
+            allow(model)
+                .to receive(:find_by)
+                .with(id: ar_instance_key)
+                .and_return(record)
+
+            expect(record)
+                .to receive(:are_search_es_sync!)
+                .with(index_target)
+
+            allow(described_class)
+                .to receive(:release_current_processing)
+                .and_wrap_original do |original_method, request|
+                    release_call_count += 1
+
+                    if release_call_count == 1
+                        raise RuntimeError, "processing release failed"
+                    end
+
+                    original_method.call(request)
+                end
+
+            result = described_class.sync_with_request(
+                index_target,
+                sync_request,
+                processing_token,
+                on_rake: true,
+            )
+
+            reloaded = AreSearch::SyncRequest.find(sync_request.id)
+
+            expect(result).to eq(false)
+            expect(release_call_count).to eq(2)
+            expect(reloaded.retry_count).to eq(2)
+            expect(reloaded.last_error).to eq("processing release failed")
+            expect(reloaded.processing_token).to eq(nil)
+            expect(reloaded.processing_at).to eq(nil)
+        end
+
+        it "同期中に processing_token が変わっても終了時に processing を解除する" do
+            sync_request = create_sync_request(
+                force_attempted:     true,
+                force_attempted_at:  Time.zone.now,
+                force_attempt_count: 1,
+            )
+
+            allow(model)
+                .to receive(:find_by)
+                .with(id: ar_instance_key)
+                .and_return(record)
+
+            expect(record)
+                .to receive(:are_search_es_sync!) do |actual_index_target|
+                    expect(actual_index_target).to eq(index_target)
+
+                    sync_request.update_columns(
+                        processing_token: "other-token",
+                        processing_at:    Time.zone.now,
+                    )
+                end
+
+            result = described_class.sync_with_request(
+                index_target,
+                sync_request,
+                processing_token,
+                on_rake: false,
+            )
+
+            reloaded = AreSearch::SyncRequest.find(sync_request.id)
+
+            expect(result).to eq(true)
+            expect(reloaded.force_attempted).to eq(true)
+            expect(reloaded.processing_token).to eq(nil)
+            expect(reloaded.processing_at).to eq(nil)
+        end
     end
 
     describe ".try_force" do
@@ -503,6 +645,45 @@ RSpec.describe AreSearch::RecordSync do
             expect(result).to eq(false)
             expect(reloaded.retry_count).to eq(0)
             expect(reloaded.last_error).to eq("sync failed")
+            expect(reloaded.force_attempted).to eq(true)
+            expect(reloaded.force_attempt_count).to eq(1)
+            expect(reloaded.processing_token).to eq("token-1")
+        end
+
+        it "force 同期中に request_sequence が変わった場合は last_error を更新しない" do
+            sync_request = create_sync_request(
+                request_sequence:    10,
+                processing_token:    "token-1",
+                processing_at:       1.hour.ago,
+                force_attempt_count: 0,
+            )
+            error = RuntimeError.new("sync failed")
+
+            allow(model)
+                .to receive(:find_by)
+                .with(id: ar_instance_key)
+                .and_return(record)
+
+            allow(record)
+                .to receive(:are_search_es_sync!) do |actual_index_target|
+                    expect(actual_index_target).to eq(index_target)
+
+                    # 別処理から同じ行が更新され、手元のsync_requestは取得時点の値を保持する状態にする。
+                    AreSearch::SyncRequest
+                        .where(id: sync_request.id)
+                        .update_all(request_sequence: 11)
+
+                    raise error
+                end
+
+            result = described_class.try_force(index_target, sync_request)
+
+            reloaded = AreSearch::SyncRequest.find(sync_request.id)
+
+            expect(result).to eq(false)
+            expect(reloaded.request_sequence).to eq(11)
+            expect(reloaded.retry_count).to eq(0)
+            expect(reloaded.last_error).to eq(nil)
             expect(reloaded.force_attempted).to eq(true)
             expect(reloaded.force_attempt_count).to eq(1)
             expect(reloaded.processing_token).to eq("token-1")

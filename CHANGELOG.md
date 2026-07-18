@@ -1,3 +1,8 @@
+## [Unreleased]
+
+- `run_sync_requests` の processing token を固定値にし、rake task が異常中断して token を残した場合も、次回実行で通常同期として再開できるよう変更
+- SyncRequest の処理フェーズ、異常中断時の復旧経路、`request_sequence`・`processing_token`・force 処理の役割、`retry_count` が増える条件をガイドへ追加
+
 ## Planned
 
 - ドット付き等の特殊フィールドの許容オプションを追加

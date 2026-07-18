@@ -530,3 +530,228 @@ sync request を経由せず、index marker も確認しない。
 
 AreSearch.index_operation_enabled = true が必要。
 lock や marker を取得しないため、通常は clean up を使用する。
+
+# 8. SyncRequest のライフサイクル
+================================================================
+
+SyncRequest は、Elasticsearch への反映が完了していない同期要求を保持する。
+同期キーごとに基本1行だけ存在し、処理の進行に応じて同じ行を更新する。
+
+この行は長期間維持する処理状態ではない。
+正常な処理経路が完了した場合は SyncRequest 自体を削除する。
+processing_token や force_attempted などは、削除までの途中経過を扱うための値。
+
+SyncRequest の処理には、次のフェーズがある。
+
+    1. Active Record callback で同期要求を作成・更新する
+    2. after_commit で直接同期または Job 登録を行う
+    3. rake で未処理要求を通常同期する
+    4. rake で異常中断した Job の要求を force 同期する
+    5. 解消しない要求をメール通知する
+
+各フェーズは独立した機能ではなく、前のフェーズで完了しなかった要求を次のフェーズが扱う。
+
+
+## 8-1. callback で同期要求を作成する
+----------------------------------------------------------------
+
+保存・touch・削除の callback で、対象 IndexTarget ごとの SyncRequest を作成または更新する。
+検索対象レコードの変更と SyncRequest の記録は、同じデータベーストランザクション内で行う。
+
+同じ同期キーへの要求は新しい行を追加せず、既存の1行へ upsert する。
+
+    es_index_name
+    ar_model_class_name
+    ar_instance_key
+
+upsert 時は、新しい request_sequence と request_sequence_at を設定し、retry_count と last_error を初期化する。
+processing_token や force_attempted など、既に進行中の処理状態はこの callback では変更しない。
+
+request_sequence が必要になるのは、同期中に同じレコードが再更新された場合への対応。
+
+同期開始時に取得した request_sequence を、同期成功時の削除条件と失敗時のエラー更新条件に含める。
+同期中の callback により同じ行の request_sequence が変わっていれば、その同期処理は行を削除せず、
+新しい要求へ以前の処理結果も記録しない。
+
+request_sequence は処理主体やロック所有者を表す値ではない。
+同期中に同じ行へ新しい要求が追加されたかを確認するための条件。
+
+
+## 8-2. after_commit で処理する
+----------------------------------------------------------------
+
+commit 後は AreSearch.after_commit_mode に従う。
+
+    :direct
+        after_commit から直接同期する。
+
+    :job
+        AreSearch::SyncJob を登録する。
+
+    :none
+        何も開始せず、rake の通常同期に任せる。
+
+どのモードでも SyncRequest は callback で作成済み。
+after_commit、Job 登録、Elasticsearch 同期のいずれかが失敗しても、未完了要求は PostgreSQL に残る。
+
+通常同期の開始時は processing_token と processing_at を設定する。
+processing_token が boolean の処理中フラグではなく token なのは、Job の再処理に対応するため。
+
+Job は登録時に生成した processing_token を引数として保持し、リトライ時にも同じ token を使用する。
+Job が processing_token を設定した後にプロセスごと異常中断すると、DB 上の token は残る。
+再実行された同じ Job は同じ token を持つため、処理中状態を維持したまま自分の処理を再開できる。
+別の通常同期は異なる token になるため、その間は同じ要求を処理できない。
+
+通常同期が例外処理まで戻った場合は processing 状態を解除し、Job の対象例外であれば Active Job が再試行する。
+プロセス停止などで例外処理まで戻らなかった場合だけ、processing 状態が残留する。
+
+通常同期が成功した場合、処理開始時の request_sequence が一致していれば SyncRequest を削除する。
+direct と Job は、force_attempted が false の場合だけ削除する。
+force が介入済みの場合の後処理は、rake の通常同期へ渡す。
+
+
+## 8-3. rake で通常同期する
+----------------------------------------------------------------
+
+`are_search:run_sync_requests` は、一定時間以上残っている要求を通常同期する。
+対象になる processing_token は次の2種類。
+
+    nil
+        まだ通常同期を取得していない要求。
+
+    "rake task"
+        前回の rake が通常同期中に異常中断した要求。
+        rake は同じ固定 token を使用するため、次回実行で処理を再開できる。
+
+Job / direct が使用する UUID の processing_token は、rake の通常同期では取得しない。
+
+rake の通常同期は、1件ごとに次の3ブロックで処理する。
+
+### 8-3-1. 同期条件の確認と processing の取得
+
+次を確認した後、processing_token と processing_at を設定する。
+
+    現在の IndexTarget と SyncRequest の設定が一致する
+    index marker が存在しない
+    alias が存在する
+    processing_token が nil または "rake task" である
+    request_sequence が取得時点から変わっていない
+
+設定不一致、index操作中、alias未作成、別tokenによる処理中、request_sequence変更は、
+同期対象にできない条件として false を返す。
+この場合、retry_count は増えない。
+設定不一致、index操作中、alias未作成では last_error だけを更新する。
+
+このブロック内でDB例外などが発生した場合は、request_sequence が取得時点と一致する場合だけ、
+retry_count を1増やして last_error を記録する。
+
+### 8-3-2. Elasticsearch への同期
+
+DBから対象レコードの現在状態を取得し直し、存在すれば index、存在しなければ delete する。
+
+Elasticsearch同期で例外が発生した場合は、processing_token と processing_at の解除を試みる。
+解除できた場合は、request_sequence が取得時点と一致する場合だけ、retry_count を1増やして
+last_error を記録する。
+
+processing の解除自体に失敗した場合は、通常の失敗記録まで完了できないため例外が伝播し、
+processing状態が残る可能性がある。
+そのprocessing_tokenが "rake task" なら、次回の rake 通常同期が同じtokenで再開する。
+
+### 8-3-3. SyncRequest の削除と processing の解除
+
+Elasticsearch同期が成功した後、SyncRequest の削除と processing の解除を同じDBトランザクション内で行う。
+
+rake は残留要求を回収する正規の復旧経路なので、force_attempted の有無にかかわらず、
+request_sequence が取得時点と一致する行を削除する。
+同期中に同じ行が更新されてrequest_sequenceが変わっていれば削除しない。
+
+削除と解除のどちらかで例外が発生した場合はトランザクションを確定しない。
+その後、トランザクション外でもう一度 processing の解除を試み、request_sequence が一致する場合だけ、
+retry_count を1増やして last_error を記録する。
+
+この再解除にも失敗した場合は例外が伝播し、processing状態が残る可能性がある。
+"rake task" は次回の rake が再取得できるため、rake自身の異常中断をforce同期へ回さず通常同期で復旧できる。
+
+### 8-3-4. retry_count が増える条件
+
+retry_count が増えるのは、通常同期で例外が発生し、かつエラー記録時にも
+request_sequence が取得時点と一致している場合だけ。
+
+    同期条件確認・processing取得中の例外
+    Elasticsearch同期中の例外
+    SyncRequest削除・processing解除中の例外
+
+次の場合は増えない。
+
+    同期条件の不一致によって false を返した
+    同期中のcallbackで同じ行のrequest_sequenceが更新された
+    force同期で例外が発生した
+
+新しい同期要求がcallbackでupsertされた場合、retry_count は0へ戻る。
+
+
+## 8-4. rake で force 同期する
+----------------------------------------------------------------
+
+force 同期は、Job / direct が UUID の processing_token を保持したまま異常中断した場合に、
+Elasticsearch の同期だけを強制的に行う補助機能。
+
+`processing_token = "rake task"` の要求は force 対象にしない。
+rakeの異常中断は、次回のrake通常同期が同じ固定tokenで再開する。
+
+`are_search:run_sync_requests` は、UUID の processing_token が残り、processing_at が一定時間以上古い要求を検出する。
+取得時と同じ id・processing_token が現在も残っている場合だけ、次を更新して force 同期を実行する。
+
+    force_attempted
+    force_attempted_at
+    force_attempt_count
+
+force は request_sequence を開始条件にしない。
+確認するのは、同期中に新しい要求が入ったかではなく、同じ Job の processing_token が残ったまま
+処理が停止しているかどうか。
+同期本体では Active Record の現在状態を取得し直して Elasticsearch へ反映する。
+
+force 同期の成功後は、SyncRequest の削除や processing 状態の解除を行わない。
+force は異常中断した Job の所有状態を引き継いで要求を完了させる処理ではなく、
+Job が停止している間の Elasticsearch を補正する処理だから。
+
+元の Job が復旧して通常同期を完了した場合、force が介入していなければ Job が SyncRequest を削除する。
+force が介入済みの場合、Job は processing 状態を解除するが行を削除せず、次の rake 通常同期へ渡す。
+その rake 通常同期が正常終了すると SyncRequest 自体が削除される。
+
+元の Job が復旧しない場合は processing 状態が残り、force 同期を上限まで再試行する。
+force_attempt_count が上限に達した要求や、エラーを持ったまま残る要求はメール通知の対象になる。
+
+
+## 8-5. メール通知する
+----------------------------------------------------------------
+
+`are_search:alert_retry_exceeded` は、通常同期や force 同期だけでは解消しなかった要求を検出する。
+
+主な通知対象。
+
+    retry_count が閾値に到達した要求
+    force_attempt_count が閾値に到達した要求
+    last_error があるまま長時間残っている要求
+
+メール通知は同期処理を変更しない。
+SyncRequest が正常経路で削除されずに残っていることを、運用者へ知らせる最終フェーズ。
+
+
+## 8-6. 見落としやすい点
+----------------------------------------------------------------
+
+    SyncRequest は同期キーごとに基本1行だけ存在する。
+    request_sequence は、その1行が同期中に更新されたかを確認する条件。
+    processing_token は、異常中断後に同じ処理主体が再開できるようにする token。
+    Job / direct は UUID、rake は固定値 "rake task" を使用する。
+    force 同期は、異常中断した Job / direct の代わりに SyncRequest を完了させる処理ではない。
+    force 成功後に削除や解除をしないのは、Job 異常中断時の補助機能だから。
+
+Job が通常経路で完了した場合、または force 介入後に rake の通常同期が完了した場合は、
+SyncRequest 自体が削除される。
+そのため、processing_token、force_attempted、force_attempt_count などを正常終了後も個別に整合させ続ける
+状態機械ではない。
+
+これらの値が残っている場合は、まだ正常な終了経路へ到達していないことを表す。
+最終的には rake の通常同期による行削除、またはメール通知を受けた運用者の確認へ進む。

@@ -45,12 +45,13 @@ namespace :are_search do
             ar_model_class_names = models.map(&:name)
 
             threshold = AreSearch.sync_request_delay.seconds.ago
-            processing_token = SecureRandom.uuid
+            processing_token = AreSearch::SyncRequest::RAKE_PROCESSING_TOKEN
 
-            # 通常同期
+            # 通常同期。
+            # 前回の rake が異常中断して固定 token を残した場合も、同じ token で再開する。
             AreSearch::SyncRequest
                 .where(ar_model_class_name: ar_model_class_names)
-                .where(processing_token: nil)
+                .where(processing_token: [nil, processing_token])
                 .where("updated_at < ?", threshold)
                 .where("retry_count < ?", AreSearch.max_retry_count)
                 .find_each do |sync_request|
@@ -82,10 +83,12 @@ namespace :are_search do
 
             force_threshold = AreSearch.sync_request_process_hang_wait.seconds.ago
 
-            # 強制同期
+            # 強制同期。
+            # rake の固定 token は次回の通常同期で再開できるため force 対象にしない。
             AreSearch::SyncRequest
                 .where(ar_model_class_name: ar_model_class_names)
                 .where.not(processing_token: nil)
+                .where.not(processing_token: processing_token)
                 .where("processing_at < ?", force_threshold)
                 .where("force_attempt_count < ?", AreSearch.max_force_attempt_count)
                 .find_each do |sync_request|

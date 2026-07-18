@@ -142,7 +142,30 @@ RSpec.describe "are_search rake tasks" do
                 .to receive(:sync_with_request) do |actual_index_target, sync_request, processing_token, on_rake:|
                     expect(actual_index_target).to eq(article_index_target)
                     expect(sync_request.id).to eq(target.id)
-                    expect(processing_token).not_to eq(nil)
+                    expect(processing_token).to eq(AreSearch::SyncRequest::RAKE_PROCESSING_TOKEN)
+                    expect(on_rake).to eq(true)
+                end
+
+            expect(AreSearch::RecordSync)
+                .not_to receive(:try_force)
+
+            Rake::Task["are_search:run_sync_requests"].invoke
+        end
+
+        it "前回の rake task token が残った要求を通常同期で再開する" do
+            old_time = Time.zone.now - 3600
+            target = create_sync_request(
+                ar_instance_key:  "1",
+                processing_token: AreSearch::SyncRequest::RAKE_PROCESSING_TOKEN,
+                processing_at:    old_time,
+            )
+            target.update_columns(created_at: old_time, updated_at: old_time)
+
+            expect(AreSearch::RecordSync)
+                .to receive(:sync_with_request) do |actual_index_target, sync_request, processing_token, on_rake:|
+                    expect(actual_index_target).to eq(article_index_target)
+                    expect(sync_request.id).to eq(target.id)
+                    expect(processing_token).to eq(AreSearch::SyncRequest::RAKE_PROCESSING_TOKEN)
                     expect(on_rake).to eq(true)
                 end
 
@@ -204,8 +227,22 @@ RSpec.describe "are_search rake tasks" do
             )
             too_many_force.update_columns(created_at: old_time, updated_at: old_time)
 
+            rake_interrupted = create_sync_request(
+                ar_instance_key:     "4",
+                request_sequence:    40,
+                processing_token:    AreSearch::SyncRequest::RAKE_PROCESSING_TOKEN,
+                processing_at:       old_time,
+                force_attempt_count: 0,
+            )
+            rake_interrupted.update_columns(created_at: old_time, updated_at: old_time)
+
             expect(AreSearch::RecordSync)
-                .not_to receive(:sync_with_request)
+                .to receive(:sync_with_request)
+                .once do |_actual_index_target, sync_request, processing_token, on_rake:|
+                    expect(sync_request.id).to eq(rake_interrupted.id)
+                    expect(processing_token).to eq(AreSearch::SyncRequest::RAKE_PROCESSING_TOKEN)
+                    expect(on_rake).to eq(true)
+                end
 
             expect(AreSearch::RecordSync)
                 .to receive(:try_force)
