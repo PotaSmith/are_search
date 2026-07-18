@@ -2,7 +2,7 @@
 
 [English](./README.md) | [日本語](./README.ja.md)
 
-AreSearch is a small search and synchronization template for using Elasticsearch in Rails applications.
+AreSearch is a search platform that implements search, synchronization, and operations for Rails and Elasticsearch while leaving room for applications to intervene directly in its configuration and processing.
 
 It is not a gem for hiding Elasticsearch.
 It provides Rails models with indexing, reindexing, asynchronous synchronization, and basic search helpers for Elasticsearch.
