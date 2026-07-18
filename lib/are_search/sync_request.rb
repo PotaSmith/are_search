@@ -146,13 +146,9 @@ module AreSearch
         # Job / direct が使用する UUID と区別し、rake 異常中断後は次回 rake が再開する。
         RAKE_PROCESSING_TOKEN = "rake task"
 
-        REQUEST_POSTGRESQL_SEQUENCE_SQL =
-            "SELECT nextval('are_search_sync_requests_request_sequence'::regclass)"
-
+        # 設定されたproviderから次の同期要求世代番号を取得する。
         def self.next_request_sequence
-            ActiveRecord::Base.with_connection do |connection|
-                connection.select_value(REQUEST_POSTGRESQL_SEQUENCE_SQL).to_i
-            end
+            AreSearch.request_sequence_provider.next_value
         end
 
     end

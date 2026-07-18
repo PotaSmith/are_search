@@ -23,6 +23,8 @@ module AreSearch
 end
 
 require_relative "are_search/version"
+require_relative "are_search/request_sequence_provider"
+require_relative "are_search/postgresql_request_sequence_provider"
 require_relative "are_search/index_marker"
 require_relative "are_search/index_target"
 require_relative "are_search/sync_request"
@@ -108,6 +110,7 @@ module AreSearch
 
     @analyzer_settings = ANALYZER_SETTINGS
     @es_search_body_policy = AreSearch::ScriptDenyEsSearchBodyPolicy
+    @request_sequence_provider = AreSearch::PostgreSQLRequestSequenceProvider
     @client_block = nil
     @index_prefix = nil
     @sync_request_delay = 120
@@ -151,6 +154,27 @@ module AreSearch
         end
 
         @es_search_body_policy = policy_class
+    end
+
+    def self.request_sequence_provider
+        @request_sequence_provider
+    end
+
+    # sync request の世代番号を発行するproviderを設定する。
+    # RequestSequenceProvider自体ではなく、その継承クラスだけを受け付ける。
+    def self.request_sequence_provider=(provider_class)
+        valid_provider_class = provider_class.instance_of?(Class)
+
+        if valid_provider_class
+            valid_provider_class = provider_class < AreSearch::RequestSequenceProvider
+        end
+
+        unless valid_provider_class
+            raise ArgumentError,
+                "request_sequence_provider は AreSearch::RequestSequenceProvider の継承クラスを指定してください"
+        end
+
+        @request_sequence_provider = provider_class
     end
 
     def self.sync_request_delay

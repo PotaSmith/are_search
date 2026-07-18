@@ -23,6 +23,21 @@ RSpec.describe AreSearch::SyncRequest do
         }
     end
 
+    describe ".next_request_sequence" do
+        it "設定されたproviderへ採番を委譲する" do
+            provider_class = class_double(
+                "RequestSequenceProvider",
+                next_value: 123,
+            )
+
+            allow(AreSearch)
+                .to receive(:request_sequence_provider)
+                .and_return(provider_class)
+
+            expect(described_class.next_request_sequence).to eq(123)
+        end
+    end
+
     describe ".upsert" do
         it "実際にDBへレコードを1件登録する" do
             described_class.upsert(base_attrs, unique_by: unique_by)
