@@ -216,9 +216,15 @@ Searchable を include している全モデルを確認する。
 # 7. 同期の定期実行
 ================================================================
 
-失敗や一時停止で残った sync request を回収するため、以下を定期実行する。
+失敗や一時停止で残った sync request を回収する環境を1つ決め、その環境だけ有効にする。
+
+    AreSearch.rake_operation_enabled = true
+
+有効にした環境で、以下を定期実行する。
 
     bundle exec rake are_search:run_sync_requests
+
+同じ lock_dir を共有しない複数環境からの同時実行は想定しない。
 
 インストーラが生成する通知タスクも、必要に応じて定期実行する。
 

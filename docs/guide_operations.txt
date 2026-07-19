@@ -195,7 +195,18 @@ unmark 操作が削除するのは manual marker だけ。
 
 残っている sync request を再処理する。
 
+このタスクを実行する単一の環境で、次を設定する。
+
+    AreSearch.rake_operation_enabled = true
+
+その環境から実行する。
+
     bundle exec rake are_search:run_sync_requests
+
+`rake_operation_enabled` のデフォルトは false。
+false の環境では `AreSearch::RakeOperationViolation` を送出し、同期処理を開始しない。
+同じ lock_dir を共有しない複数環境からの同時実行は想定しない。
+flock は同じ lock_dir を参照できるプロセス間の多重起動防止として使用する。
 
 このタスクは定期実行する。
 通常の再同期に加え、処理中のまま古くなった sync request の強制同期も行う。

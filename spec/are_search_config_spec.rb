@@ -14,6 +14,7 @@ RSpec.describe AreSearch, "configuration" do
         original_validate_es_data = described_class.validate_es_data
         original_after_commit_mode = described_class.after_commit_mode
         original_index_operation_enabled = described_class.index_operation_enabled
+        original_rake_operation_enabled = described_class.rake_operation_enabled
         original_analyzer_settings = described_class.analyzer_settings
         original_es_search_body_policy = described_class.es_search_body_policy
         original_request_sequence_provider = described_class.request_sequence_provider
@@ -37,6 +38,7 @@ RSpec.describe AreSearch, "configuration" do
         described_class.validate_es_data = original_validate_es_data
         described_class.after_commit_mode = original_after_commit_mode
         described_class.index_operation_enabled = original_index_operation_enabled
+        described_class.rake_operation_enabled = original_rake_operation_enabled
         described_class.analyzer_settings = original_analyzer_settings
         described_class.es_search_body_policy = original_es_search_body_policy
         described_class.request_sequence_provider = original_request_sequence_provider
@@ -215,6 +217,7 @@ RSpec.describe AreSearch, "configuration" do
         described_class.validate_es_data = false
         described_class.after_commit_mode = :job
         described_class.index_operation_enabled = false
+        described_class.rake_operation_enabled = true
         described_class.analyzer_settings = analyzer_settings
         described_class.lock_dir = "/tmp/are_search_spec"
 
@@ -225,8 +228,28 @@ RSpec.describe AreSearch, "configuration" do
         expect(described_class.validate_es_data).to eq(false)
         expect(described_class.after_commit_mode).to eq(:job)
         expect(described_class.index_operation_enabled).to eq(false)
+        expect(described_class.rake_operation_enabled).to eq(true)
         expect(described_class.analyzer_settings).to equal(analyzer_settings)
         expect(described_class.lock_dir).to eq("/tmp/are_search_spec")
+    end
+
+    it "rake_operation_enabled が false の場合は rake task の実行を拒否する" do
+        described_class.rake_operation_enabled = false
+
+        expect do
+            described_class.validate_rake_operation_enabled!
+        end.to raise_error(
+            AreSearch::RakeOperationViolation,
+            /rake_operation_enabled が false/,
+        )
+    end
+
+    it "rake_operation_enabled が true の場合は rake task の実行を許可する" do
+        described_class.rake_operation_enabled = true
+
+        expect do
+            described_class.validate_rake_operation_enabled!
+        end.not_to raise_error
     end
 
     it "lock_dir 未設定時は Rails.root/tmp/are_search を返す" do

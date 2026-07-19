@@ -14,6 +14,8 @@ require "fileutils"
 namespace :are_search do
     desc "AreSearch.sync_request_delay 秒以上未同期の are_search_sync_requests を再同期する"
     task run_sync_requests: :environment do
+        AreSearch.validate_rake_operation_enabled!
+
         puts "#{Time.zone.now.strftime('%Y-%m-%d %H:%M:%S')} [AreSearch] run_sync_requests を開始しました。"
         done_job_count = 0
         done_force_count = 0

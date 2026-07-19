@@ -105,6 +105,7 @@ module AreSearch
 
     class NotConfiguredError < Error; end
     class IndexOperationViolation < Error; end
+    class RakeOperationViolation < Error; end
     class IndexLockUnavailable < Error; end
     class IndexMarkerUnavailable < Error; end
 
@@ -119,6 +120,7 @@ module AreSearch
     @logger = nil
     @after_commit_mode = :direct
     @index_operation_enabled = false
+    @rake_operation_enabled = false
     @batch_size = 500
 
     @sync_request_process_hang_wait = 1800
@@ -219,6 +221,26 @@ module AreSearch
 
     def self.index_operation_enabled=(value)
         @index_operation_enabled = value
+    end
+
+    # sync request を回収する rake task の実行を許可しているか返す。
+    def self.rake_operation_enabled
+        @rake_operation_enabled
+    end
+
+    # sync request を回収する rake task の実行可否を設定する。
+    def self.rake_operation_enabled=(value)
+        @rake_operation_enabled = value
+    end
+
+    # sync request を回収する rake task の実行環境か確認する。
+    def self.validate_rake_operation_enabled!
+        return if rake_operation_enabled
+
+        message = "[AreSearch] rake task の実行が許可されていません。" \
+            "AreSearch.rake_operation_enabled が false になっています。"
+
+        raise AreSearch::RakeOperationViolation, message
     end
 
     def self.batch_size

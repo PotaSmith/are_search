@@ -43,13 +43,16 @@ RSpec.describe "are_search rake tasks" do
         Dir.mktmpdir("are_search_rake") do |dir|
             original_lock_dir = AreSearch.lock_dir
             original_index_operation_enabled = AreSearch.index_operation_enabled
+            original_rake_operation_enabled = AreSearch.rake_operation_enabled
             AreSearch.lock_dir = dir
             AreSearch.index_operation_enabled = true
+            AreSearch.rake_operation_enabled = true
 
             example.run
         ensure
             AreSearch.lock_dir = original_lock_dir
             AreSearch.index_operation_enabled = original_index_operation_enabled
+            AreSearch.rake_operation_enabled = original_rake_operation_enabled
         end
     end
 
@@ -102,6 +105,21 @@ RSpec.describe "are_search rake tasks" do
             allow(AreSearch).to receive(:max_retry_count).and_return(3)
             allow(AreSearch).to receive(:sync_request_process_hang_wait).and_return(1800)
             allow(AreSearch).to receive(:max_force_attempt_count).and_return(2)
+        end
+
+        it "rake 操作が許可されていない場合は RakeOperationViolation を出す" do
+            AreSearch.rake_operation_enabled = false
+
+            expect(Rails.application).not_to receive(:eager_load!)
+            expect(AreSearch::RecordSync).not_to receive(:sync_with_request)
+            expect(AreSearch::RecordSync).not_to receive(:try_force)
+
+            expect do
+                Rake::Task["are_search:run_sync_requests"].invoke
+            end.to raise_error(
+                AreSearch::RakeOperationViolation,
+                /rake_operation_enabled が false/,
+            )
         end
 
         it "対象の sync request だけ RecordSync.sync_with_request に渡す" do

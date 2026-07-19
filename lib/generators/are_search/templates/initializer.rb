@@ -10,6 +10,9 @@ AreSearch.logger = logger
 # インデックス操作を行う環境のみtrueにする
 # AreSearch.index_operation_enabled = true
 
+# sync request回収rakeを実行する環境のみtrueにする
+# AreSearch.rake_operation_enabled = true
+
 AreSearch.setup(
     index_prefix: "#{ConfVars.get(:are_search, :index_prefix)}_#{Rails.env}"
 ) do
