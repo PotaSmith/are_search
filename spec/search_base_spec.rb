@@ -333,7 +333,6 @@ RSpec.describe AreSearch::Searcher do
                 hits,
                 { "test__articles__default" => [article_index_target] },
                 {},
-                {},
             )
 
             expect(result).to eq(
@@ -415,7 +414,6 @@ RSpec.describe AreSearch::Searcher do
                     ],
                 },
                 {},
-                {},
             )
 
             expect(result).to eq(
@@ -490,10 +488,9 @@ RSpec.describe AreSearch::Searcher do
                     index_to_index_targets: {
                         "test__articles__default" => [article_index_target],
                     },
-                    model_includes:       {},
-                    model_results_wheres: {},
-                    page:                 1,
-                    per_page:             25,
+                    model_relations: {},
+                    page:            1,
+                    per_page:        25,
                 },
             )
 

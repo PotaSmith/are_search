@@ -52,7 +52,7 @@ The first switch should be the application-side search entry point, not the alia
 Add this to your Gemfile.
 
 ```ruby
-gem "are_search", git: "https://github.com/PotaSmith/are_search.git", tag: "v0.4.0"
+gem "are_search", git: "https://github.com/PotaSmith/are_search.git", tag: "v0.5.0"
 ```
 
 To use the latest development version directly, specify `branch: "main"`.

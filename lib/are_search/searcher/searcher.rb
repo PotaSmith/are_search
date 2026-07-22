@@ -25,11 +25,10 @@ module AreSearch
             # ここで使うオプションを取る
             search_options = valid_options.dup
 
-            model_includes_opts      = search_options.delete(:model_includes)
-            model_results_where_opts = search_options.delete(:model_results_where)
-            page_opts                = search_options.delete(:page)
-            per_page_opts            = search_options.delete(:per_page)
-            dump_body_opts           = search_options.delete(:dump_body)
+            model_relations_opts = search_options.delete(:model_relations)
+            page_opts            = search_options.delete(:page)
+            per_page_opts        = search_options.delete(:per_page)
+            dump_body_opts       = search_options.delete(:dump_body)
 
             # 未使用のオプションがあるか
             left_options = query_options.keys & body_options.keys & search_options.keys
@@ -42,8 +41,10 @@ module AreSearch
 
 
             # --- 変換 ---
-            model_includes        = (model_includes_opts.nil? ? {} : model_includes_opts)
-            model_results_wheres  = (model_results_where_opts.nil? ? {} : model_results_where_opts)
+            model_relations = {}
+            if model_relations_opts.nil? == false
+                model_relations = model_relations_opts
+            end
 
             page     = AreSearch::SearcherUtils.resolve_default_option(page_opts, 1)
             per_page = AreSearch::SearcherUtils.resolve_default_option(per_page_opts, 25)
@@ -54,8 +55,7 @@ module AreSearch
             # --- 結果復元情報 ---
             result_context = {
                 index_to_index_targets: build_index_to_index_targets(index_targets),
-                model_includes:        model_includes,
-                model_results_wheres:  model_results_wheres,
+                model_relations:       model_relations,
                 page:                  page,
                 per_page:              per_page,
             }
@@ -100,7 +100,7 @@ module AreSearch
         end
 
         # 同じ alias を使う index target に親子関係が含まれていないことを確認する。
-        # 親子を同時指定するとモデル別 includes / results_where の適用先が曖昧になる。
+        # 親子を同時指定すると同じhitが両方のtargetに一致し、復元先を一意に決められない。
         def verify_no_parent_child_index_targets!(index_targets)
             index_targets.each do |index_target|
                 index_targets.each do |other_index_target|
@@ -157,16 +157,14 @@ module AreSearch
             es_total_count = response.dig("hits", "total", "value").to_i
 
             index_to_index_targets = result_context[:index_to_index_targets]
-            model_includes = result_context[:model_includes]
-            model_results_wheres = result_context[:model_results_wheres]
+            model_relations = result_context[:model_relations]
             page = result_context[:page]
             per_page = result_context[:per_page]
 
             record_result = build_records(
                 hits,
                 index_to_index_targets,
-                model_includes,
-                model_results_wheres,
+                model_relations,
             )
 
             records = record_result[:records]
@@ -268,7 +266,7 @@ module AreSearch
         end
 
         # ヒット一覧からActiveRecordオブジェクトを復元し、ヒット順に並べて返す
-        def build_records(hits, index_to_index_targets, model_includes, model_results_wheres)
+        def build_records(hits, index_to_index_targets, model_relations)
             empty_result = {
                 records:                   [],
                 records_with_target_names: [],
@@ -296,13 +294,13 @@ module AreSearch
             records_by_composite_key = {}
             ids_by_index_target.each do |index_target, ids|
                 model = index_target.model_class
+                relation = model_relations[model]
 
-                relation = model.where(id: ids)
-                # DB追加条件で取得対象を確定してから includes を付与する
-                relation = relation.where(model_results_wheres[model]) if model_results_wheres[model].present?
-
-                model_includes_value = model_includes[model]
-                relation = relation.includes(model_includes_value) if model_includes_value.present?
+                if relation.nil?
+                    relation = model.where(id: ids)
+                else
+                    relation = relation.where(id: ids)
+                end
 
                 relation.each do |record|
                     key = index_target.are_search_es_composite_key(record.id)

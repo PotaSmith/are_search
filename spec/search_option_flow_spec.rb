@@ -549,12 +549,12 @@ RSpec.describe "search option flow" do
         ).to eq("50%")
     end
 
-    it "複数モデル用のARオプションに定義されていないnode_typeを拒否する" do
+    it "model_relationsに定義されていないnode_typeを拒否する" do
         expect do
             AreSearch::Searcher.search(
                 [article_index_target],
                 fields: [:title],
-                model_results_where: [],
+                model_relations: [],
                 dump_body: true,
             )
         end.to raise_error(

@@ -577,65 +577,70 @@ RSpec.describe AreSearch::SearchParamValidator do
             end
         end
 
-        it "model_includesとmodel_results_whereは対象モデルClassとnilではない値だけを許可する" do
+        it "model_relationsは対象モデルと同じklassのActiveRecord::Relationだけを許可する" do
+            model = AreSearch::SyncRequest
+            relation = model.where(last_error: nil)
+
             result = described_class.validate(
                 [article_index_target],
-                [article_model],
+                [model],
                 fields: [:title],
-                model_includes: {
-                    article_model => [:user, :tags],
-                },
-                model_results_where: {
-                    article_model => {
-                        status: "published",
-                    },
+                model_relations: {
+                    model => relation,
                 },
             )
 
-            expect(result[:model_includes]).to eq(
-                article_model => [:user, :tags],
-            )
-            expect(result[:model_results_where]).to eq(
-                article_model => {
-                    status: "published",
-                },
-            )
+            expect(result[:model_relations][model]).to equal(relation)
 
             expect do
                 described_class.validate(
                     [article_index_target],
-                    [article_model],
+                    [model],
                     fields: [:title],
-                    model_includes: {
-                        document_model => [:author],
+                    model_relations: {
+                        document_model => relation,
                     },
                 )
             end.to raise_error(
                 ArgumentError,
-                /opts\[:model_includes\] に未知のキーがあります/,
+                /opts\[:model_relations\] に未知のキーがあります/,
             )
 
             expect do
                 described_class.validate(
                     [article_index_target],
-                    [article_model],
+                    [model],
                     fields: [:title],
-                    model_includes: {
-                        article_model => nil,
+                    model_relations: {
+                        model => nil,
                     },
                 )
-            end.to raise_error(ArgumentError, /nil は指定できません/)
+            end.to raise_error(ArgumentError, /ActiveRecord::Relation/)
 
             expect do
                 described_class.validate(
                     [article_index_target],
-                    [article_model],
+                    [model],
                     fields: [:title],
-                    model_results_where: {
-                        article_model => nil,
+                    model_relations: {
+                        model => Object.new,
                     },
                 )
-            end.to raise_error(ArgumentError, /nil は指定できません/)
+            end.to raise_error(ArgumentError, /ActiveRecord::Relation/)
+
+            expect do
+                described_class.validate(
+                    [article_index_target],
+                    [model],
+                    fields: [:title],
+                    model_relations: {
+                        model => AreSearch::IndexMarker.all,
+                    },
+                )
+            end.to raise_error(
+                ArgumentError,
+                /モデルと Relation の klass が一致していません/,
+            )
         end
 
         it "raw_bodyとbuild_model_boolの型を検査する" do

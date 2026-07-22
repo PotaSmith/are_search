@@ -137,40 +137,23 @@ module AreSearch
         end
 
         # 単一の index target を Searcher で検索する。
-        # 指定された includes / results_where は、対象モデルを key にした
-        # model_includes / model_results_where へ変換して渡す。
+        # 指定された relation は、対象モデルを key にした model_relations へ変換して渡す。
         #
         # @return [SearchResult]
         #
         def are_search_es_search(query, **options)
-            invalid_options = []
-            if options.key?(:model_includes)
-                invalid_options << :model_includes
-            end
-            if options.key?(:model_results_where)
-                invalid_options << :model_results_where
-            end
-
-            if invalid_options.any?
+            if options.key?(:model_relations)
                 raise ArgumentError,
-                    "are_search_es_search に未知のオプションが指定されています: #{invalid_options.inspect}"
+                    "are_search_es_search に未知のオプションが指定されています: [:model_relations]"
             end
 
             model = model_class
             index_targets = [self]
+            relation_opt = options.delete(:relation)
 
-            includes_opt = options.delete(:includes)
-            results_where_opt = options.delete(:results_where)
-
-            if includes_opt.nil? == false
-                options[:model_includes] = {
-                    model => includes_opt,
-                }
-            end
-
-            if results_where_opt.nil? == false
-                options[:model_results_where] = {
-                    model => results_where_opt,
+            if relation_opt.nil? == false
+                options[:model_relations] = {
+                    model => relation_opt,
                 }
             end
 

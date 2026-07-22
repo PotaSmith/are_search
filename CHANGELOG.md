@@ -1,16 +1,18 @@
+## [Planned]
+
+- ドット付き等の特殊フィールドの許容オプションを追加
+- 検索のレスポンスデータ削減のための source と fields の設定
+
 ## [Unreleased]
+
+## [0.5.0] - 2026-07-22
 
 - `rake_operation_enabled` を追加し、`run_sync_requests` を実行する環境を明示的に限定できるよう変更
 - `run_sync_requests` の processing token を固定値にし、rake task が異常中断して token を残した場合も、次回実行で通常同期として再開できるよう変更
 - SyncRequest の処理フェーズ、異常中断時の復旧経路、`request_sequence`・`processing_token`・force 処理の役割、古い同期結果を後続のrake通常同期で補正する経路、`retry_count` が増える条件をガイドへ追加
 - `request_sequence` の採番処理をproviderへ分離し、PostgreSQL sequenceを使う標準実装を維持しつつ、利用側で継承クラスへ差し替え可能に変更
 - More Like This の基準レコードと `mlt_index_target` の対応確認を、モデルクラスの完全一致から Elasticsearch index の一致判定へ変更し、STI 子クラスのレコードを上位モデルの IndexTarget と組み合わせられるよう修正
-
-
-## Planned
-
-- ドット付き等の特殊フィールドの許容オプションを追加
-- 検索のレスポンスデータ削減のための source と fields の設定
+- 検索結果のActiveRecord復元条件を、`model_includes`・`model_results_where` からモデルごとの `ActiveRecord::Relation` を渡す `model_relations` へ統合。単一targetの `includes`・`results_where` も `relation` へ統合し、Relationの対象クラスは検索対象モデルとの一致を必須化
 
 ## [0.4.0] - 2026-07-18
 

@@ -250,6 +250,8 @@ module AreSearch
 
             # 複数の検索オプションを同時に参照しなければ判断できない関係を検査する。
             def validate_option_relations!(options)
+                validate_model_relations!(options[:model_relations])
+
                 validate_mlt_index_target_options!(
                     options[:mlt_instance],
                     options[:mlt_index_target],
@@ -257,6 +259,19 @@ module AreSearch
 
                 if options[:build_model_bool] == true
                     validate_model_bool_body!(options[:raw_body])
+                end
+            end
+
+            # model_relationsのRelationが、keyに指定されたモデルから作られていることを確認する。
+            def validate_model_relations!(model_relations)
+                return if model_relations.nil?
+
+                model_relations.each do |model, relation|
+                    next if relation.klass == model
+
+                    raise ArgumentError,
+                        "model_relations のモデルと Relation の klass が一致していません: " \
+                        "#{model.name} != #{relation.klass.name}"
                 end
             end
 

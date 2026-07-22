@@ -256,6 +256,8 @@ module AreSearch
                     parse_model_class(value, path)
                 when "valid_model"
                     parse_context_field(value, context, :models, path)
+                when "active_record_relation"
+                    parse_active_record_relation(value, path)
                 when "any_valid_field"
                     parse_named_context_field(value, context, :any_fields, path)
                 when "all_valid_field"
@@ -431,6 +433,14 @@ module AreSearch
 
                 raise ArgumentError,
                     "#{path} はモデルClassで指定してください: #{value.inspect}"
+            end
+
+            # ActiveRecord::Relationとその継承クラスだけを許可する。
+            def parse_active_record_relation(value, path)
+                return value if value.is_a?(ActiveRecord::Relation)
+
+                raise ArgumentError,
+                    "#{path} は ActiveRecord::Relation で指定してください: #{value.inspect}"
             end
 
             # フィールド名を指定されたcontextのフィールド一覧と照合する。

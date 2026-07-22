@@ -275,18 +275,16 @@ RSpec.describe AreSearch::IndexTarget do
                 .and_return(true)
         end
 
-        it "単一 target とAR用オプションを Searcher 用へ変換する" do
-            includes = [:user, :tags]
-            results_where = { published: true }
+        it "単一 target の relation を model_relations へ変換する" do
+            relation = double("relation")
 
             expect(AreSearch::Searcher)
                 .to receive(:search) do |index_targets, **actual_options|
                     expect(index_targets).to eq([index_target])
                     expect(actual_options).to eq(
-                        query_string:        "Rails",
-                        fields:              [:title],
-                        model_includes:      { model_class => includes },
-                        model_results_where: { model_class => results_where },
+                        query_string:    "Rails",
+                        fields:          [:title],
+                        model_relations: { model_class => relation },
                     )
 
                     :search_result
@@ -294,19 +292,17 @@ RSpec.describe AreSearch::IndexTarget do
 
             result = index_target.are_search_es_search(
                 "Rails",
-                fields:        [:title],
-                includes:      includes,
-                results_where: results_where,
+                fields:   [:title],
+                relation: relation,
             )
 
             expect(result).to eq(:search_result)
         end
 
-        it "未指定のAR用オプションはSearcherへ追加しない" do
+        it "relation 未指定時は model_relations を追加しない" do
             expect(AreSearch::Searcher)
                 .to receive(:search) do |_index_targets, **actual_options|
-                    expect(actual_options).not_to have_key(:model_includes)
-                    expect(actual_options).not_to have_key(:model_results_where)
+                    expect(actual_options).not_to have_key(:model_relations)
 
                     :search_result
                 end
@@ -319,22 +315,14 @@ RSpec.describe AreSearch::IndexTarget do
             expect(result).to eq(:search_result)
         end
 
-        it "複数モデル用のARオプションは受け付けない" do
+        it "複数モデル用の model_relations は受け付けない" do
             expect do
                 index_target.are_search_es_search(
                     "Rails",
-                    fields:         [:title],
-                    model_includes: { model_class => [:user] },
+                    fields:          [:title],
+                    model_relations: { model_class => double("relation") },
                 )
-            end.to raise_error(ArgumentError, /未知のオプション.*model_includes/)
-
-            expect do
-                index_target.are_search_es_search(
-                    "Rails",
-                    fields:              [:title],
-                    model_results_where: { model_class => { published: true } },
-                )
-            end.to raise_error(ArgumentError, /未知のオプション.*model_results_where/)
+            end.to raise_error(ArgumentError, /未知のオプション.*model_relations/)
         end
 
         it "ショートハンドとSearcherが現行オプション定義から同じbodyを作る" do

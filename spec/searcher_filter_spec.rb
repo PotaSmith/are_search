@@ -305,7 +305,7 @@ RSpec.describe AreSearch::Searcher, "filters" do
         )
     end
 
-    it "model_results_whereに一致するDBレコードだけを検索結果へ残す" do
+    it "model_relationsに一致するDBレコードだけを検索結果へ残す" do
         included_record = model_class.create!(
             ar_model_class_name: "Article",
             index_target_name:   "default",
@@ -352,10 +352,8 @@ RSpec.describe AreSearch::Searcher, "filters" do
         result = described_class.search(
             [index_target],
             fields: [:search_text],
-            model_results_where: {
-                model_class => {
-                    last_error: nil,
-                },
+            model_relations: {
+                model_class => model_class.where(last_error: nil),
             },
         )
 

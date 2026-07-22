@@ -80,6 +80,7 @@ module AreSearch
             "all_valid_non_text_field",
             "model_class",
             "valid_model",
+            "active_record_relation",
             "searchable_instance",
             "index_target",
         ].freeze
@@ -413,6 +414,27 @@ module AreSearch
                 },
             },
 
+            # model_relations: {
+            #     Article  => Article.visible.includes(:user, :tags),
+            #     Document => Document.published.includes(:author),
+            # }
+            model_relations: {
+                hash: {
+                    key_values: [
+                        {
+                            key: {
+                                type: "valid_model",
+                            },
+                            value: {
+                                scalar: {
+                                    type: "active_record_relation",
+                                },
+                            },
+                        },
+                    ],
+                },
+            },
+
             # page: 2
             page: {
                 scalar: {
@@ -424,44 +446,6 @@ module AreSearch
             per_page: {
                 scalar: {
                     type: "positive_integer",
-                },
-            },
-
-            # model_includes: {
-            #     Article  => [:user, :tags],
-            #     Document => [:author],
-            # }
-            model_includes: {
-                hash: {
-                    key_values: [
-                        {
-                            key: {
-                                type: "valid_model",
-                            },
-                            value: {
-                                type: "not_nil",
-                            },
-                        },
-                    ],
-                },
-            },
-
-            # model_results_where: {
-            #     Article  => { status: "published" },
-            #     Document => { visible: true },
-            # }
-            model_results_where: {
-                hash: {
-                    key_values: [
-                        {
-                            key: {
-                                type: "valid_model",
-                            },
-                            value: {
-                                type: "not_nil",
-                            },
-                        },
-                    ],
                 },
             },
 
