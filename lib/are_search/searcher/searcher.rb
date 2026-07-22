@@ -49,8 +49,8 @@ module AreSearch
             page     = AreSearch::SearcherUtils.resolve_default_option(page_opts, 1)
             per_page = AreSearch::SearcherUtils.resolve_default_option(per_page_opts, 25)
 
-            return empty_search_result(page, per_page, params_invalid: true) unless AreSearch.es_search_body_policy.valid?(body)
-            return empty_search_result(page, per_page)                       unless check_index_exists?(index_targets)
+            return empty_search_result(page, per_page, status: SearchResult::STATUS_PARAMS_INVALID)  unless AreSearch.es_search_body_policy.valid?(body)
+            return empty_search_result(page, per_page, status: SearchResult::STATUS_INDEX_NOT_FOUND) unless check_index_exists?(index_targets)
 
             # --- 結果復元情報 ---
             result_context = {
@@ -118,8 +118,8 @@ module AreSearch
             end
         end
 
-        # 初期化中ようの空のresult
-        def empty_search_result(page, per_page, params_invalid: false)
+        # 検索を実行せず返す空結果を、終了理由の status 付きで作る。
+        def empty_search_result(page, per_page, status: SearchResult::STATUS_OK)
             paginated = PaginatedCollection.new(
                 [],
                 current_page:   page,
@@ -127,7 +127,7 @@ module AreSearch
                 total_count:    0,
                 es_total_count: 0,
             )
-            SearchResult.new([], paginated, {}, {}, params_invalid: params_invalid)
+            SearchResult.new([], paginated, {}, {}, status: status)
         end
 
         # index_targets から { es_index_name => [index_target] } の逆引きマップを組み立てる。

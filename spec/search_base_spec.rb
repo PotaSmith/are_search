@@ -137,6 +137,81 @@ RSpec.describe AreSearch::Searcher do
     end
 
 
+    describe ".search status" do
+        it "対象 index の alias が無ければ index_not_found の空結果を返す" do
+            valid_options = {}
+            query = { match_all: {} }
+            body = { query: query }
+            query_builder = double("query_builder")
+            body_builder = double("body_builder")
+
+            allow(article_model)
+                .to receive(:include?)
+                .with(AreSearch::Searchable)
+                .and_return(true)
+
+            expect(AreSearch::SearchParamValidator)
+                .to receive(:validate)
+                .with([article_index_target], [article_model])
+                .and_return(valid_options)
+
+            expect(AreSearch::QueryBuilderSelector)
+                .to receive(:select)
+                .with(valid_options)
+                .and_return(query_builder)
+
+            expect(query_builder)
+                .to receive(:build)
+                .with([article_index_target], {})
+                .and_return(query)
+
+            expect(AreSearch::BodyBuilderSelector)
+                .to receive(:select)
+                .with(valid_options)
+                .and_return(body_builder)
+
+            expect(body_builder)
+                .to receive(:build)
+                .with([article_index_target], query, {})
+                .and_return(body)
+
+            expect(AreSearch.es_search_body_policy)
+                .to receive(:valid?)
+                .with(body)
+                .and_return(true)
+
+            expect(described_class)
+                .to receive(:check_index_exists?)
+                .with([article_index_target])
+                .and_return(false)
+
+            expect(AreSearch).not_to receive(:client)
+
+            result = described_class.search([article_index_target])
+
+            expect(result.status).to eq(AreSearch::SearchResult::STATUS_INDEX_NOT_FOUND)
+            expect(result.records).to eq([])
+            expect(result.records.current_page).to eq(1)
+            expect(result.records.per_page).to eq(25)
+            expect(result.records.total_count).to eq(0)
+        end
+
+        it "未定義のstatusは拒否する" do
+            expect do
+                described_class.send(
+                    :empty_search_result,
+                    1,
+                    25,
+                    status: :unknown,
+                )
+            end.to raise_error(
+                ArgumentError,
+                "未知の検索結果statusです: :unknown",
+            )
+        end
+    end
+
+
     describe "検索対象 index target 検証" do
         it "同じ alias の親子モデルは同時指定を拒否する" do
             parent_model = Class.new
@@ -494,6 +569,7 @@ RSpec.describe AreSearch::Searcher do
                 },
             )
 
+            expect(result.status).to eq(AreSearch::SearchResult::STATUS_OK)
             expect(result.hit_source(record, :default)[:title]).to eq("Rails guide")
             expect(result.highlights(record, :default)).to eq(
                 title: ["<em>Rails</em> guide"],

@@ -82,21 +82,40 @@ module AreSearch
     #   検索時に返された _source を { field: value } の形で返す。
     #   対象 hit が無い場合は {}。highlight の指定有無には依存しない。
     #
+    # status
+    #   検索の終了状態を返す。
+    #   :ok は検索実行済み、:params_invalid と :index_not_found は検索未実行。
+    #
     # @param hit_sources [Hash{String => Hash{Symbol => Object}}]
     # @param highlights [Hash{String => Hash{Symbol => Array<String>}}]
+    # @param status [Symbol]
     #
     class SearchResult
+        STATUS_OK = :ok
+        STATUS_PARAMS_INVALID = :params_invalid
+        STATUS_INDEX_NOT_FOUND = :index_not_found
 
-        attr_reader :records_with_target_names, :records, :aggs, :raw_response, :params_invalid
+        STATUSES = [
+            STATUS_OK,
+            STATUS_PARAMS_INVALID,
+            STATUS_INDEX_NOT_FOUND,
+        ].freeze
 
-        def initialize(records_with_target_names, records, aggs, hit_sources, highlights = {}, raw_response: nil, params_invalid: false)
+        attr_reader :records_with_target_names, :records, :aggs, :raw_response, :status
+
+        # 検索結果として定義された終了状態だけを受け付ける。
+        def initialize(records_with_target_names, records, aggs, hit_sources, highlights = {}, raw_response: nil, status: STATUS_OK)
+            unless STATUSES.include?(status)
+                raise ArgumentError, "未知の検索結果statusです: #{status.inspect}"
+            end
+
             @records_with_target_names  = records_with_target_names
             @records                    = records
             @aggs                       = aggs
             @highlights                 = highlights
             @hit_sources                = hit_sources
             @raw_response               = raw_response
-            @params_invalid             = params_invalid
+            @status                     = status
         end
 
         # Elasticsearch が返したフィールド別 highlight をそのまま返す。

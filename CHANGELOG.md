@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-07-22
+
+- 検索結果の `params_invalid` を `status` へ置き換え、正常検索、検索body拒否、index不存在を区別できるよう変更
+- `SearchResult::STATUS_OK`、`STATUS_PARAMS_INVALID`、`STATUS_INDEX_NOT_FOUND` を追加し、status比較時に定数を使用できるよう変更
+
 ## [0.5.0] - 2026-07-22
 
 - `rake_operation_enabled` を追加し、`run_sync_requests` を実行する環境を明示的に限定できるよう変更

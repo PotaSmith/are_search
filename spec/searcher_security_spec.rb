@@ -100,7 +100,7 @@ RSpec.describe AreSearch::Searcher do
             per_page: 10,
         )
 
-        expect(result.params_invalid).to eq(true)
+        expect(result.status).to eq(AreSearch::SearchResult::STATUS_PARAMS_INVALID)
         expect(result.records).to eq([])
         expect(result.records.current_page).to eq(3)
         expect(result.records.per_page).to eq(10)
