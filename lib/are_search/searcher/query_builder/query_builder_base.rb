@@ -2,6 +2,8 @@
 
 module AreSearch
     class QueryBuilderBase
+        SIMPLE_QUERY_STRING_FLAGS = "AND|OR|NOT|PHRASE|PRECEDENCE|WHITESPACE|ESCAPE"
+
         class << self
             def must_params
                 [].freeze
@@ -98,8 +100,58 @@ module AreSearch
                 raise ArgumentError, "未知の条件種別です: #{query_type.inspect}"
             end
 
+            # query_typeに従って、検索語とfieldsから全文検索句を組み立てる。
+            # 未指定時は既存動作のcombined_fieldsを使用する。
+            def build_text_query_clause(query_string, fields_opts, query_type)
+                resolved_query_type = query_type
+                if resolved_query_type.nil?
+                    resolved_query_type = AreSearch::QUERY_TYPE_COMBINED_FIELDS
+                end
+
+                if resolved_query_type == AreSearch::QUERY_TYPE_COMBINED_FIELDS
+                    return build_combined_fields_clause(
+                        query_string,
+                        fields_opts,
+                    )
+                end
+
+                if resolved_query_type == AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING
+                    return build_simple_query_string_clause(
+                        query_string,
+                        fields_opts,
+                    )
+                end
+
+                raise ArgumentError,
+                    "未知の query_type です: #{resolved_query_type.inspect}"
+            end
+
+            # fieldsを1つの仮想フィールドとして扱うcombined_fields句を組み立てる。
+            def build_combined_fields_clause(query_string, fields_opts)
+                {
+                    combined_fields: {
+                        query:    query_string,
+                        fields:   build_es_search_fields(fields_opts),
+                        operator: "and",
+                    },
+                }
+            end
+
+            # simple_query_string句を組み立てる。
+            # query_stringは変換やescapeを行わず、利用側が指定した検索式をそのまま渡す。
+            def build_simple_query_string_clause(query_string, fields_opts)
+                {
+                    simple_query_string: {
+                        query:            query_string,
+                        fields:           build_es_search_fields(fields_opts),
+                        default_operator: "and",
+                        flags:            SIMPLE_QUERY_STRING_FLAGS,
+                    },
+                }
+            end
+
             # SearchOptionValidatorで共通形式へ正規化済みのfieldsを、
-            # Elasticsearchのcombined_fields用文字列配列へ変換する。
+            # Elasticsearchの全文検索用文字列配列へ変換する。
             def build_es_search_fields(fields_opts)
                 es_fields = []
 

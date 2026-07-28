@@ -79,6 +79,85 @@ RSpec.describe "query builder fields" do
         )
     end
 
+
+    it "query_typeでsimple_query_stringへ切り替える" do
+        query_string = 'Ruby + (Rails | Elasticsearch) -"Java VM"'
+
+        body = AreSearch::Searcher.search(
+            [article_index_target],
+            query_string: query_string,
+            fields: {
+                title: 2.0,
+                body:  1,
+            },
+            query_type: AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING,
+            dump_body: true,
+        )
+
+        expect(body.dig(:query, :bool, :must)).to eq(
+            simple_query_string: {
+                query:            query_string,
+                fields:           ["title^2.0", "body^1"],
+                default_operator: "and",
+                flags:            "AND|OR|NOT|PHRASE|PRECEDENCE|WHITESPACE|ESCAPE",
+            },
+        )
+    end
+
+    it "simple_query_stringの検索文字列を変換せずそのまま渡す" do
+        query_string = 'C++ AND A|B OR -draft OR path\\name OR "Ruby on Rails"'
+
+        body = AreSearch::Searcher.search(
+            [article_index_target],
+            query_string: query_string,
+            fields:       [:title],
+            query_type:   AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING,
+            dump_body:    true,
+        )
+
+        expect(
+            body.dig(:query, :bool, :must, :simple_query_string, :query),
+        ).to eq(query_string)
+    end
+
+    it "queries配下でquery_typeを個別に指定する" do
+        simple_query = 'Ruby | "Ruby on Rails"'
+
+        body = AreSearch::Searcher.search(
+            [article_index_target],
+            queries: [
+                {
+                    query_string: "Rails",
+                    fields:       [:title],
+                },
+                {
+                    query_string: simple_query,
+                    fields:       [:title, :body],
+                    query_type:   AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING,
+                },
+            ],
+            dump_body: true,
+        )
+
+        expect(body.dig(:query, :bool, :must)).to eq([
+            {
+                combined_fields: {
+                    query:    "Rails",
+                    fields:   ["title"],
+                    operator: "and",
+                },
+            },
+            {
+                simple_query_string: {
+                    query:            simple_query,
+                    fields:           ["title", "body"],
+                    default_operator: "and",
+                    flags:            "AND|OR|NOT|PHRASE|PRECEDENCE|WHITESPACE|ESCAPE",
+                },
+            },
+        ])
+    end
+
     it "queries配下のArray形式とHash形式を個別に変換する" do
         source_queries = [
             {

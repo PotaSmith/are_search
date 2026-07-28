@@ -127,7 +127,8 @@ module AreSearch
         #
         # es_reindex の内側（flock 取得済み・マーカーファイル作成済み）で
         # 新しい physical index を作成し、その physical index へ bulk 投入する。
-        # block が正常終了した場合のみ IndexManager 側で alias を切り替える。
+        # block が正常終了し、返された失敗 ID 配列が空の場合のみ、
+        # IndexManager 側で alias の切り替えを試みる。
         #
         # @return [Array<String>, false]
         #   Array<String> : インデックス失敗した ID の配列。空なら全件成功。

@@ -84,6 +84,41 @@ RSpec.describe "search option flow" do
         expect(result).to eq(:search_result)
     end
 
+
+    it "未定義のquery_typeを拒否する" do
+        invalid_query_types = [
+            :query_string,
+            "simple_query_string",
+            1,
+        ]
+
+        invalid_query_types.each do |query_type|
+            expect do
+                AreSearch::Searcher.search(
+                    [article_index_target],
+                    query_string: "Rails",
+                    fields:       [:title],
+                    query_type:   query_type,
+                )
+            end.to raise_error(ArgumentError, /query_type/)
+        end
+    end
+
+    it "queries配下の未定義query_typeを拒否する" do
+        expect do
+            AreSearch::Searcher.search(
+                [article_index_target],
+                queries: [
+                    {
+                        query_string: "Rails",
+                        fields:       [:title],
+                        query_type:   :query_string,
+                    },
+                ],
+            )
+        end.to raise_error(ArgumentError, /query_type/)
+    end
+
     it "空文字列ではcombined_fields句を作らない" do
         body = AreSearch::Searcher.search(
             [article_index_target],

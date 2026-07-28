@@ -16,6 +16,7 @@ module AreSearch
                     :raw_body,
                     :query_string,
                     :fields,
+                    :query_type,
                     :mlt_instance,
                     :mlt_index_target,
                     :mlt_params,
@@ -51,26 +52,19 @@ module AreSearch
 
             private
 
-            # 複合検索条件をcombined_fields queryの配列へ変換する。
+            # 複合検索条件を、各要素のquery_typeに対応する全文検索句へ変換する。
             def build_query_clauses(queries_opts)
                 clauses = []
 
                 queries_opts.each do |query_opts|
-                    clauses << build_combined_fields_clause(query_opts)
+                    clauses << build_text_query_clause(
+                        query_opts[:query_string],
+                        query_opts[:fields],
+                        query_opts[:query_type],
+                    )
                 end
 
                 clauses
-            end
-
-            # OPTION_DEFINITIONSで検証済みの1件のfieldsからcombined_fields queryを組み立てる。
-            def build_combined_fields_clause(query_opts)
-                {
-                    combined_fields: {
-                        query:    query_opts[:query_string],
-                        fields:   build_es_search_fields(query_opts[:fields]),
-                        operator: "and",
-                    },
-                }
             end
         end
     end

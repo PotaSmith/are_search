@@ -23,6 +23,7 @@ module AreSearch
             def build(index_targets, valid_options)
                 query_string   = valid_options.delete(:query_string)
                 fields_opts    = valid_options.delete(:fields)
+                query_type     = valid_options.delete(:query_type)
                 where_opts     = valid_options.delete(:where)
                 where_not_opts = valid_options.delete(:where_not)
                 where_or_opts  = valid_options.delete(:where_or)
@@ -43,26 +44,14 @@ module AreSearch
                 )
 
                 if query_string.present?
-                    bool_clause[:must] = build_combined_fields_clause(
+                    bool_clause[:must] = build_text_query_clause(
                         query_string,
                         fields_opts,
+                        query_type,
                     )
                 end
 
                 { bool: bool_clause }
-            end
-
-            private
-
-            # OPTION_DEFINITIONSで検証済みのfieldsからcombined_fields queryを組み立てる。
-            def build_combined_fields_clause(query_string, fields_opts)
-                {
-                    combined_fields: {
-                        query:    query_string,
-                        fields:   build_es_search_fields(fields_opts),
-                        operator: "and",
-                    },
-                }
             end
         end
     end

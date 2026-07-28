@@ -18,6 +18,7 @@ module AreSearch
                     :raw_body,
                     :query_string,
                     :fields,
+                    :query_type,
                     :queries,
                     :sort,
                 ].freeze

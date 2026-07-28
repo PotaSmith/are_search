@@ -64,6 +64,7 @@ module AreSearch
             "not_nil",
             "boolean",
             "str_or_sym",
+            "query_type",
             "str_or_int",
             "str_or_int_or_bool",
             "positive_number",
@@ -222,6 +223,13 @@ module AreSearch
                 },
             },
 
+            # query_type: AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING
+            query_type: {
+                scalar: {
+                    type: "query_type",
+                },
+            },
+
             # fields: [:title, :body]
             #
             # fields: {
@@ -234,6 +242,7 @@ module AreSearch
             #     {
             #         query_string: "Rails",
             #         fields: [:title, :body],
+            #         query_type: AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING,
             #     },
             #     {
             #         query_string: "Ruby",
@@ -267,6 +276,16 @@ module AreSearch
                                         key_name: :fields,
                                     },
                                     value: FIELDS_DEFINITIONS,
+                                },
+                                {
+                                    key: {
+                                        key_name: :query_type,
+                                    },
+                                    value: {
+                                        scalar: {
+                                            type: "query_type",
+                                        },
+                                    },
                                 },
                             ],
                         },

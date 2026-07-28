@@ -99,6 +99,14 @@ module AreSearch
         RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME,
     ].freeze
 
+    QUERY_TYPE_COMBINED_FIELDS = :combined_fields
+    QUERY_TYPE_SIMPLE_QUERY_STRING = :simple_query_string
+
+    QUERY_TYPES = [
+        QUERY_TYPE_COMBINED_FIELDS,
+        QUERY_TYPE_SIMPLE_QUERY_STRING,
+    ].freeze
+
     AFTER_COMMIT_MODES = [:job, :direct, :none].freeze
 
     class Error < StandardError; end

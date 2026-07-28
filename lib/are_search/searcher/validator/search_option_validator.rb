@@ -240,6 +240,8 @@ module AreSearch
                     parse_boolean_value(value, path)
                 when "str_or_sym"
                     parse_str_or_sym_value(value, path)
+                when "query_type"
+                    parse_query_type_value(value, path)
                 when "str_or_int"
                     parse_str_or_int_value(value, path)
                 when "str_or_int_or_bool"
@@ -354,6 +356,18 @@ module AreSearch
 
                 raise ArgumentError,
                     "#{path} は String または Symbol で指定してください: #{value.inspect}"
+            end
+
+            # query_typeはSymbolに限定し、定義済みの値だけを許可する。
+            def parse_query_type_value(value, path)
+                query_type = parse_symbol_value(value, path)
+
+                if AreSearch::QUERY_TYPES.include?(query_type)
+                    return query_type
+                end
+
+                raise ArgumentError,
+                    "#{path} は #{AreSearch::QUERY_TYPES.inspect} のいずれかで指定してください: #{value.inspect}"
             end
 
             # StringまたはIntegerの単一値だけを許可する。

@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- 全文検索方式を選択する `query_type` を追加。既定の `combined_fields` を維持しつつ、`simple_query_string` の演算子・括弧・フレーズ検索を利用できるよう変更。検索文字列は変換せずそのまま Elasticsearch へ渡す
+
 ## [0.5.1] - 2026-07-22
 
 - 検索結果の `params_invalid` を `status` へ置き換え、正常検索、検索body拒否、index不存在を区別できるよう変更

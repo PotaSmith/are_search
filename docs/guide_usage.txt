@@ -122,6 +122,50 @@ Hash のキーは Symbol、値は0より大きい Integer または Float。
 keyword、数値、date などの非 text フィールドは fields には指定できない。
 runtime フィールドも type が text であれば指定できる。
 
+検索語を通常の全文検索として扱う場合は、query_typeを省略する。
+省略時はcombined_fieldsを使用し、空白で区切られた検索語をAND条件として検索する。
+
+    query_type: AreSearch::QUERY_TYPE_COMBINED_FIELDS
+
+Elasticsearchのsimple_query_string構文を使う場合は、query_typeを切り替える。
+
+    result = AreSearch::Searcher.search(
+        [article_index],
+        query_string: 'Ruby + (Rails | Elasticsearch) -"Java VM"',
+        fields:       [:title, :body],
+        query_type:   AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING,
+    )
+
+使用できる主な検索式。
+
+    Ruby Rails
+        default_operatorがANDのため、両方を含む
+
+    Ruby + Rails
+        AND
+
+    Ruby | Rails
+        OR
+
+    Ruby -Rails
+        NOT
+
+    Ruby + (Rails | Elasticsearch)
+        括弧による優先順位
+
+    "Ruby on Rails"
+        フレーズ検索
+
+AreSearchはquery_stringを変換またはescapeせず、そのままElasticsearchへ渡す。
+`AND`、`OR`、`NOT`という文字列を`+`、`|`、`-`へ置き換える処理も行わない。
+simple_query_stringは不正な構文で例外を返さず、解釈できない部分を無視する。
+combined_fieldsとは複数フィールドの扱いとスコア計算が異なるため、検索結果の順序は同一とは限らない。
+
+query_typeは次の定数のいずれかを指定する。
+
+    AreSearch::QUERY_TYPE_COMBINED_FIELDS
+    AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING
+
 
 ## 2-2. 複合フィールド検索
 ----------------------------------------------------------------
@@ -147,7 +191,21 @@ query_string / fields とは同時に指定しない。
     )
 
 queries は1件以上の Array。
-各要素は query_string と fields だけを持つ Hash にする。
+各要素は query_string と fields を持つ Hash にし、必要な要素だけ query_type を追加する。
+query_type を省略した要素は combined_fields を使用する。
+
+    queries: [
+        {
+            query_string: "Rails",
+            fields:       [:title],
+        },
+        {
+            query_string: "Ruby | Elasticsearch",
+            fields:       [:title, :body],
+            query_type:   AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING,
+        },
+    ]
+
 fields は単純検索と同じく、text 型フィールドの Array または正の boost を持つ Hash。
 `{ field: ..., boost: ... }` を要素にした旧形式は使用しない。
 
