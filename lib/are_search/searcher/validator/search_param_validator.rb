@@ -252,14 +252,25 @@ module AreSearch
             def validate_option_relations!(options)
                 validate_model_relations!(options[:model_relations])
 
-                validate_mlt_index_target_options!(
-                    options[:mlt_instance],
-                    options[:mlt_index_target],
-                )
+                validate_mlt_options!(options[:mlt])
 
                 if options[:build_model_bool] == true
                     validate_model_bool_body!(options[:raw_body])
                 end
+            end
+
+            # More Like Thisの基準ドキュメントとfieldsの関係を検査する。
+            def validate_mlt_options!(mlt_options)
+                return if mlt_options.nil?
+
+                validate_mlt_index_target_options!(
+                    mlt_options[:instance],
+                    mlt_options[:index_target],
+                )
+                validate_mlt_fields!(
+                    mlt_options[:index_target],
+                    mlt_options[:fields],
+                )
             end
 
             # model_relationsのRelationが、keyに指定されたモデルから作られていることを確認する。
@@ -277,18 +288,33 @@ module AreSearch
 
             # More Like Thisの基準インスタンスから同じtargetを解決し、
             # 指定されたindex targetと同じElasticsearch indexを指すか確認する。
-            def validate_mlt_index_target_options!(mlt_instance_options, mlt_index_target_options)
-                return if mlt_instance_options.nil?
-                return if mlt_index_target_options.nil?
+            def validate_mlt_index_target_options!(instance_options, index_target_options)
+                return if instance_options.nil?
+                return if index_target_options.nil?
 
-                instance_index_target = mlt_instance_options.class.are_search_index_target(
-                    mlt_index_target_options.target_name,
+                instance_index_target = instance_options.class.are_search_index_target(
+                    index_target_options.target_name,
                 )
 
                 if instance_index_target.nil? ||
-                        instance_index_target.are_search_es_index_name != mlt_index_target_options.are_search_es_index_name
+                        instance_index_target.are_search_es_index_name != index_target_options.are_search_es_index_name
                     raise ArgumentError,
                         "instance から取得した index_target と指定された index_target が一致していません"
+                end
+            end
+
+            # More Like Thisのfieldsを基準targetから取得可能な型に限定する。
+            def validate_mlt_fields!(index_target_options, fields_options)
+                valid_fields = collect_target_text_or_keyword_fields(
+                    index_target_options,
+                )
+
+                fields_options.each do |field_name|
+                    next if valid_fields.include?(field_name)
+
+                    raise ArgumentError,
+                        "mlt.fields は mlt.index_target の text または keyword 型フィールドを指定してください: " \
+                        "#{field_name.inspect}"
                 end
             end
 

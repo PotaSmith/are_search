@@ -29,7 +29,7 @@ RSpec.describe AreSearch do
     end
 
     describe ".more_like_this" do
-        it "基準レコードとtargetをMLT用オプションとして Searcherへ渡す" do
+        it "mltをMore Like This用オプションとして Searcherへ渡す" do
             index_targets = [double("search_target")]
             instance = double("article")
             index_target = double("article_index_target")
@@ -38,21 +38,23 @@ RSpec.describe AreSearch do
                 .to receive(:search)
                 .with(
                     index_targets,
-                    mlt_instance:     instance,
-                    mlt_index_target: index_target,
-                    mlt_params: {
-                        fields: [:title],
+                    mlt: {
+                        instance:     instance,
+                        index_target: index_target,
+                        fields:       [:title],
                     },
+                    page: 2,
                 )
                 .and_return(:search_result)
 
             result = described_class.more_like_this(
                 index_targets,
-                instance,
-                index_target,
-                mlt_params: {
-                    fields: [:title],
+                mlt: {
+                    instance:     instance,
+                    index_target: index_target,
+                    fields:       [:title],
                 },
+                page: 2,
             )
 
             expect(result).to eq(:search_result)

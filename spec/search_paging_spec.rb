@@ -150,9 +150,9 @@ RSpec.describe "search paging" do
 
         body = AreSearch::Searcher.search(
             [mlt_index_target],
-            mlt_instance:     article,
-            mlt_index_target: mlt_index_target,
-            mlt_params: {
+            mlt: {
+                instance:     article,
+                index_target: mlt_index_target,
                 fields: [:title],
             },
             page:             2,

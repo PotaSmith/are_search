@@ -52,7 +52,7 @@ tokenizer / analyzer / mappings を変える場合は、新しい IndexTarget �
 Gemfile に追加します。
 
 ```ruby
-gem "are_search", git: "https://github.com/PotaSmith/are_search.git", tag: "v0.5.1"
+gem "are_search", git: "https://github.com/PotaSmith/are_search.git", tag: "v0.6.0"
 ```
 
 開発中の最新版を直接使う場合は `branch: "main"` を指定できます。

@@ -225,9 +225,9 @@ RSpec.describe "search highlight" do
     it "More Like This検索でも同じhighlight定義を使用する" do
         body = AreSearch::Searcher.search(
             [article_index_target],
-            mlt_instance:     article,
-            mlt_index_target: article_index_target,
-            mlt_params: {
+            mlt: {
+                instance:     article,
+                index_target: article_index_target,
                 fields: [:title, :status],
             },
             highlight: {

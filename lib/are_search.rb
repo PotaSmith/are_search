@@ -397,12 +397,11 @@ module AreSearch
     end
 
     # More Like This 検索のショートハンド。
-    # instance と index_target は Searcher の MLT 用オプションとして渡す。
-    def self.more_like_this(index_targets, instance, index_target, **options)
+    # mlt は Searcher の More Like This 用オプションとして渡す。
+    def self.more_like_this(index_targets, mlt:, **options)
         AreSearch::Searcher.search(
             index_targets,
-            mlt_instance:     instance,
-            mlt_index_target: index_target,
+            mlt: mlt,
             **options,
         )
     end

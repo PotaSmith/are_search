@@ -6,9 +6,7 @@ module AreSearch
             # More Like This の選択に必要なオプションを返す。
             def must_params
                 [
-                    :mlt_instance,
-                    :mlt_index_target,
-                    :mlt_params,
+                    :mlt,
                 ].freeze
             end
 
@@ -26,12 +24,10 @@ module AreSearch
 
             # SearchOptionValidatorで正規化済みの検索オプションからMLT queryを組み立てる。
             def build(index_targets, valid_options)
-                mlt_instance     = valid_options.delete(:mlt_instance)
-                mlt_index_target = valid_options.delete(:mlt_index_target)
-                mlt_params       = valid_options.delete(:mlt_params)
-                where_opts       = valid_options.delete(:where)
-                where_not_opts   = valid_options.delete(:where_not)
-                where_or_opts    = valid_options.delete(:where_or)
+                mlt_opts       = valid_options.delete(:mlt)
+                where_opts     = valid_options.delete(:where)
+                where_not_opts = valid_options.delete(:where_not)
+                where_or_opts  = valid_options.delete(:where_or)
 
                 where_conditions     = normalize_condition_options(where_opts)
                 where_not_conditions = normalize_condition_options(where_not_opts)
@@ -48,14 +44,8 @@ module AreSearch
                     where_or_clauses,
                 )
 
-                mlt_clause = build_mlt_clause(
-                    mlt_instance,
-                    mlt_index_target,
-                    mlt_params,
-                )
-
                 bool_clause[:must] = {
-                    more_like_this: mlt_clause,
+                    more_like_this: build_mlt_clause(mlt_opts),
                 }
 
                 {
@@ -65,15 +55,18 @@ module AreSearch
 
             private
 
-            # mlt_paramsをElasticsearchのmore_like_this句へ変換する。
-            # fieldsとlikeはAreSearch側で組み立て、その他の検証済みパラメーターは同じ階層へ渡す。
-            def build_mlt_clause(mlt_instance, mlt_index_target, mlt_params)
+            # mltをElasticsearchのmore_like_this句へ変換する。
+            # instanceとindex_targetはlikeへ変換し、fieldsとその他の検証済みパラメーターを同じ階層へ渡す。
+            def build_mlt_clause(mlt_opts)
+                instance = mlt_opts[:instance]
+                index_target = mlt_opts[:index_target]
+
                 mlt_clause = {
-                    fields: mlt_params[:fields].map(&:to_s),
+                    fields: mlt_opts[:fields].map(&:to_s),
                     like: [
                         {
-                            _index: mlt_index_target.are_search_es_index_name,
-                            _id:    mlt_instance.id.to_s,
+                            _index: index_target.are_search_es_index_name,
+                            _id:    instance.id.to_s,
                         },
                     ],
                     min_term_freq:   2,
@@ -81,7 +74,9 @@ module AreSearch
                     max_query_terms: 25,
                 }
 
-                mlt_params.each do |key, value|
+                mlt_opts.each do |key, value|
+                    next if key == :instance
+                    next if key == :index_target
                     next if key == :fields
 
                     mlt_clause[key] = value

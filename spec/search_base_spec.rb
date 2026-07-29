@@ -196,6 +196,78 @@ RSpec.describe AreSearch::Searcher do
             expect(result.records.total_count).to eq(0)
         end
 
+        it "MLT基準 index の alias が無ければ index_not_found の空結果を返す" do
+            mlt_options = {
+                instance:     double("document"),
+                index_target: document_index_target,
+                fields:       [:name],
+            }
+            valid_options = {
+                mlt: mlt_options,
+            }
+            query = { match_all: {} }
+            body = { query: query }
+            query_builder = double("query_builder")
+            body_builder = double("body_builder")
+
+            allow(article_model)
+                .to receive(:include?)
+                .with(AreSearch::Searchable)
+                .and_return(true)
+
+            expect(AreSearch::SearchParamValidator)
+                .to receive(:validate)
+                .with(
+                    [article_index_target],
+                    [article_model],
+                    mlt: mlt_options,
+                )
+                .and_return(valid_options)
+
+            expect(AreSearch::QueryBuilderSelector)
+                .to receive(:select)
+                .with(valid_options)
+                .and_return(query_builder)
+
+            expect(query_builder).to receive(:build) do |actual_index_targets, query_options|
+                expect(actual_index_targets).to eq([article_index_target])
+                expect(query_options).to eq(valid_options)
+
+                query_options.delete(:mlt)
+                query
+            end
+
+            expect(AreSearch::BodyBuilderSelector)
+                .to receive(:select)
+                .with(valid_options)
+                .and_return(body_builder)
+
+            expect(body_builder)
+                .to receive(:build)
+                .with([article_index_target], query, valid_options)
+                .and_return(body)
+
+            expect(AreSearch.es_search_body_policy)
+                .to receive(:valid?)
+                .with(body)
+                .and_return(true)
+
+            expect(described_class)
+                .to receive(:check_index_exists?)
+                .with([article_index_target, document_index_target])
+                .and_return(false)
+
+            expect(AreSearch).not_to receive(:client)
+
+            result = described_class.search([article_index_target], mlt: mlt_options)
+
+            expect(result.status).to eq(AreSearch::SearchResult::STATUS_INDEX_NOT_FOUND)
+            expect(result.records).to eq([])
+            expect(result.records.current_page).to eq(1)
+            expect(result.records.per_page).to eq(25)
+            expect(result.records.total_count).to eq(0)
+        end
+
         it "未定義のstatusは拒否する" do
             expect do
                 described_class.send(

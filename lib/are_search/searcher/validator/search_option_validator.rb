@@ -34,7 +34,7 @@ module AreSearch
                         raise ArgumentError,
                             "未知の検索オプションが指定されています: #{raw_option_name}"
                     end
-                    # 上を通貨した時点で sym 確定
+                    # 上を通過した時点で sym 確定
                     sym_option_name = raw_option_name
 
                     normalized_options[sym_option_name] = parse_node(
@@ -244,6 +244,8 @@ module AreSearch
                     parse_str_or_int_value(value, path)
                 when "str_or_int_or_bool"
                     parse_str_or_int_or_bool_value(value, path)
+                when "str_or_int_or_float_or_bool"
+                    parse_str_or_int_or_float_or_bool_value(value, path)
                 when "positive_number"
                     parse_positive_number(value, path)
                 when "positive_integer"
@@ -376,6 +378,18 @@ module AreSearch
 
                 raise ArgumentError,
                     "#{path} は String、Integer、true、falseのいずれかで指定してください: #{value.inspect}"
+            end
+
+            # String、Integer、Float、true、falseの単一値だけを許可する。
+            def parse_str_or_int_or_float_or_bool_value(value, path)
+                return value if value.instance_of?(String)
+                return value if value.instance_of?(Integer)
+                return value if value.instance_of?(Float)
+                return value if value == true
+                return value if value == false
+
+                raise ArgumentError,
+                    "#{path} は String、Integer、Float、true、falseのいずれかで指定してください: #{value.inspect}"
             end
 
             # 正のIntegerまたはFloatだけを許可する。

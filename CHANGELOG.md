@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-29
+
+- More Like This の `mlt_instance`、`mlt_index_target`、`mlt_params` を廃止し、基準情報と検索パラメーターを `mlt` Hash へ統合
+- More Like This の `fields` が、検索対象だけでなく基準レコードの `mlt.index_target` にも text 型または keyword 型として存在することを検証するよう変更
 - 全文検索方式を選択する `query_type` を追加。既定の `combined_fields` を維持しつつ、`simple_query_string` の演算子・括弧・フレーズ検索を利用できるよう変更。検索文字列は変換せずそのまま Elasticsearch へ渡す
 
 ## [0.5.1] - 2026-07-22

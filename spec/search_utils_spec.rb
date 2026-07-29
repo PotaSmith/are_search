@@ -38,6 +38,44 @@ RSpec.describe AreSearch::SearchParamValidator do
         )
     end
 
+
+    let(:mlt_index_target) do
+        index_target = AreSearch::IndexTarget.allocate
+
+        allow(index_target)
+            .to receive(:target_name)
+            .and_return(:default)
+        allow(index_target)
+            .to receive(:are_search_es_index_name)
+            .and_return("test__articles__default")
+        allow(index_target)
+            .to receive(:are_search_es_mappings)
+            .and_return(
+                properties: {
+                    title:  { type: "text" },
+                    status: { type: "keyword" },
+                },
+            )
+
+        index_target
+    end
+
+    let(:mlt_instance) do
+        model = Class.new do
+            def self.include?(mod)
+                return true if mod == AreSearch::Searchable
+
+                super
+            end
+        end
+
+        allow(model)
+            .to receive(:are_search_index_target)
+            .with(:default)
+            .and_return(mlt_index_target)
+
+        model.new
+    end
     let(:document_index_target) do
         double(
             "document_index_target",
@@ -177,37 +215,66 @@ RSpec.describe AreSearch::SearchParamValidator do
             end.to raise_error(ArgumentError)
         end
 
-        it "mlt_paramsはfieldsを必須としfields以外の単体値パラメーターを受け付ける" do
+        it "mltはinstance、index_target、fieldsを必須とし、その他の単体値パラメーターを受け付ける" do
             result = described_class.validate(
                 [article_index_target],
                 [article_model],
-                mlt_params: {
+                mlt: {
+                    instance:             mlt_instance,
+                    index_target:         mlt_index_target,
                     fields:               [:title, :status],
                     min_term_freq:        1,
                     min_doc_freq:         2,
                     max_query_terms:      20,
                     min_word_length:      2,
                     minimum_should_match: "30%",
-                    boost_terms:          1,
+                    boost_terms:          1.5,
                 },
             )
 
-            expect(result[:mlt_params]).to eq(
+            expect(result[:mlt]).to eq(
+                instance:             mlt_instance,
+                index_target:         mlt_index_target,
                 fields:               [:title, :status],
                 min_term_freq:        1,
                 min_doc_freq:         2,
                 max_query_terms:      20,
                 min_word_length:      2,
                 minimum_should_match: "30%",
-                boost_terms:          1,
+                boost_terms:          1.5,
             )
 
+            required_keys = [
+                :instance,
+                :index_target,
+                :fields,
+            ]
+
+            required_keys.each do |required_key|
+                mlt = {
+                    instance:     mlt_instance,
+                    index_target: mlt_index_target,
+                    fields:       [:title],
+                }
+                mlt.delete(required_key)
+
+                expect do
+                    described_class.validate(
+                        [article_index_target],
+                        [article_model],
+                        mlt: mlt,
+                    )
+                end.to raise_error(ArgumentError)
+            end
+
             expect do
                 described_class.validate(
                     [article_index_target],
                     [article_model],
-                    mlt_params: {
-                        min_term_freq: 1,
+                    mlt: {
+                        instance:     mlt_instance,
+                        index_target: mlt_index_target,
+                        fields:       [:runtime_score],
                     },
                 )
             end.to raise_error(ArgumentError)
@@ -216,17 +283,9 @@ RSpec.describe AreSearch::SearchParamValidator do
                 described_class.validate(
                     [article_index_target],
                     [article_model],
-                    mlt_params: {
-                        fields: [:runtime_score],
-                    },
-                )
-            end.to raise_error(ArgumentError)
-
-            expect do
-                described_class.validate(
-                    [article_index_target],
-                    [article_model],
-                    mlt_params: {
+                    mlt: {
+                        instance:     mlt_instance,
+                        index_target: mlt_index_target,
                         fields: {
                             title: 2.0,
                         },
@@ -237,48 +296,36 @@ RSpec.describe AreSearch::SearchParamValidator do
             future_param_result = described_class.validate(
                 [article_index_target],
                 [article_model],
-                mlt_params: {
+                mlt: {
+                    instance:     mlt_instance,
+                    index_target: mlt_index_target,
                     fields:       [:title],
-                    future_param: true,
+                    future_param: 1.5,
                 },
             )
 
-            expect(future_param_result[:mlt_params]).to eq(
+            expect(future_param_result[:mlt]).to eq(
+                instance:     mlt_instance,
+                index_target: mlt_index_target,
                 fields:       [:title],
-                future_param: true,
+                future_param: 1.5,
             )
 
             expect do
                 described_class.validate(
                     [article_index_target],
                     [article_model],
-                    mlt_params: {
+                    mlt: {
+                        instance:     mlt_instance,
+                        index_target: mlt_index_target,
                         fields:       [:title],
-                        future_param: 1.5,
+                        future_param: :invalid,
                     },
                 )
             end.to raise_error(
                 ArgumentError,
-                /String、Integer、true、falseのいずれか/,
+                /String、Integer、Float、true、falseのいずれか/,
             )
-        end
-
-        it "旧MLTトップレベルオプションを受け付けない" do
-            expect do
-                described_class.validate(
-                    [article_index_target],
-                    [article_model],
-                    mlt_fields: [:title],
-                )
-            end.to raise_error(ArgumentError, /未知の検索オプション/)
-
-            expect do
-                described_class.validate(
-                    [article_index_target],
-                    [article_model],
-                    min_term_freq: 1,
-                )
-            end.to raise_error(ArgumentError, /未知の検索オプション/)
         end
 
         it "where系は非textフィールドのterm、terms、rangeだけを受け付ける" do
@@ -345,7 +392,56 @@ RSpec.describe AreSearch::SearchParamValidator do
             end.to raise_error(ArgumentError)
         end
 
-        it "where系の値をString、Integer、Booleanに限定する" do
+        it "where系のterm、terms、rangeはFloatを受け付ける" do
+            result = described_class.validate(
+                [article_index_target],
+                [article_model],
+                fields: [:title],
+                where: [
+                    {
+                        runtime_score: {
+                            term: 1.5,
+                        },
+                    },
+                    {
+                        runtime_score: {
+                            terms: [1.5, 2.5],
+                        },
+                    },
+                    {
+                        runtime_score: {
+                            range: {
+                                gte: 1.5,
+                                lte: 2.5,
+                            },
+                        },
+                    },
+                ],
+            )
+
+            expect(result[:where]).to eq([
+                {
+                    runtime_score: {
+                        term: 1.5,
+                    },
+                },
+                {
+                    runtime_score: {
+                        terms: [1.5, 2.5],
+                    },
+                },
+                {
+                    runtime_score: {
+                        range: {
+                            gte: 1.5,
+                            lte: 2.5,
+                        },
+                    },
+                },
+            ])
+        end
+
+        it "where系の値をString、Integer、Float、Booleanに限定する" do
             invalid_conditions = [
                 {
                     status: {
@@ -360,7 +456,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                 {
                     count: {
                         range: {
-                            gte: 1.5,
+                            gte: 1..2,
                         },
                     },
                 },
@@ -442,6 +538,10 @@ RSpec.describe AreSearch::SearchParamValidator do
                     count: {
                         size: 10,
                     },
+                    runtime_score: {
+                        size:    10,
+                        missing: 0.5,
+                    },
                 },
                 highlight: {
                     fields: {
@@ -463,6 +563,10 @@ RSpec.describe AreSearch::SearchParamValidator do
                 },
                 count: {
                     size: 10,
+                },
+                runtime_score: {
+                    size:    10,
+                    missing: 0.5,
                 },
             )
             expect(result[:highlight]).to eq(

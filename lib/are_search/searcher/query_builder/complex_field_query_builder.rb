@@ -17,9 +17,7 @@ module AreSearch
                     :query_string,
                     :fields,
                     :query_type,
-                    :mlt_instance,
-                    :mlt_index_target,
-                    :mlt_params,
+                    :mlt,
                 ].freeze
             end
 

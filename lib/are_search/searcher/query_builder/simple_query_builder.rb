@@ -11,9 +11,7 @@ module AreSearch
 
             def must_not_params
                 [
-                    :mlt_instance,
-                    :mlt_index_target,
-                    :mlt_params,
+                    :mlt,
                     :raw_body,
                     :queries,
                 ].freeze

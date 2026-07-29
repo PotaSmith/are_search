@@ -251,6 +251,13 @@ RSpec.describe AreSearch::SearchOptionValidator do
 
             expect(
                 validate_node(
+                    1.5,
+                    scalar_definition("str_or_int_or_float_or_bool"),
+                ),
+            ).to eq(1.5)
+
+            expect(
+                validate_node(
                     2.5,
                     scalar_definition("positive_number"),
                 ),
@@ -270,6 +277,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
                 ["str_or_sym", 1, /String または Symbol/],
                 ["str_or_int", false, /String または Integer/],
                 ["str_or_int_or_bool", 1.5, /String、Integer、true、false/],
+                ["str_or_int_or_float_or_bool", :invalid, /String、Integer、Float、true、false/],
                 ["positive_number", 0, /正の数/],
                 ["positive_integer", 1.5, /正の整数/],
             ]
@@ -1072,6 +1080,16 @@ RSpec.describe AreSearch::SearchOptionValidator do
         end
 
         it "標準検索オプションのフィールド名はStringをSymbolへ変換せず拒否する" do
+            mlt_model = Class.new do
+                def self.include?(mod)
+                    return true if mod == AreSearch::Searchable
+
+                    super
+                end
+            end
+            mlt_instance = mlt_model.new
+            mlt_index_target = AreSearch::IndexTarget.allocate
+
             context = build_context(
                 any_text_without_non_text_fields: [:title],
                 any_text_or_keyword_without_other_type_fields: [:title, :status],
@@ -1106,8 +1124,10 @@ RSpec.describe AreSearch::SearchOptionValidator do
                 ],
                 [
                     {
-                        mlt_params: {
-                            fields: ["title"],
+                        mlt: {
+                            instance:     mlt_instance,
+                            index_target: mlt_index_target,
+                            fields:       ["title"],
                         },
                     },
                     /context\[:any_text_or_keyword_without_other_type_fields\].*"title"/,

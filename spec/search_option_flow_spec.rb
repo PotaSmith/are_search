@@ -34,12 +34,22 @@ RSpec.describe "search option flow" do
                         },
                         properties: {
                             title:  { type: "text" },
+                            body:   { type: "text" },
                             status: { type: "keyword" },
                             count:  { type: "integer" },
                         },
                         runtime: {
                             runtime_title: { type: "text" },
                             runtime_score: { type: "double" },
+                        },
+                    },
+                    mlt_source: {
+                        index_settings: {
+                            max_result_window: 2_000,
+                        },
+                        properties: {
+                            title:  { type: "integer" },
+                            status: { type: "keyword" },
                         },
                     },
                 }
@@ -57,6 +67,10 @@ RSpec.describe "search option flow" do
 
     let(:article_index_target) do
         AreSearch::IndexTarget.new(article_model, :default)
+    end
+
+    let(:mlt_source_index_target) do
+        AreSearch::IndexTarget.new(article_model, :mlt_source)
     end
 
     before do
@@ -279,9 +293,9 @@ RSpec.describe "search option flow" do
         )
         mlt_body = AreSearch::Searcher.search(
             [article_index_target],
-            mlt_instance:     article,
-            mlt_index_target: article_index_target,
-            mlt_params: {
+            mlt: {
+                instance:     article,
+                index_target: article_index_target,
                 fields: [:title, :status],
             },
             where_or: {
@@ -329,13 +343,13 @@ RSpec.describe "search option flow" do
         end.to raise_error(ArgumentError, /未知の検索オプション/)
     end
 
-    it "MLT固有パラメーターはmlt_params配下だけで受け付ける" do
+    it "MLT固有パラメーターはmlt配下だけで受け付ける" do
         expect do
             AreSearch::Searcher.search(
                 [article_index_target],
-                mlt_instance:          article,
-                mlt_index_target:      article_index_target,
-                mlt_params: {
+                mlt: {
+                    instance:     article,
+                    index_target: article_index_target,
                     fields: [:title, :status],
                 },
                 minimum_should_match:  "50%",
@@ -345,9 +359,9 @@ RSpec.describe "search option flow" do
 
         body = AreSearch::Searcher.search(
             [article_index_target],
-            mlt_instance:     article,
-            mlt_index_target: article_index_target,
-            mlt_params: {
+            mlt: {
+                instance:     article,
+                index_target: article_index_target,
                 fields:               [:title, :status],
                 minimum_should_match: "50%",
             },
@@ -421,9 +435,9 @@ RSpec.describe "search option flow" do
 
         body = AreSearch::Searcher.search(
             [article_index_target],
-            mlt_instance:     child_instance,
-            mlt_index_target: article_index_target,
-            mlt_params: {
+            mlt: {
+                instance:     child_instance,
+                index_target: article_index_target,
                 fields: [:title],
             },
             dump_body: true,
@@ -467,9 +481,9 @@ RSpec.describe "search option flow" do
         expect do
             AreSearch::Searcher.search(
                 [article_index_target],
-                mlt_instance:     other_instance,
-                mlt_index_target: article_index_target,
-                mlt_params: {
+                mlt: {
+                    instance:     other_instance,
+                    index_target: article_index_target,
                     fields: [:title],
                 },
                 dump_body: true,
@@ -480,12 +494,50 @@ RSpec.describe "search option flow" do
         )
     end
 
-    it "More Like Thisはmlt_paramsをmore_like_this句へ渡す" do
+    it "More Like Thisのfieldsは基準index targetにもtext型またはkeyword型として存在する必要がある" do
         body = AreSearch::Searcher.search(
             [article_index_target],
-            mlt_instance:     article,
-            mlt_index_target: article_index_target,
-            mlt_params: {
+            mlt: {
+                instance:     article,
+                index_target: mlt_source_index_target,
+                fields: [:status],
+            },
+            dump_body: true,
+        )
+
+        expect(
+            body.dig(:query, :bool, :must, :more_like_this, :fields),
+        ).to eq(["status"])
+
+        invalid_fields = [
+            :title,
+            :body,
+        ]
+
+        invalid_fields.each do |field_name|
+            expect do
+                AreSearch::Searcher.search(
+                    [article_index_target],
+                    mlt: {
+                        instance:     article,
+                        index_target: mlt_source_index_target,
+                        fields: [field_name],
+                    },
+                    dump_body: true,
+                )
+            end.to raise_error(
+                ArgumentError,
+                /mlt\.index_target.*#{field_name}/,
+            )
+        end
+    end
+
+    it "More Like Thisはmltの基準情報以外をmore_like_this句へ渡す" do
+        body = AreSearch::Searcher.search(
+            [article_index_target],
+            mlt: {
+                instance:     article,
+                index_target: article_index_target,
                 fields:               [:title, :status],
                 min_term_freq:        0,
                 min_doc_freq:         -1,
@@ -510,13 +562,15 @@ RSpec.describe "search option flow" do
         expect(mlt[:boost_terms]).to eq(1)
         expect(mlt[:max_word_length]).to eq(30)
         expect(mlt[:include]).to eq(true)
+        expect(mlt).not_to have_key(:instance)
+        expect(mlt).not_to have_key(:index_target)
 
         expect do
             AreSearch::Searcher.search(
                 [article_index_target],
-                mlt_instance:     article,
-                mlt_index_target: article_index_target,
-                mlt_params: {
+                mlt: {
+                    instance:     article,
+                    index_target: article_index_target,
                     fields: [:count],
                 },
                 dump_body: true,
@@ -526,9 +580,9 @@ RSpec.describe "search option flow" do
         expect do
             AreSearch::Searcher.search(
                 [article_index_target],
-                mlt_instance:     article,
-                mlt_index_target: article_index_target,
-                mlt_params: {
+                mlt: {
+                    instance:     article,
+                    index_target: article_index_target,
                     fields: [:title],
                     like:   "other document",
                 },
@@ -537,12 +591,12 @@ RSpec.describe "search option flow" do
         end.to raise_error(ArgumentError, /指定できないキー.*like/)
     end
 
-    it "mlt_paramsの省略値をMore Like This句へ設定する" do
+    it "mltの省略値をMore Like This句へ設定する" do
         body = AreSearch::Searcher.search(
             [article_index_target],
-            mlt_instance:     article,
-            mlt_index_target: article_index_target,
-            mlt_params: {
+            mlt: {
+                instance:     article,
+                index_target: article_index_target,
                 fields: [:title],
             },
             dump_body: true,
@@ -560,9 +614,9 @@ RSpec.describe "search option flow" do
     it "where_orとMLTのminimum_should_matchを別階層へ出力する" do
         body = AreSearch::Searcher.search(
             [article_index_target],
-            mlt_instance:     article,
-            mlt_index_target: article_index_target,
-            mlt_params: {
+            mlt: {
+                instance:     article,
+                index_target: article_index_target,
                 fields:               [:title],
                 minimum_should_match: "50%",
             },

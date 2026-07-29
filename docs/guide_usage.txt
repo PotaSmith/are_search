@@ -66,18 +66,18 @@ AreSearch.multi_search は、第2引数を query_string として Searcher.searc
 ## 1-3. More Like This のショートハンド
 ----------------------------------------------------------------
 
-AreSearch.more_like_this は、基準レコードと基準 index target を
-mlt_instance / mlt_index_target として Searcher.search へ渡す。
+AreSearch.more_like_this は、More Like This の基準情報とパラメーターを
+mlt として Searcher.search へ渡す。
 
     article = Article.find(1)
     article_index = Article.are_search_index_target(:default)
 
     result = AreSearch.more_like_this(
         [article_index],
-        article,
-        article_index,
-        mlt_params: {
-            fields: [:title, :body],
+        mlt: {
+            instance:     article,
+            index_target: article_index,
+            fields:       [:title, :body],
         },
     )
 
@@ -85,10 +85,10 @@ Searcher.search を直接呼ぶ場合。
 
     result = AreSearch::Searcher.search(
         [article_index],
-        mlt_instance:     article,
-        mlt_index_target: article_index,
-        mlt_params: {
-            fields: [:title, :body],
+        mlt: {
+            instance:     article,
+            index_target: article_index,
+            fields:       [:title, :body],
         },
     )
 
@@ -120,7 +120,6 @@ fields は text 型フィールドの Array または、正の boost を値に�
 Array の要素は Symbol。
 Hash のキーは Symbol、値は0より大きい Integer または Float。
 keyword、数値、date などの非 text フィールドは fields には指定できない。
-runtime フィールドも type が text であれば指定できる。
 
 検索語を通常の全文検索として扱う場合は、query_typeを省略する。
 省略時はcombined_fieldsを使用し、空白で区切られた検索語をAND条件として検索する。
@@ -214,26 +213,29 @@ fields は単純検索と同じく、text 型フィールドの Array または�
 ## 2-3. More Like This
 ----------------------------------------------------------------
 
-mlt_instance、mlt_index_target、mlt_params を使用する。
+mlt を使用する。
 query_string、fields、queries、sort とは同時に指定しない。
 
     result = AreSearch::Searcher.search(
         [article_index],
-        mlt_instance:     article,
-        mlt_index_target: article_index,
-        mlt_params: {
+        mlt: {
+            instance:             article,
+            index_target:         article_index,
             fields:               [:title, :body],
             min_term_freq:        1,
             min_doc_freq:         2,
             max_query_terms:      20,
             min_word_length:      2,
             minimum_should_match: "30%",
-            boost_terms:          1,
+            boost_terms:          1.5,
         },
     )
 
-mlt_params は Elasticsearch の more_like_this 句へ入れる設定をまとめた Hash。
-fields は必須で、text 型または keyword 型フィールドの Array で指定する。
+mlt は More Like This の基準情報と、Elasticsearch の more_like_this 句へ入れる設定を
+まとめた Hash。instance、index_target、fields は必須。
+instance には基準レコード、index_target には基準レコードを格納した IndexTarget を指定する。
+fields は検索対象側と mlt.index_target 側の両方に存在する、
+index 対象の text 型または keyword 型フィールドを Array で指定する。
 boost 付き Hash、数値型、date 型などは fields に使用できない。
 AreSearch の既定の _source 構成では、More Like This が基準ドキュメントの元の値を
 取得できるよう、fields に指定する各フィールドの mapping に store: true を指定する。
@@ -243,14 +245,13 @@ AreSearch の既定の _source 構成では、More Like This が基準ドキュ�
         store: true,
     }
 
-fields 以外のキーは Symbol で指定する。
-値には String、Integer、true、false の単体値を指定でき、検証後に
-more_like_this 句の同名キーへそのまま渡される。
-Elasticsearch のパラメーターが増えても AreSearch 側へ個別定義を追加する必要はない。
+instance、index_target、fields 以外には、String、Integer、Float、true、false の
+単体値を取る more_like_this パラメーターを Symbol キーで指定できる。
 
 min_term_freq、min_doc_freq、max_query_terms を省略した場合は、
 それぞれ 2、5、25 を設定する。
-mlt_fields、min_term_freq などを Searcher.search のトップレベルには指定しない。
+mlt_instance、mlt_index_target、mlt_params、mlt_fields、min_term_freq などを
+Searcher.search のトップレベルには指定しない。
 
 
 ## 2-4. Raw body 検索
@@ -338,9 +339,10 @@ model_relations を使用する。
     fields / queries
         1つ以上の target に存在し、同名フィールドが別の型で定義されていない text フィールド。
 
-    mlt_params.fields / highlight.fields
+    mlt.fields / highlight.fields
         1つ以上の target に存在し、同名フィールドが別の型で定義されていない
         text または keyword フィールド。
+        mlt.fields は、さらに mlt.index_target にも同じ許容型で存在する必要がある。
 
     where / where_not / where_or
         1つ以上の target に存在し、同名フィールドが text 型として定義されていないフィールド。
@@ -354,6 +356,8 @@ model_relations を使用する。
 標準検索オプションで指定するフィールド名は Symbol に限定し、mappings と照合する。
 String は Symbol へ変換せず拒否する。
 指定できるのは各 target の properties / runtime 直下に定義されたフィールドだけ。
+runtime フィールドも指定できるが、対応する型や検索機能での利用可否は Elasticsearch の制限に従う。
+利用する場合は、使用する Elasticsearch バージョンの仕様を確認する。
 ドット、ワイルドカード、大文字などを使った未定義の Elasticsearch 固有表記も拒否する。
 このような指定が必要な検索は raw_body で明示的に組み立てる。
 
@@ -378,7 +382,7 @@ max_result_window を超える深いページングは行わない。
 
 以下のフィールド名は Symbol で指定し、mappings と照合される。
 
-    fields / queries / mlt_params.fields のフィールド名
+    fields / queries / mlt.fields のフィールド名
     where / where_not / where_or のフィールド名
     sort のフィールド名
     aggs のフィールド名
@@ -502,12 +506,12 @@ where_not は must_not に追加される。
 where_or は filter 内の bool.should に追加され、minimum_should_match は1になる。
 そのため where_or はスコアへ影響しない絞り込み条件として動作する。
 
-term の値は String、Integer、true、false のいずれか。
-terms は Array で指定し、各要素も String、Integer、true、false のいずれか。
+term の値は String、Integer、Float、true、false のいずれか。
+terms は Array で指定し、各要素も String、Integer、Float、true、false のいずれか。
 空の Array は指定できる。
-range は1件以上の Hash で指定し、各値も String、Integer、true、false のいずれか。
+range は1件以上の Hash で指定し、各値も String、Integer、Float、true、false のいずれか。
 日付は Elasticsearch が解釈できる String または Integer で指定する。
-Float、Array、Hash、Range、Time オブジェクトなどは値として使用できない。
+Array、Hash、Range、Time オブジェクトなどは値として使用できない。
 text 型フィールドは完全一致条件として使用できない。
 
 
@@ -577,7 +581,7 @@ text 型フィールドは指定できない。
     end
 
 各フィールドのオプションは Hash で指定し、size は正の整数で必ず指定する。
-size 以外のオプションのキーは Symbol、値は String、Integer、true、false のいずれか。
+size 以外のオプションのキーは Symbol、値は String、Integer、Float、true、false のいずれか。
 include、exclude など、単一値で表せる terms オプションは Elasticsearch へそのまま渡される。
 Hash や Array を値に取る複雑な aggregation は raw_body を使用する。
 result.aggs は buckets を持つ aggregation を簡易形式で返す。
@@ -735,7 +739,8 @@ status の判定には SearchResult の定数を使用する。
 
     AreSearch::SearchResult::STATUS_INDEX_NOT_FOUND
         値は :index_not_found。
-        対象 index の alias が存在しないため、検索を実行せず空結果を返した。
+        検索対象 index、または More Like This の mlt.index_target の alias が存在しないため、
+        検索を実行せず空結果を返した。
 
 
 ## 11-2. records

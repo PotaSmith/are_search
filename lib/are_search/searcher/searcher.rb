@@ -50,7 +50,15 @@ module AreSearch
             per_page = AreSearch::SearcherUtils.resolve_default_option(per_page_opts, 25)
 
             return empty_search_result(page, per_page, status: SearchResult::STATUS_PARAMS_INVALID)  unless AreSearch.es_search_body_policy.valid?(body)
-            return empty_search_result(page, per_page, status: SearchResult::STATUS_INDEX_NOT_FOUND) unless check_index_exists?(index_targets)
+
+            index_targets_for_exists_check = collect_index_targets_for_exists_check(index_targets, valid_options)
+            if check_index_exists?(index_targets_for_exists_check) == false
+                return empty_search_result(
+                    page,
+                    per_page,
+                    status: SearchResult::STATUS_INDEX_NOT_FOUND,
+                )
+            end
 
             # --- 結果復元情報 ---
             result_context = {
@@ -86,6 +94,19 @@ module AreSearch
         end
 
         private
+
+        # 検索で参照する全aliasの存在確認対象を、検索対象とオプションから集める。
+        def collect_index_targets_for_exists_check(index_targets, options)
+            additional_index_targets = []
+
+            mlt_options = options[:mlt]
+            if mlt_options.nil? == false
+                additional_index_targets << mlt_options[:index_target]
+            end
+
+            index_targets_for_exists_check = index_targets + additional_index_targets
+            index_targets_for_exists_check.uniq { |index_target| index_target.are_search_es_index_name }
+        end
 
         # index_targets から重複しないモデル一覧を作る
         def index_targets_to_models(index_targets)

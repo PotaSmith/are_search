@@ -19,6 +19,7 @@ RSpec.describe AreSearch::Searcher, "filters" do
                     ar_model_class_name: { type: "keyword" },
                     index_target_name:   { type: "keyword" },
                     retry_count:         { type: "integer" },
+                    score:               { type: "float" },
                 },
             },
             are_search_es_index_settings: {
@@ -151,8 +152,8 @@ RSpec.describe AreSearch::Searcher, "filters" do
         )
     end
 
-    it "termはString、Integer、Booleanの単一値だけを受け付ける" do
-        [[], {}, 1.5].each do |value|
+    it "termはString、Integer、Float、Booleanの単一値だけを受け付ける" do
+        [[], {}].each do |value|
             expect do
                 described_class.search(
                     [index_target],
@@ -168,7 +169,7 @@ RSpec.describe AreSearch::Searcher, "filters" do
         end
     end
 
-    it "termsはArrayを必要とし、各要素をString、Integer、Booleanに限定する" do
+    it "termsはArrayを必要とし、各要素をString、Integer、Float、Booleanに限定する" do
         expect do
             described_class.search(
                 [index_target],
@@ -215,8 +216,57 @@ RSpec.describe AreSearch::Searcher, "filters" do
         )
     end
 
-    it "rangeは1件以上のHashを必要とし、各値をString、Integer、Booleanに限定する" do
-        [1..10, {}, { gte: [1] }, { gte: 1.5 }].each do |value|
+    it "term、terms、rangeはFloatを受け付ける" do
+        body = described_class.search(
+            [index_target],
+            fields: [:search_text],
+            where: [
+                {
+                    score: {
+                        term: 1.5,
+                    },
+                },
+                {
+                    score: {
+                        terms: [1.5, 2.5],
+                    },
+                },
+                {
+                    score: {
+                        range: {
+                            gte: 1.5,
+                            lt:  2.5,
+                        },
+                    },
+                },
+            ],
+            dump_body: true,
+        )
+
+        expect(body.dig(:query, :bool, :filter)).to include(
+            {
+                term: {
+                    score: 1.5,
+                },
+            },
+            {
+                terms: {
+                    score: [1.5, 2.5],
+                },
+            },
+            {
+                range: {
+                    score: {
+                        gte: 1.5,
+                        lt:  2.5,
+                    },
+                },
+            },
+        )
+    end
+
+    it "rangeは1件以上のHashを必要とし、各値をString、Integer、Float、Booleanに限定する" do
+        [1..10, {}, { gte: [1] }].each do |value|
             expect do
                 described_class.search(
                     [index_target],

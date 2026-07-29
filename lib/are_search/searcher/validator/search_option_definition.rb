@@ -66,6 +66,7 @@ module AreSearch
             "str_or_sym",
             "str_or_int",
             "str_or_int_or_bool",
+            "str_or_int_or_float_or_bool",
             "positive_number",
             "positive_integer",
             "query_type",
@@ -102,7 +103,7 @@ module AreSearch
                                 },
                                 value: {
                                     scalar: {
-                                        type: "str_or_int_or_bool",
+                                        type: "str_or_int_or_float_or_bool",
                                     },
                                 },
                             },
@@ -115,7 +116,7 @@ module AreSearch
                                         allow_empty: true,
                                         children: {
                                             scalar: {
-                                                type: "str_or_int_or_bool",
+                                                type: "str_or_int_or_float_or_bool",
                                             },
                                         },
                                     },
@@ -134,7 +135,7 @@ module AreSearch
                                                 },
                                                 value: {
                                                     scalar: {
-                                                        type: "str_or_int_or_bool",
+                                                        type: "str_or_int_or_float_or_bool",
                                                     },
                                                 },
                                             },
@@ -293,34 +294,46 @@ module AreSearch
                 },
             },
 
-            # mlt_instance: article
-            mlt_instance: {
-                scalar: {
-                    type: "searchable_instance",
-                },
-            },
-
-            # mlt_index_target: Article.are_search_index_target(:default)
-            mlt_index_target: {
-                scalar: {
-                    type: "index_target",
-                },
-            },
-
-            # mlt_params: {
+            # mlt: {
+            #     instance: article,
+            #     index_target: Article.are_search_index_target(:default),
             #     fields: [:title, :body],
             #     min_term_freq: 1,
             #     min_doc_freq: 2,
             #     max_query_terms: 20,
             #     min_word_length: 2,
             #     minimum_should_match: "30%",
-            #     boost_terms: 1,
+            #     boost_terms: 1.5,
             # }
-            mlt_params: {
+            mlt: {
                 hash: {
-                    must_keys: [:fields],
+                    must_keys: [
+                        :instance,
+                        :index_target,
+                        :fields,
+                    ],
                     must_not_keys: [:like],
                     key_values: [
+                        {
+                            key: {
+                                key_name: :instance,
+                            },
+                            value: {
+                                scalar: {
+                                    type: "searchable_instance",
+                                },
+                            },
+                        },
+                        {
+                            key: {
+                                key_name: :index_target,
+                            },
+                            value: {
+                                scalar: {
+                                    type: "index_target",
+                                },
+                            },
+                        },
                         {
                             key: {
                                 key_name: :fields,
@@ -341,7 +354,7 @@ module AreSearch
                             },
                             value: {
                                 scalar: {
-                                    type: "str_or_int_or_bool",
+                                    type: "str_or_int_or_float_or_bool",
                                 },
                             },
                         },
@@ -421,7 +434,7 @@ module AreSearch
                                             },
                                             value: {
                                                 scalar: {
-                                                    type: "str_or_int_or_bool",
+                                                    type: "str_or_int_or_float_or_bool",
                                                 },
                                             },
                                         },
