@@ -240,8 +240,6 @@ module AreSearch
                     parse_boolean_value(value, path)
                 when "str_or_sym"
                     parse_str_or_sym_value(value, path)
-                when "query_type"
-                    parse_query_type_value(value, path)
                 when "str_or_int"
                     parse_str_or_int_value(value, path)
                 when "str_or_int_or_bool"
@@ -250,6 +248,8 @@ module AreSearch
                     parse_positive_number(value, path)
                 when "positive_integer"
                     parse_positive_integer(value, path)
+                when "query_type"
+                    parse_query_type_value(value, path)
                 when "symbol_key"
                     parse_symbol_key(value, path)
                 when "sort_field"
@@ -358,18 +358,6 @@ module AreSearch
                     "#{path} は String または Symbol で指定してください: #{value.inspect}"
             end
 
-            # query_typeはSymbolに限定し、定義済みの値だけを許可する。
-            def parse_query_type_value(value, path)
-                query_type = parse_symbol_value(value, path)
-
-                if AreSearch::QUERY_TYPES.include?(query_type)
-                    return query_type
-                end
-
-                raise ArgumentError,
-                    "#{path} は #{AreSearch::QUERY_TYPES.inspect} のいずれかで指定してください: #{value.inspect}"
-            end
-
             # StringまたはIntegerの単一値だけを許可する。
             def parse_str_or_int_value(value, path)
                 return value if value.instance_of?(String)
@@ -410,6 +398,18 @@ module AreSearch
 
                 raise ArgumentError,
                     "#{path} は正の整数で指定してください: #{value.inspect}"
+            end
+
+            # query_typeはSymbolに限定し、定義済みの値だけを許可する。
+            def parse_query_type_value(value, path)
+                query_type = parse_symbol_value(value, path)
+
+                if AreSearch::QUERY_TYPES.include?(query_type)
+                    return query_type
+                end
+
+                raise ArgumentError,
+                    "#{path} は #{AreSearch::QUERY_TYPES.inspect} のいずれかで指定してください: #{value.inspect}"
             end
 
             # sym key かどうか確認

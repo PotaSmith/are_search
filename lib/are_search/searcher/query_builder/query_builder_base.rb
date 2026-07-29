@@ -33,18 +33,18 @@ module AreSearch
             private
 
             # Hash または Array<Hash> を、検証済みの条件種別を保持した
-            # field / query_type / value 条件へ変換する。
+            # field / condition_type / value 条件へ変換する。
             def normalize_condition_options(condition_opts)
                 normalized_conditions = []
                 return normalized_conditions if condition_opts.nil?
 
                 if condition_opts.instance_of?(Hash)
                     condition_opts.each do |field, value|
-                        value.each do |query_type, query_value|
+                        value.each do |condition_type, query_value|
                             normalized_conditions << {
-                                field:      field,
-                                query_type: query_type,
-                                value:      query_value,
+                                field:          field,
+                                condition_type: condition_type,
+                                value:          query_value,
                             }
                         end
                     end
@@ -54,11 +54,11 @@ module AreSearch
 
                 condition_opts.each do |condition_opt|
                     condition_opt.each do |field, value|
-                        value.each do |query_type, query_value|
+                        value.each do |condition_type, query_value|
                             normalized_conditions << {
-                                field:      field,
-                                query_type: query_type,
-                                value:      query_value,
+                                field:          field,
+                                condition_type: condition_type,
+                                value:          query_value,
                             }
                         end
                     end
@@ -67,7 +67,7 @@ module AreSearch
                 normalized_conditions
             end
 
-            # 共通の field / query_type / value 条件から ES の query 句配列を組み立てる。
+            # 共通の field / condition_type / value 条件から ES の query 句配列を組み立てる。
             def build_field_clauses(conditions)
                 clauses = []
 
@@ -78,26 +78,26 @@ module AreSearch
                 clauses
             end
 
-            # 検証時に確定した query_type に従って、1件の条件を ES query 句へ変換する。
+            # 検証時に確定した condition_type に従って、1件の条件を ES query 句へ変換する。
             # value の Ruby 型から条件種別を再推定しない。
             def build_field_clause(condition)
                 field = condition[:field]
-                query_type = condition[:query_type]
+                condition_type = condition[:condition_type]
                 value = condition[:value]
 
-                if query_type == :term
+                if condition_type == :term
                     return { term: { field => value } }
                 end
 
-                if query_type == :terms
+                if condition_type == :terms
                     return { terms: { field => value } }
                 end
 
-                if query_type == :range
+                if condition_type == :range
                     return { range: { field => value } }
                 end
 
-                raise ArgumentError, "未知の条件種別です: #{query_type.inspect}"
+                raise ArgumentError, "未知の条件種別です: #{condition_type.inspect}"
             end
 
             # query_typeに従って、検索語とfieldsから全文検索句を組み立てる。
@@ -122,8 +122,7 @@ module AreSearch
                     )
                 end
 
-                raise ArgumentError,
-                    "未知の query_type です: #{resolved_query_type.inspect}"
+                raise ArgumentError, "未知の query_type です: #{resolved_query_type.inspect}"
             end
 
             # fieldsを1つの仮想フィールドとして扱うcombined_fields句を組み立てる。

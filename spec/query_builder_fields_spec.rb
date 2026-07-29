@@ -158,6 +158,56 @@ RSpec.describe "query builder fields" do
         ])
     end
 
+    it "queries配下の空文字列と空白だけの検索語は全文検索句を作らない" do
+        body = AreSearch::Searcher.search(
+            [article_index_target],
+            queries: [
+                {
+                    query_string: "",
+                    fields:       [:title],
+                },
+                {
+                    query_string: "   ",
+                    fields:       [:body],
+                },
+                {
+                    query_string: "Rails",
+                    fields:       [:title, :body],
+                },
+            ],
+            dump_body: true,
+        )
+
+        expect(body.dig(:query, :bool, :must)).to eq([
+            {
+                combined_fields: {
+                    query:    "Rails",
+                    fields:   ["title", "body"],
+                    operator: "and",
+                },
+            },
+        ])
+    end
+
+    it "queries配下の検索語がすべて空の場合はmustを作らない" do
+        body = AreSearch::Searcher.search(
+            [article_index_target],
+            queries: [
+                {
+                    query_string: "",
+                    fields:       [:title],
+                },
+                {
+                    query_string: "   ",
+                    fields:       [:body],
+                },
+            ],
+            dump_body: true,
+        )
+
+        expect(body.dig(:query, :bool)).not_to have_key(:must)
+    end
+
     it "queries配下のArray形式とHash形式を個別に変換する" do
         source_queries = [
             {

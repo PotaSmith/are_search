@@ -124,6 +124,7 @@ runtime フィールドも type が text であれば指定できる。
 
 検索語を通常の全文検索として扱う場合は、query_typeを省略する。
 省略時はcombined_fieldsを使用し、空白で区切られた検索語をAND条件として検索する。
+combined_fieldsを明示する場合は、次のように指定する。
 
     query_type: AreSearch::QUERY_TYPE_COMBINED_FIELDS
 
@@ -357,17 +358,17 @@ String は Symbol へ変換せず拒否する。
 このような指定が必要な検索は raw_body で明示的に組み立てる。
 
 
-## 3-1. 外部入力として使用できる値
+## 3-1. 外部入力として使用する値
 ----------------------------------------------------------------
 
-以下の値は、フォームやAPIなどの外部入力から受け取って検索に使用できる。
+外部入力としてそのまま渡すことを想定している値。
 
     query_string
     queries の query_string
-    where / where_not / where_or の条件値
     page
 
-sort の並び順、fields の boost、per_page はアプリケーション側で指定する。
+上記以外の検索オプションは、アプリケーション側で値を決めて渡すことを想定している。
+外部入力をそのまま渡した場合は、値の型や内容によって検索パラメータとして拒否されることがある。
 
 page は正の Integer に変換してから渡す。
 page から計算した検索開始位置が target の max_result_window 以上になる場合、

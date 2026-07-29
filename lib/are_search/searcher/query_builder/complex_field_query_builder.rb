@@ -45,20 +45,27 @@ module AreSearch
                     where_or_clauses,
                 )
 
-                bool_clause[:must] = build_query_clauses(queries_opts)
+                query_clauses = build_query_clauses(queries_opts)
+                if query_clauses.any?
+                    bool_clause[:must] = query_clauses
+                end
 
                 { bool: bool_clause }
             end
 
             private
 
-            # 複合検索条件を、各要素のquery_typeに対応する全文検索句へ変換する。
+            # 空の検索語を除外し、各要素のquery_typeに対応する全文検索句へ変換する。
             def build_query_clauses(queries_opts)
                 clauses = []
 
                 queries_opts.each do |query_opts|
+                    query_string = query_opts[:query_string]
+
+                    next if query_string.blank?
+
                     clauses << build_text_query_clause(
-                        query_opts[:query_string],
+                        query_string,
                         query_opts[:fields],
                         query_opts[:query_type],
                     )
