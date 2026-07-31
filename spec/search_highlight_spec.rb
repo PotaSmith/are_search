@@ -112,7 +112,12 @@ RSpec.describe "search highlight" do
     it "highlight未指定時はhighlight bodyを作らない" do
         body = AreSearch::Searcher.search(
             [article_index_target],
-            fields:    [:title, :body],
+            queries: [
+                {
+                    query_string: "",
+                    fields:    [:title, :body],
+                },
+            ],
             dump_body: true,
         )
 
@@ -123,7 +128,12 @@ RSpec.describe "search highlight" do
         expect do
             AreSearch::Searcher.search(
                 [article_index_target],
-                fields: [:title, :body],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:title, :body],
+                    },
+                ],
                 highlight: {
                     fragment_size: 150,
                 },
@@ -135,7 +145,12 @@ RSpec.describe "search highlight" do
     it "fieldsのArray形式を空オプションのHashへ変換する" do
         body = AreSearch::Searcher.search(
             [article_index_target],
-            fields: [:title, :body],
+            queries: [
+                {
+                    query_string: "",
+                    fields: [:title, :body],
+                },
+            ],
             highlight: {
                 fields: [:title, :body],
                 type: "unified",
@@ -157,7 +172,12 @@ RSpec.describe "search highlight" do
     it "fieldsのHash形式はフィールド別オプションを保持する" do
         body = AreSearch::Searcher.search(
             [article_index_target, document_index_target],
-            fields: [:title, :body],
+            queries: [
+                {
+                    query_string: "",
+                    fields: [:title, :body],
+                },
+            ],
             highlight: {
                 fields: {
                     body: {
@@ -191,7 +211,12 @@ RSpec.describe "search highlight" do
         expect do
             AreSearch::Searcher.search(
                 [article_index_target],
-                fields: [:title],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:title],
+                    },
+                ],
                 highlight: {
                     fields: {
                         title: {},
@@ -206,7 +231,12 @@ RSpec.describe "search highlight" do
         expect do
             AreSearch::Searcher.search(
                 [article_index_target],
-                fields: [:title],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:title],
+                    },
+                ],
                 highlight: {
                     fields: {
                         count: {
@@ -248,8 +278,12 @@ RSpec.describe "search highlight" do
     it "pre_tags・post_tags・encoderをそのまま渡す" do
         body = AreSearch::Searcher.search(
             [article_index_target],
-            query_string: "Rails",
-            fields:       [:title],
+            queries: [
+                {
+                    query_string: "Rails",
+                    fields:       [:title],
+                },
+            ],
             highlight: {
                 fields:    [:title],
                 pre_tags:  ["<mark>"],
@@ -269,4 +303,33 @@ RSpec.describe "search highlight" do
         )
     end
 
+    it "フィールド別のpre_tags・post_tagsをそのまま渡す" do
+        body = AreSearch::Searcher.search(
+            [article_index_target],
+            queries: [
+                {
+                    query_string: "Rails",
+                    fields:       [:title],
+                },
+            ],
+            highlight: {
+                fields: {
+                    title: {
+                        pre_tags:  ["<strong>"],
+                        post_tags: ["</strong>"],
+                    },
+                },
+            },
+            dump_body: true,
+        )
+
+        expect(body[:highlight]).to eq(
+            fields: {
+                title: {
+                    pre_tags:  ["<strong>"],
+                    post_tags: ["</strong>"],
+                },
+            },
+        )
+    end
 end

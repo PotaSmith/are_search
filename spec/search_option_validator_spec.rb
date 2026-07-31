@@ -1011,45 +1011,28 @@ RSpec.describe AreSearch::SearchOptionValidator do
     end
 
     describe "OPTION_DEFINITIONSによるfields検査" do
-        it "トップレベルfieldsのHash形式を維持する" do
+        it "トップレベルのquery_string・fields・query_typeを拒否する" do
             context = build_context(
-                any_text_without_non_text_fields: [:title, :body],
+                any_text_without_non_text_fields: [:title],
             )
+            invalid_options = [
+                { query_string: "Rails" },
+                { fields: [:title] },
+                { query_type: AreSearch::QUERY_TYPE_COMBINED_FIELDS },
+            ]
 
-            result = described_class.validate(
-                {
-                    fields: {
-                        title: 2.0,
-                        body: 1,
-                    },
-                },
-                AreSearch::Searcher::OPTION_DEFINITIONS,
-                context,
-            )
-
-            expect(result[:fields]).to eq(
-                title: 2.0,
-                body: 1,
-            )
+            invalid_options.each do |options|
+                expect do
+                    described_class.validate(
+                        options,
+                        AreSearch::Searcher::OPTION_DEFINITIONS,
+                        context,
+                    )
+                end.to raise_error(ArgumentError, /未知の検索オプション/)
+            end
         end
 
-        it "トップレベルfieldsのArray形式を維持する" do
-            context = build_context(
-                any_text_without_non_text_fields: [:title, :body],
-            )
-
-            result = described_class.validate(
-                {
-                    fields: [:title, :body],
-                },
-                AreSearch::Searcher::OPTION_DEFINITIONS,
-                context,
-            )
-
-            expect(result[:fields]).to eq([:title, :body])
-        end
-
-        it "トップレベルとqueries配下のfieldsの入力形式を維持する" do
+        it "queries配下のfieldsのArray形式とHash形式を維持する" do
             context = build_context(
                 any_text_without_non_text_fields: [:title, :body],
             )
@@ -1099,20 +1082,6 @@ RSpec.describe AreSearch::SearchOptionValidator do
             invalid_options = [
                 [
                     {
-                        fields: ["title"],
-                    },
-                    /context\[:any_text_without_non_text_fields\].*"title"/,
-                ],
-                [
-                    {
-                        fields: {
-                            "title" => 2,
-                        },
-                    },
-                    /opts\[:fields\] に未知のキーがあります: title/,
-                ],
-                [
-                    {
                         queries: [
                             {
                                 query_string: "Rails",
@@ -1121,6 +1090,19 @@ RSpec.describe AreSearch::SearchOptionValidator do
                         ],
                     },
                     /context\[:any_text_without_non_text_fields\].*"title"/,
+                ],
+                [
+                    {
+                        queries: [
+                            {
+                                query_string: "Rails",
+                                fields: {
+                                    "title" => 2,
+                                },
+                            },
+                        ],
+                    },
+                    /opts\[:queries\]\[0\]\[fields\] に未知のキーがあります: title/,
                 ],
                 [
                     {

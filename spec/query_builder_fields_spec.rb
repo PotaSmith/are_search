@@ -35,18 +35,22 @@ RSpec.describe "query builder fields" do
         )
     end
 
-    it "単純検索のArray形式をcombined_fieldsへ変換する" do
+    it "1件の標準検索のArray形式をcombined_fieldsへ変換する" do
         source_fields = [:title, :body]
 
         body = AreSearch::Searcher.search(
             [article_index_target],
-            query_string: "Rails",
-            fields:       source_fields,
+            queries: [
+                {
+                    query_string: "Rails",
+                    fields:       source_fields,
+                },
+            ],
             dump_body:    true,
         )
 
         expect(
-            body.dig(:query, :bool, :must, :combined_fields, :fields),
+            body.dig(:query, :bool, :must, 0, :combined_fields, :fields),
         ).to eq([
             "title",
             "body",
@@ -54,7 +58,7 @@ RSpec.describe "query builder fields" do
         expect(source_fields).to eq([:title, :body])
     end
 
-    it "単純検索のHash形式をboost付きcombined_fieldsへ変換する" do
+    it "1件の標準検索のHash形式をboost付きcombined_fieldsへ変換する" do
         source_fields = {
             title: 2.0,
             body:  1,
@@ -62,13 +66,17 @@ RSpec.describe "query builder fields" do
 
         body = AreSearch::Searcher.search(
             [article_index_target],
-            query_string: "Rails",
-            fields:       source_fields,
+            queries: [
+                {
+                    query_string: "Rails",
+                    fields:       source_fields,
+                },
+            ],
             dump_body:    true,
         )
 
         expect(
-            body.dig(:query, :bool, :must, :combined_fields, :fields),
+            body.dig(:query, :bool, :must, 0, :combined_fields, :fields),
         ).to eq([
             "title^2.0",
             "body^1",
@@ -85,23 +93,29 @@ RSpec.describe "query builder fields" do
 
         body = AreSearch::Searcher.search(
             [article_index_target],
-            query_string: query_string,
-            fields: {
-                title: 2.0,
-                body:  1,
-            },
-            query_type: AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING,
+            queries: [
+                {
+                    query_string: query_string,
+                    fields: {
+                        title: 2.0,
+                        body:  1,
+                    },
+                    query_type: AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING,
+                },
+            ],
             dump_body: true,
         )
 
-        expect(body.dig(:query, :bool, :must)).to eq(
-            simple_query_string: {
-                query:            query_string,
-                fields:           ["title^2.0", "body^1"],
-                default_operator: "and",
-                flags:            "AND|OR|NOT|PHRASE|PRECEDENCE|WHITESPACE|ESCAPE",
+        expect(body.dig(:query, :bool, :must)).to eq([
+            {
+                simple_query_string: {
+                    query:            query_string,
+                    fields:           ["title^2.0", "body^1"],
+                    default_operator: "and",
+                    flags:            "AND|OR|NOT|PHRASE|PRECEDENCE|WHITESPACE|ESCAPE",
+                },
             },
-        )
+        ])
     end
 
     it "simple_query_stringの検索文字列を変換せずそのまま渡す" do
@@ -109,14 +123,18 @@ RSpec.describe "query builder fields" do
 
         body = AreSearch::Searcher.search(
             [article_index_target],
-            query_string: query_string,
-            fields:       [:title],
-            query_type:   AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING,
+            queries: [
+                {
+                    query_string: query_string,
+                    fields:       [:title],
+                    query_type:   AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING,
+                },
+            ],
             dump_body:    true,
         )
 
         expect(
-            body.dig(:query, :bool, :must, :simple_query_string, :query),
+            body.dig(:query, :bool, :must, 0, :simple_query_string, :query),
         ).to eq(query_string)
     end
 

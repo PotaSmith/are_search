@@ -194,6 +194,7 @@ RSpec.describe AreSearch::Searcher do
             expect(result.records.current_page).to eq(1)
             expect(result.records.per_page).to eq(25)
             expect(result.records.total_count).to eq(0)
+            expect(result.records_with_hit).to eq([])
         end
 
         it "MLT基準 index の alias が無ければ index_not_found の空結果を返す" do
@@ -266,6 +267,7 @@ RSpec.describe AreSearch::Searcher do
             expect(result.records.current_page).to eq(1)
             expect(result.records.per_page).to eq(25)
             expect(result.records.total_count).to eq(0)
+            expect(result.records_with_hit).to eq([])
         end
 
         it "未定義のstatusは拒否する" do
@@ -285,6 +287,65 @@ RSpec.describe AreSearch::Searcher do
 
 
     describe "検索対象 index target 検証" do
+        before do
+            allow(AreSearch)
+                .to receive(:index_prefix)
+                .and_return("test")
+        end
+
+        it "同じindex targetを複数指定した場合は拒否する" do
+            model = Class.new do
+                def self.are_search_ar_table_name
+                    "articles"
+                end
+            end
+            first_index_target = AreSearch::IndexTarget.new(model, :default)
+            second_index_target = AreSearch::IndexTarget.new(model, :default)
+
+            expect do
+                described_class.search([
+                    first_index_target,
+                    second_index_target,
+                ])
+            end.to raise_error(
+                ArgumentError,
+                "同じ index target は複数指定できません",
+            )
+        end
+
+        it "同じaliasを使う親子targetを同時指定した場合は拒否する" do
+            parent_model = Class.new do
+                def self.are_search_ar_table_name
+                    "articles"
+                end
+            end
+            child_model = Class.new(parent_model)
+
+            allow(parent_model).to receive(:name).and_return("Article")
+            allow(child_model).to receive(:name).and_return("SpecialArticle")
+            allow(parent_model)
+                .to receive(:include?)
+                .with(AreSearch::Searchable)
+                .and_return(true)
+            allow(child_model)
+                .to receive(:include?)
+                .with(AreSearch::Searchable)
+                .and_return(true)
+
+            parent_index_target = AreSearch::IndexTarget.new(parent_model, :default)
+            child_index_target = AreSearch::IndexTarget.new(child_model, :default)
+
+            expect do
+                described_class.search([
+                    parent_index_target,
+                    child_index_target,
+                ])
+            end.to raise_error(
+                ArgumentError,
+                /同じ Elasticsearch index に親子関係のあるモデルを同時指定できません/,
+            )
+        end
+
         it "同じ alias の親子モデルは同時指定を拒否する" do
             parent_model = Class.new
             child_model = Class.new(parent_model)
@@ -444,7 +505,7 @@ RSpec.describe AreSearch::Searcher do
             record = double("article", id: 1)
             hits = [
                 {
-                    "_index" => "test__articles__default",
+                    "_index" => "test__articles__default__2026_07_03_03_10_00_123456",
                     "_id" => "1",
                     "_source" => {
                         AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
@@ -455,7 +516,7 @@ RSpec.describe AreSearch::Searcher do
                     },
                 },
                 {
-                    "_index" => "test__articles__default",
+                    "_index" => "test__articles__default__2026_07_03_03_10_00_123456",
                     "_id" => "2",
                     "_source" => {
                         AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
@@ -470,13 +531,9 @@ RSpec.describe AreSearch::Searcher do
                 .to receive(:where)
                 .with(id: ["1"])
                 .and_return([record])
-            allow(article_index_target)
-                .to receive(:are_search_es_composite_key) do |id|
-                    "test__articles__default/#{id}"
-                end
 
             result = described_class.send(
-                :build_records,
+                :build_records_results,
                 hits,
                 { "test__articles__default" => [article_index_target] },
                 {},
@@ -484,7 +541,24 @@ RSpec.describe AreSearch::Searcher do
 
             expect(result).to eq(
                 records: [record],
-                records_with_target_names: [[record, :default]],
+                records_with_hit: [
+                    [
+                        record,
+                        {
+                            index: "test__articles__default__2026_07_03_03_10_00_123456",
+                            id: "1",
+                            source: {
+                                AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => [
+                                    "SpecialArticle",
+                                    "Article",
+                                ],
+                                AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME => "1",
+                            },
+                            highlight: {},
+                            target_name: :default,
+                        },
+                    ],
+                ],
             )
         end
 
@@ -504,22 +578,13 @@ RSpec.describe AreSearch::Searcher do
                 model_class:                  first_child_model,
                 target_name:                  :default,
                 are_search_es_index_name:     "test__articles__default",
-                are_search_es_composite_key:  nil,
             )
             second_index_target = double(
                 "second_index_target",
                 model_class:                  second_child_model,
                 target_name:                  :default,
                 are_search_es_index_name:     "test__articles__default",
-                are_search_es_composite_key:  nil,
             )
-
-            allow(first_index_target).to receive(:are_search_es_composite_key) do |id|
-                "test__articles__default/#{id}"
-            end
-            allow(second_index_target).to receive(:are_search_es_composite_key) do |id|
-                "test__articles__default/#{id}"
-            end
 
             expect(first_child_model)
                 .to receive(:where)
@@ -532,7 +597,7 @@ RSpec.describe AreSearch::Searcher do
 
             hits = [
                 {
-                    "_index" => "test__articles__default",
+                    "_index" => "test__articles__default__2026_07_03_03_10_00_123456",
                     "_id" => "1",
                     "_source" => {
                         AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
@@ -541,7 +606,7 @@ RSpec.describe AreSearch::Searcher do
                     },
                 },
                 {
-                    "_index" => "test__articles__default",
+                    "_index" => "test__articles__default__2026_07_03_03_10_00_123456",
                     "_id" => "2",
                     "_source" => {
                         AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
@@ -552,7 +617,7 @@ RSpec.describe AreSearch::Searcher do
             ]
 
             result = described_class.send(
-                :build_records,
+                :build_records_results,
                 hits,
                 {
                     "test__articles__default" => [
@@ -565,87 +630,98 @@ RSpec.describe AreSearch::Searcher do
 
             expect(result).to eq(
                 records: [first_record, second_record],
-                records_with_target_names: [
-                    [first_record, :default],
-                    [second_record, :default],
+                records_with_hit: [
+                    [
+                        first_record,
+                        {
+                            index: "test__articles__default__2026_07_03_03_10_00_123456",
+                            id: "1",
+                            source: {
+                                AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => [
+                                    "FirstArticle",
+                                ],
+                            },
+                            highlight: {},
+                            target_name: :default,
+                        },
+                    ],
+                    [
+                        second_record,
+                        {
+                            index: "test__articles__default__2026_07_03_03_10_00_123456",
+                            id: "2",
+                            source: {
+                                AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => [
+                                    "SecondArticle",
+                                ],
+                            },
+                            highlight: {},
+                            target_name: :default,
+                        },
+                    ],
                 ],
             )
         end
 
-        it "highlightを要求した場合だけフラグメントを保持する" do
-            record_class = Struct.new(:id)
-            record = record_class.new(1)
-            search_body = {
-                query: {
-                    match_all: {},
-                },
-                highlight: {
-                    fields: {
-                        title: {},
-                    },
+        it "復元したレコードとhit情報をSearchResultへ渡す" do
+            record = double("article", id: 1)
+            response = {
+                "hits" => {
+                    "total" => { "value" => 1 },
+                    "hits" => [
+                        {
+                            "_index" => "test__articles__default__2026_07_03_03_10_00_123456",
+                            "_id" => "1",
+                            "_source" => {
+                                AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
+                                AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s => "1",
+                                "title" => "Rails guide",
+                            },
+                            "highlight" => {
+                                "title" => ["<em>Rails</em> guide"],
+                            },
+                        },
+                    ],
                 },
             }
-            hits = [
-                {
-                    "_index" => "test__articles__default",
-                    "_id" => "1",
-                    "_source" => {
-                        AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
-                        AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s => "1",
-                        "title" => "Rails guide",
-                    },
-                    "highlight" => {
-                        "title" => ["<em>Rails</em> guide"],
-                    },
-                },
-            ]
-            client = double("client")
 
-            allow(AreSearch)
-                .to receive(:client)
-                .and_return(client)
-            allow(client)
-                .to receive(:search)
-                .and_return(
-                    "hits" => {
-                        "total" => { "value" => 1 },
-                        "hits" => hits,
-                    },
-                )
-            allow(described_class)
-                .to receive(:build_records)
-                .and_return(
-                    records: [record],
-                    records_with_target_names: [[record, :default]],
-                )
-            allow(article_index_target)
-                .to receive(:are_search_es_composite_key) do |id|
-                    "test__articles__default/#{id}"
-                end
-            allow(record_class)
-                .to receive(:are_search_index_target)
-                .with(:default)
-                .and_return(article_index_target)
+            expect(article_model)
+                .to receive(:where)
+                .with(id: ["1"])
+                .and_return([record])
 
             result = described_class.send(
-                :execute_and_build_result,
-                "test__articles__default",
-                search_body,
+                :build_result,
+                response,
                 {
-                    index_to_index_targets: {
-                        "test__articles__default" => [article_index_target],
-                    },
-                    model_relations: {},
-                    page:            1,
-                    per_page:        25,
+                    "test__articles__default" => [article_index_target],
                 },
+                {},
+                1,
+                25,
             )
 
             expect(result.status).to eq(AreSearch::SearchResult::STATUS_OK)
-            expect(result.hit_source(record, :default)[:title]).to eq("Rails guide")
-            expect(result.highlights(record, :default)).to eq(
-                title: ["<em>Rails</em> guide"],
-            )
+            expect(result.records).to eq([record])
+            expect(result.records_with_hit).to eq([
+                [
+                    record,
+                    {
+                        index: "test__articles__default__2026_07_03_03_10_00_123456",
+                        id: "1",
+                        source: {
+                            AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => ["Article"],
+                            AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME => "1",
+                            title: "Rails guide",
+                        },
+                        highlight: {
+                            title: ["<em>Rails</em> guide"],
+                        },
+                        target_name: :default,
+                    },
+                ],
+            ])
+            expect(result.raw_response).to equal(response)
         end
     end
 end

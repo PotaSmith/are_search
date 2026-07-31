@@ -28,11 +28,8 @@ RSpec.describe AreSearch::SearchParamValidator do
                     body:         { type: "text" },
                     status:       { type: "keyword" },
                     count:        { type: "integer" },
+                    score:        { type: "double" },
                     published_at: { type: "date" },
-                },
-                runtime: {
-                    runtime_title: { type: "text" },
-                    runtime_score: { type: "double" },
                 },
             },
         )
@@ -94,7 +91,12 @@ RSpec.describe AreSearch::SearchParamValidator do
             result = described_class.validate(
                 [article_index_target],
                 [article_model],
-                fields: [:title],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:title],
+                    },
+                ],
                 where: [
                     {
                         status: {
@@ -104,7 +106,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                 ],
             )
 
-            expect(result[:fields]).to eq([:title])
+            expect(result.dig(:queries, 0, :fields)).to eq([:title])
             expect(result[:where]).to eq([
                 {
                     status: {
@@ -114,23 +116,33 @@ RSpec.describe AreSearch::SearchParamValidator do
             ])
         end
 
-        it "fieldsはtext型のArrayまたは正のboostを持つHashを受け付ける" do
+        it "queries配下のfieldsはtext型のArrayまたは正のboostを持つHashを受け付ける" do
             array_result = described_class.validate(
                 [article_index_target],
                 [article_model],
-                fields: [:title, :runtime_title],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:title, :body],
+                    },
+                ],
             )
             hash_result = described_class.validate(
                 [article_index_target],
                 [article_model],
-                fields: {
-                    title: 2.0,
-                    body:  1,
-                },
+                queries: [
+                    {
+                        query_string: "",
+                        fields: {
+                            title: 2.0,
+                            body:  1,
+                        },
+                    },
+                ],
             )
 
-            expect(array_result[:fields]).to eq([:title, :runtime_title])
-            expect(hash_result[:fields]).to eq(
+            expect(array_result.dig(:queries, 0, :fields)).to eq([:title, :body])
+            expect(hash_result.dig(:queries, 0, :fields)).to eq(
                 title: 2.0,
                 body: 1,
             )
@@ -139,7 +151,12 @@ RSpec.describe AreSearch::SearchParamValidator do
                 described_class.validate(
                     [article_index_target],
                     [article_model],
-                    fields: [:status],
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:status],
+                        },
+                    ],
                 )
             end.to raise_error(ArgumentError)
 
@@ -147,9 +164,14 @@ RSpec.describe AreSearch::SearchParamValidator do
                 described_class.validate(
                     [article_index_target],
                     [article_model],
-                    fields: {
-                        title: 0,
-                    },
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: {
+                                title: 0,
+                            },
+                        },
+                    ],
                 )
             end.to raise_error(ArgumentError)
         end
@@ -167,7 +189,12 @@ RSpec.describe AreSearch::SearchParamValidator do
                     described_class.validate(
                         [article_index_target],
                         [article_model],
-                        fields: [field_name],
+                        queries: [
+                            {
+                                query_string: "",
+                                fields: [field_name],
+                            },
+                        ],
                     )
                 end.to raise_error(ArgumentError, /any_text_without_non_text_fields/)
             end
@@ -274,7 +301,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                     mlt: {
                         instance:     mlt_instance,
                         index_target: mlt_index_target,
-                        fields:       [:runtime_score],
+                        fields:       [:count],
                     },
                 )
             end.to raise_error(ArgumentError)
@@ -332,7 +359,12 @@ RSpec.describe AreSearch::SearchParamValidator do
             result = described_class.validate(
                 [article_index_target],
                 [article_model],
-                fields: [:title],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:title],
+                    },
+                ],
                 where: {
                     status: {
                         term: "published",
@@ -368,7 +400,12 @@ RSpec.describe AreSearch::SearchParamValidator do
                 described_class.validate(
                     [article_index_target],
                     [article_model],
-                    fields: [:title],
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
                     where: {
                         title: {
                             term: "Rails",
@@ -384,7 +421,12 @@ RSpec.describe AreSearch::SearchParamValidator do
                 described_class.validate(
                     [article_index_target],
                     [article_model],
-                    fields: [:title],
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
                     where: {
                         status: "published",
                     },
@@ -396,20 +438,25 @@ RSpec.describe AreSearch::SearchParamValidator do
             result = described_class.validate(
                 [article_index_target],
                 [article_model],
-                fields: [:title],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:title],
+                    },
+                ],
                 where: [
                     {
-                        runtime_score: {
+                        score: {
                             term: 1.5,
                         },
                     },
                     {
-                        runtime_score: {
+                        score: {
                             terms: [1.5, 2.5],
                         },
                     },
                     {
-                        runtime_score: {
+                        score: {
                             range: {
                                 gte: 1.5,
                                 lte: 2.5,
@@ -421,17 +468,17 @@ RSpec.describe AreSearch::SearchParamValidator do
 
             expect(result[:where]).to eq([
                 {
-                    runtime_score: {
+                    score: {
                         term: 1.5,
                     },
                 },
                 {
-                    runtime_score: {
+                    score: {
                         terms: [1.5, 2.5],
                     },
                 },
                 {
-                    runtime_score: {
+                    score: {
                         range: {
                             gte: 1.5,
                             lte: 2.5,
@@ -467,7 +514,12 @@ RSpec.describe AreSearch::SearchParamValidator do
                     described_class.validate(
                         [article_index_target],
                         [article_model],
-                        fields: [:title],
+                        queries: [
+                            {
+                                query_string: "",
+                                fields: [:title],
+                            },
+                        ],
                         where: where,
                     )
                 end.to raise_error(ArgumentError)
@@ -478,7 +530,12 @@ RSpec.describe AreSearch::SearchParamValidator do
             result = described_class.validate(
                 [article_index_target, document_index_target],
                 [article_model, document_model],
-                fields: [:title],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:title],
+                    },
+                ],
                 sort: {
                     status: :asc,
                     count:  :desc,
@@ -498,7 +555,12 @@ RSpec.describe AreSearch::SearchParamValidator do
                 described_class.validate(
                     [article_index_target, document_index_target],
                     [article_model, document_model],
-                    fields: [:title],
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
                     sort: [
                         {
                             status: :desc,
@@ -511,7 +573,12 @@ RSpec.describe AreSearch::SearchParamValidator do
                 described_class.validate(
                     [article_index_target, document_index_target],
                     [article_model, document_model],
-                    fields: [:title],
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
                     sort: :published_at,
                 )
             end.to raise_error(ArgumentError, /all_valid_non_text_fields/)
@@ -520,7 +587,12 @@ RSpec.describe AreSearch::SearchParamValidator do
                 described_class.validate(
                     [article_index_target],
                     [article_model],
-                    fields: [:title],
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
                     sort: :title,
                 )
             end.to raise_error(ArgumentError, /all_valid_non_text_fields/)
@@ -530,7 +602,12 @@ RSpec.describe AreSearch::SearchParamValidator do
             result = described_class.validate(
                 [article_index_target],
                 [article_model],
-                fields: [:title],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:title],
+                    },
+                ],
                 aggs: {
                     status: {
                         size: 20,
@@ -538,7 +615,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                     count: {
                         size: 10,
                     },
-                    runtime_score: {
+                    score: {
                         size:    10,
                         missing: 0.5,
                     },
@@ -564,7 +641,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                 count: {
                     size: 10,
                 },
-                runtime_score: {
+                score: {
                     size:    10,
                     missing: 0.5,
                 },
@@ -586,7 +663,12 @@ RSpec.describe AreSearch::SearchParamValidator do
                 described_class.validate(
                     [article_index_target],
                     [article_model],
-                    fields: [:title],
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
                     aggs: {
                         title: {
                             size: 10,
@@ -599,7 +681,12 @@ RSpec.describe AreSearch::SearchParamValidator do
                 described_class.validate(
                     [article_index_target],
                     [article_model],
-                    fields: [:title],
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
                     aggs: {
                         status: {
                             include: "published.*",
@@ -612,7 +699,12 @@ RSpec.describe AreSearch::SearchParamValidator do
                 described_class.validate(
                     [article_index_target],
                     [article_model],
-                    fields: [:title],
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
                     aggs: {
                         status: {
                             size: 0,
@@ -625,7 +717,31 @@ RSpec.describe AreSearch::SearchParamValidator do
                 described_class.validate(
                     [article_index_target],
                     [article_model],
-                    fields: [:title],
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
+                    aggs: {
+                        status: {
+                            size:  10,
+                            field: "count",
+                        },
+                    },
+                )
+            end.to raise_error(ArgumentError, /指定できないキー.*field/)
+
+            expect do
+                described_class.validate(
+                    [article_index_target],
+                    [article_model],
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
                     aggs: [:status],
                 )
             end.to raise_error(ArgumentError)
@@ -634,7 +750,12 @@ RSpec.describe AreSearch::SearchParamValidator do
                 described_class.validate(
                     [article_index_target],
                     [article_model],
-                    fields: [:title],
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
                     highlight: {
                         type: "unified",
                     },
@@ -645,7 +766,12 @@ RSpec.describe AreSearch::SearchParamValidator do
                 described_class.validate(
                     [article_index_target],
                     [article_model],
-                    fields: [:title],
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
                     highlight: {
                         fields: {
                             count: {
@@ -661,7 +787,12 @@ RSpec.describe AreSearch::SearchParamValidator do
             result = described_class.validate(
                 [article_index_target],
                 [article_model],
-                fields: [:title],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:title],
+                    },
+                ],
                 page: 2,
                 per_page: 25,
             )
@@ -674,7 +805,12 @@ RSpec.describe AreSearch::SearchParamValidator do
                     described_class.validate(
                         [article_index_target],
                         [article_model],
-                        fields: [:title],
+                        queries: [
+                            {
+                                query_string: "",
+                                fields: [:title],
+                            },
+                        ],
                         page: value,
                     )
                 end.to raise_error(ArgumentError, /正の整数/)
@@ -688,7 +824,12 @@ RSpec.describe AreSearch::SearchParamValidator do
             result = described_class.validate(
                 [article_index_target],
                 [model],
-                fields: [:title],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:title],
+                    },
+                ],
                 model_relations: {
                     model => relation,
                 },
@@ -700,7 +841,12 @@ RSpec.describe AreSearch::SearchParamValidator do
                 described_class.validate(
                     [article_index_target],
                     [model],
-                    fields: [:title],
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
                     model_relations: {
                         document_model => relation,
                     },
@@ -714,7 +860,12 @@ RSpec.describe AreSearch::SearchParamValidator do
                 described_class.validate(
                     [article_index_target],
                     [model],
-                    fields: [:title],
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
                     model_relations: {
                         model => nil,
                     },
@@ -725,7 +876,12 @@ RSpec.describe AreSearch::SearchParamValidator do
                 described_class.validate(
                     [article_index_target],
                     [model],
-                    fields: [:title],
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
                     model_relations: {
                         model => Object.new,
                     },
@@ -736,7 +892,12 @@ RSpec.describe AreSearch::SearchParamValidator do
                 described_class.validate(
                     [article_index_target],
                     [model],
-                    fields: [:title],
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
                     model_relations: {
                         model => AreSearch::IndexMarker.all,
                     },
@@ -798,7 +959,12 @@ RSpec.describe AreSearch::SearchParamValidator do
                 described_class.validate(
                     [article_index_target, mixed_target],
                     [article_model, document_model],
-                    fields: [:title],
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
                 )
             end.to raise_error(ArgumentError, /any_text_without_non_text_fields/)
 
@@ -852,3 +1018,4 @@ RSpec.describe AreSearch::SearcherUtils do
         end
     end
 end
+

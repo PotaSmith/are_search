@@ -74,25 +74,31 @@ module AreSearch
 
     # 検索結果オブジェクト
     #
-    # highlights(record, target_name)
-    #   Elasticsearch が返したフィールド別 highlight Hash を返す。
-    #   対象 hit にハイライトが無い場合は {}。
+    # records_with_hit
+    #   ActiveRecord のレコードと、対応する Elasticsearch の
+    #   _index, _id, _source、highlight、target_name 等の情報を検索順で返す。
+    #   フィールド名は Symbolで、先頭の "_" は削除し index, source, highlightのように変更。
+    #   _source、highlightは対象 hit に 対象 が無い場合は空 Hash。
     #
-    # hit_source(record, target_name)
-    #   検索時に返された _source を { field: value } の形で返す。
-    #   対象 hit が無い場合は {}。highlight の指定有無には依存しない。
+    # aggs(name = nil)
+    #   集計名を指定した場合は、key_as_string を優先した簡易集計結果を返す。
+    #   key がある bucket は [key, doc_count]、key がない bucket は doc_count。
+    #   対象 aggregation が無い場合は []。
+    #   集計名を省略した場合は、key を使った簡易集計結果全体を返す。
     #
     # status
     #   検索の終了状態を返す。
     #   :ok は検索実行済み、:params_invalid と :index_not_found は検索未実行。
     #
-    # @param hit_sources [Hash{String => Hash{Symbol => Object}}]
-    # @param highlights [Hash{String => Hash{Symbol => Array<String>}}]
+    # @param records [PaginatedCollection]
+    # @param records_with_hit [Array]
+    # @param aggs [Hash{Symbol => Array}]
+    # @param str_key_aggs [Hash{Symbol => Array}]
     # @param status [Symbol]
     #
     class SearchResult
         STATUS_OK = :ok
-        STATUS_PARAMS_INVALID = :params_invalid
+        STATUS_PARAMS_INVALID  = :params_invalid
         STATUS_INDEX_NOT_FOUND = :index_not_found
 
         STATUSES = [
@@ -101,47 +107,37 @@ module AreSearch
             STATUS_INDEX_NOT_FOUND,
         ].freeze
 
-        attr_reader :records_with_target_names, :records, :aggs, :raw_response, :status
+        attr_reader :records,
+            :records_with_hit,
+            :raw_response,
+            :status
 
         # 検索結果として定義された終了状態だけを受け付ける。
-        def initialize(records_with_target_names, records, aggs, hit_sources, highlights = {}, raw_response: nil, status: STATUS_OK)
+        def initialize(
+            records,
+            records_with_hit,
+            aggs,
+            str_key_aggs,
+            raw_response: nil,
+            status: STATUS_OK
+        )
             unless STATUSES.include?(status)
                 raise ArgumentError, "未知の検索結果statusです: #{status.inspect}"
             end
 
-            @records_with_target_names  = records_with_target_names
-            @records                    = records
-            @aggs                       = aggs
-            @highlights                 = highlights
-            @hit_sources                = hit_sources
-            @raw_response               = raw_response
-            @status                     = status
+            @records = records
+            @records_with_hit = records_with_hit
+            @aggs = aggs
+            @str_key_aggs = str_key_aggs
+            @raw_response = raw_response
+            @status = status
         end
 
-        # Elasticsearch が返したフィールド別 highlight をそのまま返す。
-        def highlights(record, target_name)
-            result = @highlights[composite_key_by_record(record, target_name)]
-            return {} if result.nil?
+        # 集計名を指定した場合は表示用キーの簡易結果を返し、省略時は内部キーの全体を返す。
+        def aggs(name = nil)
+            return @aggs if name.nil?
 
-            result
+            @str_key_aggs.fetch(name.to_sym, [])
         end
-
-        # 確認用で普通は使わない
-        def hit_source(record, target_name)
-            source = @hit_sources[composite_key_by_record(record, target_name)]
-            return {} if source.nil?
-
-            source
-        end
-
-        private
-
-        def composite_key_by_record(record, target_name)
-            index_target = record.class.are_search_index_target(target_name)
-            return "" if index_target.nil?
-
-            index_target.are_search_es_composite_key(record.id)
-        end
-
     end
 end

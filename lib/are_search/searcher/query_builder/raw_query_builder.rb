@@ -13,9 +13,6 @@ module AreSearch
             # Raw検索と同時に指定できないオプションを返す
             def must_not_params
                 [
-                    :query_string,
-                    :fields,
-                    :query_type,
                     :mlt,
                     :queries,
                     :where,

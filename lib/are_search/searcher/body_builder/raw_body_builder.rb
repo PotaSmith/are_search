@@ -106,41 +106,6 @@ module AreSearch
 
                 search_body
             end
-
-            # pageとper_pageから算出した取得範囲をmax_result_window内へ収める
-            def resolve_paging_params(index_targets, from, size)
-                max_result_window = resolve_max_result_window(index_targets)
-
-                if from >= max_result_window
-                    return [max_result_window, 0]
-                end
-
-                if from + size > max_result_window
-                    size = max_result_window - from
-                end
-
-                size = 0 if size < 0
-
-                [from, size]
-            end
-
-            # 検索対象targetの最小max_result_windowを返す
-            def resolve_max_result_window(index_targets)
-                values = []
-
-                index_targets.each do |index_target|
-                    values << resolve_model_max_result_window(index_target)
-                end
-
-                values.min
-            end
-
-            # 指定targetのmax_result_windowを返す
-            def resolve_model_max_result_window(index_target)
-                model_index_settings = index_target.are_search_es_index_settings
-
-                model_index_settings[:max_result_window]
-            end
         end
     end
 end

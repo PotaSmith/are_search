@@ -341,8 +341,12 @@ STI では Searchable を include した継承系統の上位モデルで定義�
 
     AreSearch::Searcher.search(
         [article_index],
-        query_string: "Rails",
-        fields:       [:title, :body],
+        queries: [
+            {
+                query_string: "Rails",
+                fields:       [:title, :body],
+            },
+        ],
     )
     article_index.are_search_es_search("Rails", fields: [:title, :body])
     article_index.are_search_es_reindex

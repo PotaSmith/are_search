@@ -2,8 +2,17 @@
 
 - ドット付き等の特殊フィールドの許容オプションを追加
 - 検索のレスポンスデータ削減のための source と fields の設定
+- runtime field の mapping 適用と検索対応
 
 ## [Unreleased]
+
+## [0.7.0] - 2026-07-31
+
+- 標準検索オプションのフィールド判定を `properties` 直下に限定し、`runtime` は正式な対応対象外とした
+- `SearchResult#highlights`、`SearchResult#hit_source`、`records_with_target_names` を廃止し、各レコードと対応する `_index`、`_id`、`_source`、highlight、target_name を検索順で返す `records_with_hit` へ統合
+- `SearchResult#aggs` を、集計名指定時は表示用キー、省略時は内部キーの簡易集計結果を返すメソッドへ変更。`key` がある bucket は `[key, doc_count]`、ない bucket は `doc_count` として返す
+- `Searcher.search` の標準検索オプションを `queries` に統一し、トップレベルの `query_string`、`fields`、`query_type` を廃止。`IndexTarget#are_search_es_search` の引数は維持し、内部で1件の `queries` へ変換するよう変更
+- `AreSearch.multi_search` と `AreSearch.more_like_this` を削除し、複数 target 検索と More Like This 検索の入口を `Searcher.search` へ統一
 
 ## [0.6.0] - 2026-07-29
 

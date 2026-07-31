@@ -14,9 +14,6 @@ module AreSearch
             def must_not_params
                 [
                     :raw_body,
-                    :query_string,
-                    :fields,
-                    :query_type,
                     :queries,
                     :sort,
                 ].freeze

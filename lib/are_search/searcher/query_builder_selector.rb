@@ -6,12 +6,8 @@ module AreSearch
 
         # 検索オプションの組み合わせに対応するQueryBuilderを返す
         def select(valid_options)
-            if AreSearch::SimpleQueryBuilder.match?(valid_options)
-                return AreSearch::SimpleQueryBuilder
-            end
-
-            if AreSearch::ComplexFieldQueryBuilder.match?(valid_options)
-                return AreSearch::ComplexFieldQueryBuilder
+            if AreSearch::StandardQueryBuilder.match?(valid_options)
+                return AreSearch::StandardQueryBuilder
             end
 
             if AreSearch::MoreLikeThisQueryBuilder.match?(valid_options)

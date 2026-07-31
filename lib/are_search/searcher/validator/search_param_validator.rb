@@ -130,10 +130,6 @@ module AreSearch
                     result,
                     mappings[:properties],
                 )
-                collect_mapping_field_names(
-                    result,
-                    mappings[:runtime],
-                )
 
                 result.uniq
             end
@@ -147,10 +143,6 @@ module AreSearch
                     result,
                     mappings[:properties],
                 )
-                collect_mapping_text_or_keyword_field_names(
-                    result,
-                    mappings[:runtime],
-                )
 
                 result.uniq
             end
@@ -163,10 +155,6 @@ module AreSearch
                 collect_mapping_text_field_names(
                     result,
                     mappings[:properties],
-                )
-                collect_mapping_text_field_names(
-                    result,
-                    mappings[:runtime],
                 )
 
                 result.uniq
@@ -393,3 +381,4 @@ module AreSearch
         end
     end
 end
+

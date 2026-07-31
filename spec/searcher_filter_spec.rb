@@ -38,11 +38,6 @@ RSpec.describe AreSearch::Searcher, "filters" do
             .with(AreSearch::Searchable)
             .and_return(true)
 
-        allow(index_target)
-            .to receive(:are_search_es_composite_key) do |id|
-                "test__sync_requests__default/#{id}"
-            end
-
         allow(AreSearch::IndexManager)
             .to receive(:es_index_alias_exists?)
             .with("test__sync_requests__default")
@@ -56,7 +51,12 @@ RSpec.describe AreSearch::Searcher, "filters" do
     it "where、where_not、where_orを異なるbool節へ組み立てる" do
         body = described_class.search(
             [index_target],
-            fields: [:search_text],
+            queries: [
+                {
+                    query_string: "",
+                    fields: [:search_text],
+                },
+            ],
             where: {
                 retry_count: {
                     term: 0,
@@ -106,7 +106,12 @@ RSpec.describe AreSearch::Searcher, "filters" do
     it "HashとArray<Hash>の条件を入力順にterm、terms、rangeへ変換する" do
         body = described_class.search(
             [index_target],
-            fields: [:search_text],
+            queries: [
+                {
+                    query_string: "",
+                    fields: [:search_text],
+                },
+            ],
             where: [
                 {
                     retry_count: {
@@ -157,7 +162,12 @@ RSpec.describe AreSearch::Searcher, "filters" do
             expect do
                 described_class.search(
                     [index_target],
-                    fields: [:search_text],
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:search_text],
+                        },
+                    ],
                     where: {
                         retry_count: {
                             term: value,
@@ -173,7 +183,12 @@ RSpec.describe AreSearch::Searcher, "filters" do
         expect do
             described_class.search(
                 [index_target],
-                fields: [:search_text],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:search_text],
+                    },
+                ],
                 where: {
                     index_target_name: {
                         terms: "default",
@@ -186,7 +201,12 @@ RSpec.describe AreSearch::Searcher, "filters" do
         expect do
             described_class.search(
                 [index_target],
-                fields: [:search_text],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:search_text],
+                    },
+                ],
                 where: {
                     index_target_name: {
                         terms: ["default", {}],
@@ -200,7 +220,12 @@ RSpec.describe AreSearch::Searcher, "filters" do
     it "termsの空Arrayを許可する" do
         body = described_class.search(
             [index_target],
-            fields: [:search_text],
+            queries: [
+                {
+                    query_string: "",
+                    fields: [:search_text],
+                },
+            ],
             where: {
                 index_target_name: {
                     terms: [],
@@ -219,7 +244,12 @@ RSpec.describe AreSearch::Searcher, "filters" do
     it "term、terms、rangeはFloatを受け付ける" do
         body = described_class.search(
             [index_target],
-            fields: [:search_text],
+            queries: [
+                {
+                    query_string: "",
+                    fields: [:search_text],
+                },
+            ],
             where: [
                 {
                     score: {
@@ -270,7 +300,12 @@ RSpec.describe AreSearch::Searcher, "filters" do
             expect do
                 described_class.search(
                     [index_target],
-                    fields: [:search_text],
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:search_text],
+                        },
+                    ],
                     where: {
                         retry_count: {
                             range: value,
@@ -286,7 +321,12 @@ RSpec.describe AreSearch::Searcher, "filters" do
         expect do
             described_class.search(
                 [index_target],
-                fields: [:search_text],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:search_text],
+                    },
+                ],
                 where: {
                     retry_count: 0,
                 },
@@ -297,7 +337,12 @@ RSpec.describe AreSearch::Searcher, "filters" do
         expect do
             described_class.search(
                 [index_target],
-                fields: [:search_text],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:search_text],
+                    },
+                ],
                 where: [
                     {
                         retry_count: :retry_count,
@@ -312,7 +357,12 @@ RSpec.describe AreSearch::Searcher, "filters" do
         expect do
             described_class.search(
                 [index_target],
-                fields: [:search_text],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:search_text],
+                    },
+                ],
                 where: {
                     retry_count: {
                         match: 0,
@@ -325,7 +375,12 @@ RSpec.describe AreSearch::Searcher, "filters" do
         expect do
             described_class.search(
                 [index_target],
-                fields: [:search_text],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:search_text],
+                    },
+                ],
                 where: {
                     retry_count: {
                         term: 0,
@@ -341,7 +396,12 @@ RSpec.describe AreSearch::Searcher, "filters" do
         expect do
             described_class.search(
                 [index_target],
-                fields: [:search_text],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:search_text],
+                    },
+                ],
                 where: {
                     search_text: {
                         term: "Rails",
@@ -379,7 +439,7 @@ RSpec.describe AreSearch::Searcher, "filters" do
 
         model_class.order(:id).each do |record|
             hits << {
-                "_index" => "test__sync_requests__default",
+                "_index" => "test__sync_requests__default__2026_07_03_03_10_00_123456",
                 "_id" => record.id.to_s,
                 "_source" => {
                     AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => model_class.name,
@@ -401,7 +461,12 @@ RSpec.describe AreSearch::Searcher, "filters" do
 
         result = described_class.search(
             [index_target],
-            fields: [:search_text],
+            queries: [
+                {
+                    query_string: "",
+                    fields: [:search_text],
+                },
+            ],
             model_relations: {
                 model_class => model_class.where(last_error: nil),
             },
@@ -410,3 +475,4 @@ RSpec.describe AreSearch::Searcher, "filters" do
         expect(result.records).to eq([included_record])
     end
 end
+

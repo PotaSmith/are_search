@@ -217,28 +217,6 @@ module AreSearch
                 },
             },
 
-            # query_string: "Rails"
-            query_string: {
-                scalar: {
-                    type: "string",
-                },
-            },
-
-            # query_type: AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING
-            query_type: {
-                scalar: {
-                    type: "query_type",
-                },
-            },
-
-            # fields: [:title, :body]
-            #
-            # fields: {
-            #     title: 2.0,
-            #     body:  1.0,
-            # }
-            fields: FIELDS_DEFINITIONS,
-
             # queries: [
             #     {
             #         query_string: "Rails",
@@ -417,6 +395,7 @@ module AreSearch
                             value: {
                                 hash: {
                                     must_keys: [:size],
+                                    must_not_keys: [:field],
                                     key_values: [
                                         {
                                             key: {
@@ -545,6 +524,34 @@ module AreSearch
                                             value: {
                                                 hash: {
                                                     key_values: [
+                                                        {
+                                                            key: {
+                                                                key_name: :pre_tags,
+                                                            },
+                                                            value: {
+                                                                array: {
+                                                                    children: {
+                                                                        scalar: {
+                                                                            type: "string",
+                                                                        },
+                                                                    },
+                                                                },
+                                                            },
+                                                        },
+                                                        {
+                                                            key: {
+                                                                key_name: :post_tags,
+                                                            },
+                                                            value: {
+                                                                array: {
+                                                                    children: {
+                                                                        scalar: {
+                                                                            type: "string",
+                                                                        },
+                                                                    },
+                                                                },
+                                                            },
+                                                        },
                                                         {
                                                             key: {
                                                                 type: "symbol_key",

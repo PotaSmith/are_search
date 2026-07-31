@@ -116,7 +116,12 @@ RSpec.describe "search paging" do
     it "単一 target は max_result_window を超える最後のページの size を縮める" do
         body = AreSearch::Searcher.search(
             [article_index_target],
-            fields:    [:title],
+            queries: [
+                {
+                    query_string: "",
+                    fields:    [:title],
+                },
+            ],
             page:      2,
             per_page:  20,
             dump_body: true,
@@ -130,7 +135,12 @@ RSpec.describe "search paging" do
     it "複数 target は最小の max_result_window で size を縮める" do
         body = AreSearch::Searcher.search(
             [article_index_target, document_index_target],
-            fields:    [:title],
+            queries: [
+                {
+                    query_string: "",
+                    fields:    [:title],
+                },
+            ],
             page:      2,
             per_page:  20,
             dump_body: true,
@@ -210,7 +220,7 @@ RSpec.describe "search paging" do
             "hits" => {
                 "hits" => [
                     {
-                        "_index"  => "test__articles__default",
+                        "_index"  => "test__articles__default__2026_07_03_03_10_00_123456",
                         "_id"     => "1",
                         "_source" => {
                             AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
@@ -218,7 +228,7 @@ RSpec.describe "search paging" do
                         },
                     },
                     {
-                        "_index"  => "test__articles__default",
+                        "_index"  => "test__articles__default__2026_07_03_03_10_00_123456",
                         "_id"     => "2",
                         "_source" => {
                             AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
@@ -236,10 +246,6 @@ RSpec.describe "search paging" do
         allow(client)
             .to receive(:search)
             .and_return(response)
-        allow(article_index_target)
-            .to receive(:are_search_es_composite_key) do |id|
-                "test__articles__default/#{id}"
-            end
         allow(article_model)
             .to receive(:where)
             .with(id: ["1", "2"])
@@ -257,12 +263,114 @@ RSpec.describe "search paging" do
         )
 
         expect(result.records).to eq([record])
-        expect(result.records_with_target_names).to eq([[record, :default]])
+        expect(result.records_with_hit).to eq([
+            [
+                record,
+                {
+                    index: "test__articles__default__2026_07_03_03_10_00_123456",
+                    id: "1",
+                    source: {
+                        AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => ["Article"],
+                        AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME => "1",
+                    },
+                    highlight: {},
+                    target_name: :default,
+                },
+            ],
+        ])
         expect(result.records.total_count).to eq(99)
         expect(result.records.es_total_count).to eq(100)
     end
 
-    it "raw_body検索はbucketsを持つaggsだけ変換しraw_responseで生レスポンスを返す" do
+    it "hitsが無い異常レスポンスはレコード関連結果を空にする" do
+        client = double("client")
+        response = {
+            "hits" => {
+                "total" => { "value" => 100 },
+            },
+        }
+
+        allow(AreSearch)
+            .to receive(:client)
+            .and_return(client)
+        allow(client)
+            .to receive(:search)
+            .and_return(response)
+
+        result = AreSearch::Searcher.search(
+            [article_index_target],
+            raw_body: {
+                query: {
+                    match_all: {},
+                },
+            },
+            page:     2,
+            per_page: 20,
+        )
+
+        expect(result.records).to eq([])
+        expect(result.records_with_hit).to eq([])
+        expect(result.records.total_count).to eq(0)
+        expect(result.records.es_total_count).to eq(0)
+        expect(result.raw_response).to equal(response)
+    end
+
+    it "1件でも_sourceが無い場合は復元せずES件数だけ残す" do
+        client = double("client")
+        response = {
+            "hits" => {
+                "hits" => [
+                    {
+                        "_index" => "test__articles__default__2026_07_03_03_10_00_123456",
+                        "_id" => "1",
+                        "_source" => {
+                            AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
+                        },
+                    },
+                    {
+                        "_index" => "test__articles__default__2026_07_03_03_10_00_123456",
+                        "_id" => "2",
+                    },
+                ],
+                "total" => { "value" => 100 },
+            },
+            "aggregations" => {
+                "status" => {
+                    "buckets" => [
+                        { "key" => "published", "doc_count" => 10 },
+                    ],
+                },
+            },
+        }
+
+        allow(AreSearch)
+            .to receive(:client)
+            .and_return(client)
+        allow(client)
+            .to receive(:search)
+            .and_return(response)
+        expect(article_model).not_to receive(:where)
+
+        result = AreSearch::Searcher.search(
+            [article_index_target],
+            raw_body: {
+                query: {
+                    match_all: {},
+                },
+            },
+            page:     1,
+            per_page: 20,
+        )
+
+        expect(result.records).to eq([])
+        expect(result.records_with_hit).to eq([])
+        expect(result.records.total_count).to eq(0)
+        expect(result.records.es_total_count).to eq(100)
+        expect(result.aggs(:status)).to eq([["published", 10]])
+        expect(result.raw_response).to equal(response)
+    end
+
+    it "raw_body検索はArray形式のbucketsを簡易結果へ変換しkeyがない場合はdoc_countだけを返す" do
         client = double("client")
         response = {
             "hits" => {
@@ -275,6 +383,30 @@ RSpec.describe "search paging" do
                         { "key" => "published", "doc_count" => 10 },
                         { "key" => "draft", "doc_count" => 3 },
                     ],
+                },
+                "published" => {
+                    "buckets" => [
+                        { "key" => 1, "key_as_string" => "true", "doc_count" => 10 },
+                        { "key" => 0, "key_as_string" => "false", "doc_count" => 3 },
+                    ],
+                },
+                "formatted_date" => {
+                    "buckets" => [
+                        { "key" => 1_785_283_200_000, "key_as_string" => "2026-07", "doc_count" => 10 },
+                        { "key" => 1_785_369_600_000, "key_as_string" => "2026-07", "doc_count" => 3 },
+                    ],
+                },
+                "anonymous_filters" => {
+                    "buckets" => [
+                        { "doc_count" => 10 },
+                        { "doc_count" => 3 },
+                    ],
+                },
+                "keyed_status" => {
+                    "buckets" => {
+                        "published" => { "doc_count" => 10 },
+                        "draft"     => { "doc_count" => 3 },
+                    },
                 },
                 "avg_price" => {
                     "value" => 12.5,
@@ -301,6 +433,46 @@ RSpec.describe "search paging" do
                             field: :status,
                         },
                     },
+                    published: {
+                        terms: {
+                            field: :published,
+                        },
+                    },
+                    formatted_date: {
+                        date_histogram: {
+                            field:             :published_at,
+                            calendar_interval: :day,
+                            format:            "yyyy-MM",
+                        },
+                    },
+                    anonymous_filters: {
+                        filters: {
+                            keyed: false,
+                            filters: [
+                                {
+                                    term: {
+                                        status: "published",
+                                    },
+                                },
+                                {
+                                    term: {
+                                        status: "draft",
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                    keyed_status: {
+                        filters: {
+                            filters: {
+                                published: {
+                                    term: {
+                                        status: "published",
+                                    },
+                                },
+                            },
+                        },
+                    },
                     avg_price: {
                         avg: {
                             field: :price,
@@ -312,13 +484,42 @@ RSpec.describe "search paging" do
             per_page: 20,
         )
 
-        expect(result.aggs).to eq(
-            "status" => {
-                "published" => 10,
-                "draft"     => 3,
-            },
+        expect(result.aggs(:status)).to eq(
+            [
+                ["published", 10],
+                ["draft", 3],
+            ],
         )
-        expect(result.aggs.key?("avg_price")).to eq(false)
+        expect(result.aggs(:published)).to eq(
+            [
+                ["true", 10],
+                ["false", 3],
+            ],
+        )
+        expect(result.aggs(:formatted_date)).to eq(
+            [
+                ["2026-07", 10],
+                ["2026-07", 3],
+            ],
+        )
+        expect(result.aggs(:anonymous_filters)).to eq([10, 3])
+        expect(result.aggs(:keyed_status)).to eq([])
+        expect(result.aggs(:avg_price)).to eq([])
+        expect(result.aggs).to eq(
+            status: [
+                ["published", 10],
+                ["draft", 3],
+            ],
+            published: [
+                [1, 10],
+                [0, 3],
+            ],
+            formatted_date: [
+                [1_785_283_200_000, 10],
+                [1_785_369_600_000, 3],
+            ],
+            anonymous_filters: [10, 3],
+        )
         expect(result.raw_response).to equal(response)
     end
 
@@ -367,7 +568,12 @@ RSpec.describe "search paging" do
         expect do
             AreSearch::Searcher.search(
                 [article_index_target],
-                fields:    [:title],
+                queries: [
+                    {
+                        query_string: "",
+                        fields:    [:title],
+                    },
+                ],
                 page:      "2",
                 per_page:  20,
                 dump_body: true,
@@ -377,7 +583,12 @@ RSpec.describe "search paging" do
         expect do
             AreSearch::Searcher.search(
                 [article_index_target],
-                fields:    [:title],
+                queries: [
+                    {
+                        query_string: "",
+                        fields:    [:title],
+                    },
+                ],
                 page:      1,
                 per_page:  0,
                 dump_body: true,

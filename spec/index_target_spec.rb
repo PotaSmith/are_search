@@ -39,6 +39,45 @@ RSpec.describe AreSearch::IndexTarget do
         end
     end
 
+    describe "同一性" do
+        it "同じモデルとtarget_nameなら同一targetとして扱う" do
+            first_index_target = described_class.new(model_class, :default)
+            second_index_target = described_class.new(model_class, :default)
+
+            expect(first_index_target).to eq(second_index_target)
+            expect(first_index_target.eql?(second_index_target)).to eq(true)
+            expect(first_index_target.hash).to eq(second_index_target.hash)
+            expect([first_index_target, second_index_target].uniq).to eq([
+                first_index_target,
+            ])
+
+            records_by_index_target = {
+                first_index_target => "record",
+            }
+            expect(records_by_index_target[second_index_target]).to eq("record")
+        end
+
+        it "target_nameが異なれば別targetとして扱う" do
+            default_index_target = described_class.new(model_class, :default)
+            archive_index_target = described_class.new(model_class, :archive)
+
+            expect(default_index_target).not_to eq(archive_index_target)
+        end
+
+        it "model_classが異なれば別targetとして扱う" do
+            other_model_class = double(
+                "OtherArticle",
+                name:                     "OtherArticle",
+                are_search_ar_table_name: "articles",
+                are_search_es_mappings:   target_mappings,
+            )
+            first_index_target = described_class.new(model_class, :default)
+            second_index_target = described_class.new(other_model_class, :default)
+
+            expect(first_index_target).not_to eq(second_index_target)
+        end
+    end
+
     describe "#are_search_es_index_name" do
         before do
             allow(AreSearch)
@@ -282,9 +321,15 @@ RSpec.describe AreSearch::IndexTarget do
                 .to receive(:search) do |index_targets, **actual_options|
                     expect(index_targets).to eq([index_target])
                     expect(actual_options).to eq(
-                        query_string:    "Rails",
-                        fields:          [:title],
+                        queries: [
+                            {
+                                query_string: "Rails",
+                                fields:       [:title],
+                                query_type:   AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING,
+                            },
+                        ],
                         model_relations: { model_class => relation },
+                        page: 2,
                     )
 
                     :search_result
@@ -292,8 +337,10 @@ RSpec.describe AreSearch::IndexTarget do
 
             result = index_target.are_search_es_search(
                 "Rails",
-                fields:   [:title],
-                relation: relation,
+                fields:     [:title],
+                query_type: AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING,
+                relation:   relation,
+                page:       2,
             )
 
             expect(result).to eq(:search_result)
@@ -323,6 +370,16 @@ RSpec.describe AreSearch::IndexTarget do
                     model_relations: { model_class => double("relation") },
                 )
             end.to raise_error(ArgumentError, /未知のオプション.*model_relations/)
+        end
+
+        it "queriesは受け付けない" do
+            expect do
+                index_target.are_search_es_search(
+                    "Rails",
+                    fields:  [:title],
+                    queries: [],
+                )
+            end.to raise_error(ArgumentError, /未知のオプション.*queries/)
         end
 
         it "ショートハンドとSearcherが現行オプション定義から同じbodyを作る" do
@@ -396,16 +453,23 @@ RSpec.describe AreSearch::IndexTarget do
                 dump_body: true,
             )
 
+            searcher_options = search_options.dup
+            searcher_fields = searcher_options.delete(:fields)
             searcher_body = AreSearch::Searcher.search(
                 [search_target],
-                query_string: "Rails",
-                **search_options,
+                queries: [
+                    {
+                        query_string: "Rails",
+                        fields:       searcher_fields,
+                    },
+                ],
+                **searcher_options,
                 dump_body: true,
             )
 
             expect(shortcut_body).to eq(searcher_body)
             expect(
-                shortcut_body.dig(:query, :bool, :must, :combined_fields, :fields),
+                shortcut_body.dig(:query, :bool, :must, 0, :combined_fields, :fields),
             ).to eq(["title^2.0"])
         end
     end

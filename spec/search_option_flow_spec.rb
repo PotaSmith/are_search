@@ -38,10 +38,6 @@ RSpec.describe "search option flow" do
                             status: { type: "keyword" },
                             count:  { type: "integer" },
                         },
-                        runtime: {
-                            runtime_title: { type: "text" },
-                            runtime_score: { type: "double" },
-                        },
                     },
                     mlt_source: {
                         index_settings: {
@@ -84,22 +80,24 @@ RSpec.describe "search option flow" do
             .and_return(true)
     end
 
-    it "query_stringにStringを受け付ける" do
-        allow(AreSearch::Searcher)
-            .to receive(:execute_and_build_result)
-            .and_return(:search_result)
-
-        result = AreSearch::Searcher.search(
+    it "queries配下のquery_stringにStringを受け付ける" do
+        body = AreSearch::Searcher.search(
             [article_index_target],
-            query_string: "Rails",
-            fields:       [:title],
+            queries: [
+                {
+                    query_string: "Rails",
+                    fields:       [:title],
+                },
+            ],
+            dump_body: true,
         )
 
-        expect(result).to eq(:search_result)
+        expect(
+            body.dig(:query, :bool, :must, 0, :combined_fields, :query),
+        ).to eq("Rails")
     end
 
-
-    it "未定義のquery_typeを拒否する" do
+    it "queries配下の未定義query_typeを拒否する" do
         invalid_query_types = [
             :query_string,
             "simple_query_string",
@@ -110,34 +108,27 @@ RSpec.describe "search option flow" do
             expect do
                 AreSearch::Searcher.search(
                     [article_index_target],
-                    query_string: "Rails",
-                    fields:       [:title],
-                    query_type:   query_type,
+                    queries: [
+                        {
+                            query_string: "Rails",
+                            fields:       [:title],
+                            query_type:   query_type,
+                        },
+                    ],
                 )
             end.to raise_error(ArgumentError, /query_type/)
         end
     end
 
-    it "queries配下の未定義query_typeを拒否する" do
-        expect do
-            AreSearch::Searcher.search(
-                [article_index_target],
-                queries: [
-                    {
-                        query_string: "Rails",
-                        fields:       [:title],
-                        query_type:   :query_string,
-                    },
-                ],
-            )
-        end.to raise_error(ArgumentError, /query_type/)
-    end
-
     it "空文字列ではcombined_fields句を作らない" do
         body = AreSearch::Searcher.search(
             [article_index_target],
-            query_string: "",
-            fields:       [:title],
+            queries: [
+                {
+                    query_string: "",
+                    fields:       [:title],
+                },
+            ],
             dump_body:    true,
         )
 
@@ -149,8 +140,12 @@ RSpec.describe "search option flow" do
             expect do
                 AreSearch::Searcher.search(
                     [article_index_target],
-                    query_string: query_string,
-                    fields:       [:title],
+                    queries: [
+                        {
+                            query_string: query_string,
+                            fields:       [:title],
+                        },
+                    ],
                 )
             end.to raise_error(ArgumentError, /String/)
         end
@@ -161,8 +156,12 @@ RSpec.describe "search option flow" do
             expect do
                 AreSearch::Searcher.search(
                     [article_index_target],
-                    query_string: query_string,
-                    fields:       [:title],
+                    queries: [
+                        {
+                            query_string: query_string,
+                            fields:       [:title],
+                        },
+                    ],
                 )
             end.to raise_error(
                 ArgumentError,
@@ -175,7 +174,12 @@ RSpec.describe "search option flow" do
         expect do
             AreSearch::Searcher.search(
                 [article_index_target],
-                fields:  [:title],
+                queries: [
+                    {
+                        query_string: "",
+                        fields:  [:title],
+                    },
+                ],
                 unknown: true,
             )
         end.to raise_error(ArgumentError, /未知の検索オプション/)
@@ -184,10 +188,14 @@ RSpec.describe "search option flow" do
     it "検証済みのElasticsearch値を変更せずbodyへ渡す" do
         body = AreSearch::Searcher.search(
             [article_index_target],
-            query_string: "検索語",
-            fields: {
-                title: 2.5,
-            },
+            queries: [
+                {
+                    query_string: "検索語",
+                    fields: {
+                        title: 2.5,
+                    },
+                },
+            ],
             sort: {
                 status: "desc",
                 count:  :asc,
@@ -226,7 +234,7 @@ RSpec.describe "search option flow" do
             dump_body: true,
         )
 
-        expect(body.dig(:query, :bool, :must, :combined_fields, :fields)).to eq([
+        expect(body.dig(:query, :bool, :must, 0, :combined_fields, :fields)).to eq([
             "title^2.5",
         ])
         expect(body.dig(:query, :bool, :filter)).to include(
@@ -280,10 +288,15 @@ RSpec.describe "search option flow" do
         )
     end
 
-    it "単純検索とMore Like This検索でwhere_orをfilter内のbool.shouldへ入れる" do
-        simple_body = AreSearch::Searcher.search(
+    it "標準検索とMore Like This検索でwhere_orをfilter内のbool.shouldへ入れる" do
+        standard_body = AreSearch::Searcher.search(
             [article_index_target],
-            fields: [:title],
+            queries: [
+                {
+                    query_string: "",
+                    fields: [:title],
+                },
+            ],
             where_or: {
                 status: {
                     term: "published",
@@ -306,7 +319,7 @@ RSpec.describe "search option flow" do
             dump_body: true,
         )
 
-        [simple_body, mlt_body].each do |body|
+        [standard_body, mlt_body].each do |body|
             where_or_bool = body.dig(:query, :bool, :filter).find do |filter_clause|
                 filter_clause.key?(:bool)
             end
@@ -337,7 +350,12 @@ RSpec.describe "search option flow" do
         expect do
             AreSearch::Searcher.search(
                 [article_index_target],
-                fields: [:title],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:title],
+                    },
+                ],
                 should: [],
             )
         end.to raise_error(ArgumentError, /未知の検索オプション/)
@@ -373,28 +391,6 @@ RSpec.describe "search option flow" do
         ).to eq("50%")
     end
 
-    it "runtimeのtextフィールドを検索対象にできる" do
-        body = AreSearch::Searcher.search(
-            [article_index_target],
-            query_string: "検索語",
-            fields:       [:runtime_title],
-            dump_body:    true,
-        )
-
-        expect(body.dig(:query, :bool, :must, :combined_fields, :fields)).to eq([
-            "runtime_title",
-        ])
-
-        expect do
-            AreSearch::Searcher.search(
-                [article_index_target],
-                query_string: "検索語",
-                fields:       [:runtime_score],
-                dump_body:    true,
-            )
-        end.to raise_error(ArgumentError, /any_text_without_non_text_fields/)
-    end
-
     it "mappingsに無いフィールドを表記に関係なく拒否する" do
         search_fields = [
             :"title.keyword",
@@ -406,8 +402,12 @@ RSpec.describe "search option flow" do
             expect do
                 AreSearch::Searcher.search(
                     [article_index_target],
-                    query_string: "検索語",
-                    fields:       [field_name],
+                    queries: [
+                        {
+                            query_string: "検索語",
+                            fields:       [field_name],
+                        },
+                    ],
                     dump_body:    true,
                 )
             end.to raise_error(ArgumentError, /any_text_without_non_text_fields/)
@@ -642,7 +642,12 @@ RSpec.describe "search option flow" do
         expect do
             AreSearch::Searcher.search(
                 [article_index_target],
-                fields: [:title],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:title],
+                    },
+                ],
                 model_relations: [],
                 dump_body: true,
             )
@@ -652,3 +657,4 @@ RSpec.describe "search option flow" do
         )
     end
 end
+

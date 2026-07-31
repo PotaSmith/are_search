@@ -9,15 +9,18 @@ AreSearch 使い方ガイド
 # 1. 検索入口
 ================================================================
 
-検索は AreSearch::Searcher.search に index target の配列と検索オプションを渡す。
-検索方式は指定されたオプションの組み合わせから選択される。
+AreSearch::Searcher.search に index target の Array と検索オプションを指定する。
 
     article_index = Article.are_search_index_target(:default)
 
     result = AreSearch::Searcher.search(
         [article_index],
-        query_string: "検索ワード",
-        fields:       [:title, :body],
+        queries: [
+            {
+                query_string: "検索ワード",
+                fields:       [:title, :body],
+            },
+        ],
     )
 
 戻り値は AreSearch::SearchResult。
@@ -27,88 +30,58 @@ AreSearch 使い方ガイド
 ----------------------------------------------------------------
 
 IndexTarget#are_search_es_search は、単一 target 検索用のショートハンド。
-第1引数を query_string として Searcher.search へ渡す。
 
     result = article_index.are_search_es_search(
         "検索ワード",
         fields: [:title, :body],
     )
 
-relation は、対象モデルを key にした model_relations へ変換される。
-
-
-## 1-2. 複数 target 検索のショートハンド
-----------------------------------------------------------------
-
-AreSearch.multi_search は、第2引数を query_string として Searcher.search へ渡す。
-
-    result = AreSearch.multi_search(
-        [
-            Article.are_search_index_target(:default),
-            Document.are_search_index_target(:default),
-        ],
-        "検索ワード",
-        fields: [:title, :body],
-    )
-
-新しい検索処理を直接呼ぶ場合は次の形になる。
-
-    result = AreSearch::Searcher.search(
-        [
-            Article.are_search_index_target(:default),
-            Document.are_search_index_target(:default),
-        ],
-        query_string: "検索ワード",
-        fields:       [:title, :body],
-    )
-
-
-## 1-3. More Like This のショートハンド
-----------------------------------------------------------------
-
-AreSearch.more_like_this は、More Like This の基準情報とパラメーターを
-mlt として Searcher.search へ渡す。
-
-    article = Article.find(1)
-    article_index = Article.are_search_index_target(:default)
-
-    result = AreSearch.more_like_this(
-        [article_index],
-        mlt: {
-            instance:     article,
-            index_target: article_index,
-            fields:       [:title, :body],
-        },
-    )
-
-Searcher.search を直接呼ぶ場合。
-
-    result = AreSearch::Searcher.search(
-        [article_index],
-        mlt: {
-            instance:     article,
-            index_target: article_index,
-            fields:       [:title, :body],
-        },
-    )
+relation を指定できる。
 
 
 # 2. 検索方式
 ================================================================
 
-## 2-1. 単純検索
+## 2-1. 標準検索
 ----------------------------------------------------------------
 
-query_string と fields を使用する。
-query_string が 空文字列の場合は、検索語による絞り込みを行わない。
+queries は1件以上の Array で指定する。
+各要素には query_string と fields が必要。query_type は省略できる。
+query_string が空文字列または空白だけの場合、その条件は検索に使用されない。
+
+検索条件が1件の場合。
 
     result = AreSearch::Searcher.search(
         [article_index],
-        query_string: "Rails",
-        fields:       [:title, :body],
+        queries: [
+            {
+                query_string: "Rails",
+                fields:       [:title, :body],
+            },
+        ],
     )
 
-fields は text 型フィールドの Array または、正の boost を値に持つ Hash で指定する。
+複数条件は queries に複数要素を指定する。
+すべての条件を満たす文書を検索する。
+
+    result = AreSearch::Searcher.search(
+        [article_index],
+        queries: [
+            {
+                query_string: "Rails",
+                fields:       [:title, :body],
+            },
+            {
+                query_string: "Elasticsearch",
+                fields: {
+                    title: 2.0,
+                    body:  1.0,
+                },
+            },
+        ],
+    )
+
+fields は text 型フィールドの Array、または boost を値に持つ Hash で指定する。
 
     fields: [:title, :body]
 
@@ -117,24 +90,23 @@ fields は text 型フィールドの Array または、正の boost を値に�
         body:  1.0,
     }
 
-Array の要素は Symbol。
-Hash のキーは Symbol、値は0より大きい Integer または Float。
-keyword、数値、date などの非 text フィールドは fields には指定できない。
+フィールド名は Symbol。boost は0より大きい Integer または Float。
+text 型以外のフィールドは指定できない。
 
-検索語を通常の全文検索として扱う場合は、query_typeを省略する。
-省略時はcombined_fieldsを使用し、空白で区切られた検索語をAND条件として検索する。
-combined_fieldsを明示する場合は、次のように指定する。
+query_type の既定値は combined_fields。
+空白で区切られた検索語を AND 条件として検索する。
 
     query_type: AreSearch::QUERY_TYPE_COMBINED_FIELDS
 
-Elasticsearchのsimple_query_string構文を使う場合は、query_typeを切り替える。
+simple_query_string の指定例。
 
-    result = AreSearch::Searcher.search(
-        [article_index],
-        query_string: 'Ruby + (Rails | Elasticsearch) -"Java VM"',
-        fields:       [:title, :body],
-        query_type:   AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING,
-    )
+    queries: [
+        {
+            query_string: 'Ruby + (Rails | Elasticsearch) -"Java VM"',
+            fields:       [:title, :body],
+            query_type:   AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING,
+        },
+    ]
 
 使用できる主な検索式。
 
@@ -156,65 +128,20 @@ Elasticsearchのsimple_query_string構文を使う場合は、query_typeを切�
     "Ruby on Rails"
         フレーズ検索
 
-AreSearchはquery_stringを変換またはescapeせず、そのままElasticsearchへ渡す。
-`AND`、`OR`、`NOT`という文字列を`+`、`|`、`-`へ置き換える処理も行わない。
-simple_query_stringは不正な構文で例外を返さず、解釈できない部分を無視する。
-combined_fieldsとは複数フィールドの扱いとスコア計算が異なるため、検索結果の順序は同一とは限らない。
+query_string は変換せず Elasticsearch へ渡す。
+指定の詳細は Elasticsearch の simple_query_string のドキュメントを参照する。
 
-query_typeは次の定数のいずれかを指定する。
+query_type は次の定数のいずれかを指定する。
 
     AreSearch::QUERY_TYPE_COMBINED_FIELDS
     AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING
 
 
-## 2-2. 複合フィールド検索
+## 2-2. More Like This
 ----------------------------------------------------------------
 
-検索語ごとに対象フィールドと boost を分ける場合は queries を使用する。
-query_string / fields とは同時に指定しない。
-
-    result = AreSearch::Searcher.search(
-        [article_index],
-        queries: [
-            {
-                query_string: "Rails",
-                fields: [:title, :body],
-            },
-            {
-                query_string: "Elasticsearch",
-                fields: {
-                    title: 2.0,
-                    body:  1.0,
-                },
-            },
-        ],
-    )
-
-queries は1件以上の Array。
-各要素は query_string と fields を持つ Hash にし、必要な要素だけ query_type を追加する。
-query_type を省略した要素は combined_fields を使用する。
-
-    queries: [
-        {
-            query_string: "Rails",
-            fields:       [:title],
-        },
-        {
-            query_string: "Ruby | Elasticsearch",
-            fields:       [:title, :body],
-            query_type:   AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING,
-        },
-    ]
-
-fields は単純検索と同じく、text 型フィールドの Array または正の boost を持つ Hash。
-`{ field: ..., boost: ... }` を要素にした旧形式は使用しない。
-
-
-## 2-3. More Like This
-----------------------------------------------------------------
-
-mlt を使用する。
-query_string、fields、queries、sort とは同時に指定しない。
+mlt は、指定したレコードに似たレコードを検索する。
+queries、sort とは同時に指定できない。
 
     result = AreSearch::Searcher.search(
         [article_index],
@@ -231,33 +158,24 @@ query_string、fields、queries、sort とは同時に指定しない。
         },
     )
 
-mlt は More Like This の基準情報と、Elasticsearch の more_like_this 句へ入れる設定を
-まとめた Hash。instance、index_target、fields は必須。
-instance には基準レコード、index_target には基準レコードを格納した IndexTarget を指定する。
-fields は検索対象側と mlt.index_target 側の両方に存在する、
-index 対象の text 型または keyword 型フィールドを Array で指定する。
-boost 付き Hash、数値型、date 型などは fields に使用できない。
-AreSearch の既定の _source 構成では、More Like This が基準ドキュメントの元の値を
-取得できるよう、fields に指定する各フィールドの mapping に store: true を指定する。
+instance、index_target、fields は必須。
+instance には基準レコード、index_target には基準レコードの IndexTarget を指定する。
+fields は検索対象と基準側の両方に存在する text または keyword 型フィールドを Array で指定する。
+fields に指定するフィールドには store: true が必要。
 
     body: {
         type:  "text",
         store: true,
     }
 
-instance、index_target、fields 以外には、String、Integer、Float、true、false の
-単体値を取る more_like_this パラメーターを Symbol キーで指定できる。
-
-min_term_freq、min_doc_freq、max_query_terms を省略した場合は、
-それぞれ 2、5、25 を設定する。
-mlt_instance、mlt_index_target、mlt_params、mlt_fields、min_term_freq などを
-Searcher.search のトップレベルには指定しない。
+その他の指定は Elasticsearch の more_like_this のドキュメントを参照する。
+min_term_freq、min_doc_freq、max_query_terms の既定値は、それぞれ 2、5、25。
 
 
-## 2-4. Raw body 検索
+## 2-3. Raw body 検索
 ----------------------------------------------------------------
 
-複雑な検索は Elasticsearch の Query DSL を raw_body に指定する。
+raw_body に Elasticsearch の Query DSL を指定する。
 
     body = {
         track_total_hits: true,
@@ -285,13 +203,11 @@ raw_body と同時に使用できる AreSearch 側のオプション。
     :build_model_bool
     :dump_body
 
-from と size は page / per_page から設定される。
-body のその他のキーは変換せず、そのまま Elasticsearch へ渡される。
-元の Hash は変更しない。
+from と size は page / per_page から設定する。
+その他の指定は変換せず Elasticsearch へ渡す。元の Hash は変更しない。
 
-build_model_bool: true を指定した場合だけ、query.bool.filter に検索対象モデルの条件を追加する。
-query.bool 以外の query は自動変換せずエラーにする。
-Symbol / String のどちらの key でも使用できる。
+build_model_bool: true を指定すると検索対象モデルの条件を追加する。
+raw_body には query.bool が必要。Symbol と String の key を使用できる。
 
     result = AreSearch::Searcher.search(
         [article_index],
@@ -307,15 +223,14 @@ Symbol / String のどちらの key でも使用できる。
         build_model_bool: true,
     )
 
-正確な総件数が必要な場合は raw_body に track_total_hits: true を指定する。
-Elasticsearch の生レスポンスは result.raw_response から取得できる。
+正確な総件数が必要な場合は track_total_hits: true を指定する。
+生レスポンスは result.raw_response で返す。
 
 
 # 3. 共通オプション
 ================================================================
 
-標準 body を作る単純検索、複合フィールド検索、More Like This で使用できる。
-検索方式によって同時指定できないオプションは、検索パラメータの組み合わせエラーになる。
+標準検索と More Like This で使用できる共通オプション。
 
     :where
     :where_not
@@ -327,16 +242,13 @@ Elasticsearch の生レスポンスは result.raw_response から取得できる
     :highlight
     :dump_body
 
-sort は単純検索と複合フィールド検索で使用できる。
-More Like This では使用できない。
+sort は標準検索でのみ使用できる。
 
-単一 target のショートハンドだけ relation を受け取る。
-Searcher.search と AreSearch の複数 target 用ショートハンドでは、
-model_relations を使用する。
+単一 target のショートハンドでは relation、Searcher.search では model_relations を使用する。
 
-複数 target 検索では、オプションごとにフィールドの必要範囲が異なる。
+フィールドの条件。
 
-    fields / queries
+    queries.fields
         1つ以上の target に存在し、同名フィールドが別の型で定義されていない text フィールド。
 
     mlt.fields / highlight.fields
@@ -351,56 +263,37 @@ model_relations を使用する。
         すべての target に存在する非 text フィールド。
 
     aggs
-        1つ以上の target に存在する非 text フィールド。
+        1つ以上の target に存在し、同名フィールドが text 型として定義されていないフィールド。
 
-標準検索オプションで指定するフィールド名は Symbol に限定し、mappings と照合する。
-String は Symbol へ変換せず拒否する。
-指定できるのは各 target の properties / runtime 直下に定義されたフィールドだけ。
-runtime フィールドも指定できるが、対応する型や検索機能での利用可否は Elasticsearch の制限に従う。
-利用する場合は、使用する Elasticsearch バージョンの仕様を確認する。
-ドット、ワイルドカード、大文字などを使った未定義の Elasticsearch 固有表記も拒否する。
-このような指定が必要な検索は raw_body で明示的に組み立てる。
+標準検索オプションのフィールド名は、各 target の properties 直下に定義された Symbol に限る。
 
 
 ## 3-1. 外部入力として使用する値
 ----------------------------------------------------------------
 
-外部入力としてそのまま渡すことを想定している値。
+外部入力として指定できる値。
 
-    query_string
     queries の query_string
+    where / where_not / where_or の条件値
     page
 
-上記以外の検索オプションは、アプリケーション側で値を決めて渡すことを想定している。
-外部入力をそのまま渡した場合は、値の型や内容によって検索パラメータとして拒否されることがある。
-
-page は正の Integer に変換してから渡す。
-page から計算した検索開始位置が target の max_result_window 以上になる場合、
-AreSearch は Elasticsearch へ from: max_result_window、size: 0 を渡して0件を返す。
-そのため、外部入力から極端に大きいページ番号を指定されても、
-max_result_window を超える深いページングは行わない。
-
-以下のフィールド名は Symbol で指定し、mappings と照合される。
-
-    fields / queries / mlt.fields のフィールド名
-    where / where_not / where_or のフィールド名
-    sort のフィールド名
-    aggs のフィールド名
-    highlight.fields のフィールド名
-
-外部入力の String をそのまま渡さず、アプリケーション側で許可した Symbol を使用する。
-想定外のフィールドで検索される可能性があるため、フィールド名は基本的に外部入力としない。
+各オプションの型と制約が適用される。
+page は正の Integer で指定し、max_result_window 以降のページは0件になる。
 
 
-単純検索。
+検索条件が1件の場合。
 
     result = AreSearch::Searcher.search(
         [article_index],
-        query_string: params[:q],
-        fields:       [:title, :body],
+        queries: [
+            {
+                query_string: params[:q],
+                fields:       [:title, :body],
+            },
+        ],
     )
 
-複合フィールド検索。
+検索条件が複数ある場合。
 
     result = AreSearch::Searcher.search(
         [article_index],
@@ -420,8 +313,12 @@ max_result_window を超える深いページングは行わない。
 
     result = AreSearch::Searcher.search(
         [article_index],
-        query_string: params[:q],
-        fields:       [:title, :body],
+        queries: [
+            {
+                query_string: params[:q],
+                fields:       [:title, :body],
+            },
+        ],
         where: {
             status: {
                 term: params[:filter_value],
@@ -433,8 +330,12 @@ max_result_window を超える深いページングは行わない。
 
     result = AreSearch::Searcher.search(
         [article_index],
-        query_string: params[:q],
-        fields:       [:title, :body],
+        queries: [
+            {
+                query_string: params[:q],
+                fields:       [:title, :body],
+            },
+        ],
         sort:         :updated_at,
         page:         params.fetch(:page, 1).to_i,
         per_page:     20,
@@ -443,10 +344,8 @@ max_result_window を超える深いページングは行わない。
 # 4. where / where_not / where_or
 ================================================================
 
-where、where_not、where_or は同じ条件形式を使用する。
-Hash または Array<Hash> で指定する。
-
-各フィールドの値は、term、terms、range のいずれか1つを持つ Hash にする。
+where、where_not、where_or は Hash または Array<Hash> で指定する。
+各フィールドには term、terms、range のいずれか1つを指定する。
 
     where: {
         status: {
@@ -501,33 +400,30 @@ Hash または Array<Hash> で指定する。
         },
     ]
 
-where は filter に追加される。
-where_not は must_not に追加される。
-where_or は filter 内の bool.should に追加され、minimum_should_match は1になる。
-そのため where_or はスコアへ影響しない絞り込み条件として動作する。
+text 型フィールドは指定できない。
+where はすべて一致、where_not は除外、where_or はいずれか1件一致の条件になる。
 
-term の値は String、Integer、Float、true、false のいずれか。
-terms は Array で指定し、各要素も String、Integer、Float、true、false のいずれか。
-空の Array は指定できる。
-range は1件以上の Hash で指定し、各値も String、Integer、Float、true、false のいずれか。
+term、terms、range の値は String、Integer、Float、true、false。
+terms は Array、range は1件以上の Hash で指定する。terms には空の Array も指定できる。
 日付は Elasticsearch が解釈できる String または Integer で指定する。
-Array、Hash、Range、Time オブジェクトなどは値として使用できない。
-text 型フィールドは完全一致条件として使用できない。
 
 
 # 5. model_relations
 ================================================================
 
-Elasticsearch の hit を ActiveRecord から復元するときに使用する Relation を、
-対象モデルごとに指定する。
+検索結果を ActiveRecord から取得する Relation を、対象モデルごとに指定する。
 
     result = AreSearch::Searcher.search(
         [
             Article.are_search_index_target(:default),
             Document.are_search_index_target(:default),
         ],
-        query_string: "Rails",
-        fields:       [:title, :body],
+        queries: [
+            {
+                query_string: "Rails",
+                fields:       [:title, :body],
+            },
+        ],
         model_relations: {
             Article => Article
                 .where(status: "published")
@@ -548,24 +444,26 @@ Elasticsearch の hit を ActiveRecord から復元するときに使用する R
             .includes(:user, :tags),
     )
 
-model_relations の key は検索対象モデル、値は ActiveRecord::Relation とする。
-Relation の klass は key に指定したモデルと同じクラスでなければならない。
-
-AreSearch は指定された Relation に Elasticsearch の hit ID 条件を追加してレコードを取得する。
-Relation の条件に合わない hit や、DB に存在しない hit は結果から除外される。
-includes、joins などの ActiveRecord の処理も Relation 側で指定する。
+model_relations の key は検索対象モデル、値は ActiveRecord::Relation。
+Relation の klass は key のモデルと同じクラスである必要がある。
+Relation の条件に合わない結果と、DB に存在しない結果は除外される。
+includes、joins なども Relation に指定できる。
 
 
 # 6. aggs
 ================================================================
 
-指定フィールドの値を terms aggregation で集計する。
+指定フィールドを terms aggregation で集計する。
 text 型フィールドは指定できない。
 
     result = AreSearch::Searcher.search(
         [article_index],
-        query_string: "Rails",
-        fields:       [:title, :body],
+        queries: [
+            {
+                query_string: "Rails",
+                fields:       [:title, :body],
+            },
+        ],
         aggs: {
             status: {
                 size: 20,
@@ -576,16 +474,25 @@ text 型フィールドは指定できない。
         },
     )
 
-    result.aggs[:category].each do |name, count|
+    result.aggs(:category).each do |name, count|
         puts "#{name}: #{count}"
     end
 
-各フィールドのオプションは Hash で指定し、size は正の整数で必ず指定する。
-size 以外のオプションのキーは Symbol、値は String、Integer、Float、true、false のいずれか。
-include、exclude など、単一値で表せる terms オプションは Elasticsearch へそのまま渡される。
-Hash や Array を値に取る複雑な aggregation は raw_body を使用する。
-result.aggs は buckets を持つ aggregation を簡易形式で返す。
-それ以外の aggregation は result.raw_response を参照する。
+各フィールドには正の整数の size が必要。
+その他の指定には、String、Integer、Float、true、false を値に持つ terms オプションを使用できる。
+
+result.aggs(name) は Array 形式の buckets を簡易化して返す。
+
+    key がある
+        [[key, doc_count], ...]
+        key_as_string がある場合は key の代わりに使用する。
+
+    key がない
+        [doc_count, ...]
+
+対象 aggregation が無い、buckets が無い、または Array 形式でない場合は空 Array を返す。
+引数なしの result.aggs は内部の key を使用した結果全体を Hash で返す。
+生の aggregation 結果は result.raw_response で返す。
 
 
 # 7. page / per_page
@@ -593,13 +500,17 @@ result.aggs は buckets を持つ aggregation を簡易形式で返す。
 
     result = AreSearch::Searcher.search(
         [article_index],
-        query_string: "Rails",
-        fields:       [:title, :body],
+        queries: [
+            {
+                query_string: "Rails",
+                fields:       [:title, :body],
+            },
+        ],
         page:         2,
         per_page:     20,
     )
 
-result.records は Kaminari の paginate ヘルパーへ渡せる。
+result.records は Kaminari の paginate ヘルパーに対応する。
 
     paginate result.records
 
@@ -611,18 +522,17 @@ result.records は Kaminari の paginate ヘルパーへ渡せる。
     result.records.es_total_count
     result.records.total_pages
 
-page と per_page は正の Integer で指定する。
-取得範囲は target の max_result_window 内に収められる。
-複数 target 検索では対象 target の最小値が使われる。
+page と per_page は正の Integer。
+取得範囲の上限は target の max_result_window。複数 target では最小値を使用する。
 
-result.records.total_count は、現在ページでDB復元できなかった hit を差し引いた表示用件数。
-Elasticsearch が返した総件数は result.records.es_total_count で確認できる。
+result.records.total_count は、現在ページでDB復元できなかった件数を差し引く。
+Elasticsearch の総件数は result.records.es_total_count で返す。
 
 
 # 8. sort
 ================================================================
 
-単純検索と複合フィールド検索で使用できる。
+sort は標準検索で使用できる。
 
     sort: :updated_at
 
@@ -631,26 +541,35 @@ Elasticsearch が返した総件数は result.records.es_total_count で確認�
         id:         :desc,
     }
 
-Hash 形式ではキーの記述順が sort の優先順位になる。
-上の例では updated_at の降順を第1条件、id の降順を第2条件として Elasticsearch へ渡す。
-通常フィールドは、検索対象のすべての target に存在する非 text フィールドだけを指定できる。
-Elasticsearch の特別な値として _score と _doc も使用できる。
-Hash の値は String または Symbol。AreSearch は asc / desc の内容までは検査しない。
-mode、missing、nested など Hash を値に取る複雑な sort は raw_body を使用する。
-Array 形式は使用しない。
+Hash はキーの記述順を優先順位として使用する。
+フィールドには、Elasticsearch の特別な値として _score と _doc も指定できる。
+
+sort の値は String または Symbol。指定の詳細は Elasticsearch のドキュメントを参照する。
 
 
 # 9. highlight
 ================================================================
 
-highlight を指定する場合は fields が必須。
-対象フィールドは text 型または keyword 型に限る。
+highlight は検索結果の一致部分を返す。
+fields は必須で、text または keyword 型フィールドを指定する。
 
 フィールド名だけを指定する場合。
 
     highlight: {
         fields: [:title, :body, :status],
     }
+
+一致部分は、デフォルトでは <em> と </em> で囲まれる。
+
+タグを変更する場合。
+
+    highlight: {
+        fields:    [:title, :body],
+        pre_tags:  ["<mark>"],
+        post_tags: ["</mark>"],
+    }
+
+pre_tags と post_tags は String の Array で指定する。
 
 フィールド別オプションを指定する場合。
 
@@ -668,35 +587,31 @@ highlight を指定する場合は fields が必須。
         require_field_match: false,
     }
 
-Hash 形式の各フィールドオプションは1件以上必要で、空 Hash は指定できない。
-フィールド別オプションと highlight 直下の追加オプションは、Symbol キーで指定する。
-通常の追加オプションは String、Integer、true、false の値を指定できる。
-pre_tags と post_tags は String の Array を指定できる。
-AreSearch はタグや encoder の固定値を追加せず、指定された highlight オプションを Elasticsearch へ渡す。
-
-AreSearch の既定の _source 構成では通常フィールドを保存しないため、ハイライト対象の
-mapping には元文字列を取得できるよう store: true を指定する。
+fields は Array または Hash で指定する。Hash のフィールド別オプションは空にできない。
+fields に指定するフィールドには store: true が必要。
 
     body: {
         type:  "text",
         store: true,
     }
 
-CJK bigram で本文再解析を避ける場合は index_options: "offsets" を使用する。
-index_options を使用しない場合は index_settings の highlight.max_analyzed_offset を調整する。
-どちらの場合も are_search_es_data には対象フィールドを含める。
-mapping または index_settings を変更した後は reindex が必要。
+その他の指定は Elasticsearch の highlighting のドキュメントを参照する。
+mapping または index_settings の変更後は reindex が必要。
 
 
 # 10. dump_body
 ================================================================
 
-検索を実行せず、AreSearch が組み立てた body を確認する。
+検索を実行せず、AreSearch が組み立てた body を返す。
 
     body = AreSearch::Searcher.search(
         [article_index],
-        query_string: "Rails",
-        fields:       [:title, :body],
+        queries: [
+            {
+                query_string: "Rails",
+                fields:       [:title, :body],
+            },
+        ],
         where: {
             status: {
                 term: "published",
@@ -707,7 +622,7 @@ mapping または index_settings を変更した後は reindex が必要。
 
     pp body
 
-raw_body 検索でも、ページングや build_model_bool を反映した body を返す。
+raw_body 検索では、page、per_page、build_model_bool を反映した body を返す。
 
 
 # 11. SearchResult
@@ -716,11 +631,11 @@ raw_body 検索でも、ページングや build_model_bool を反映した body
 ## 11-1. status
 ----------------------------------------------------------------
 
-検索がどの状態で終了したかを返す。
+検索の終了状態を返す。
 
     result.status
 
-status の判定には SearchResult の定数を使用する。
+status は SearchResult の定数で判定する。
 
     if result.status == AreSearch::SearchResult::STATUS_PARAMS_INVALID
         # EsSearchBodyPolicy に拒否された場合の処理
@@ -750,45 +665,53 @@ status の判定には SearchResult の定数を使用する。
 
 ActiveRecord のレコードを検索順で返す。
 
-複数 target の結果で target_name も必要な場合。
 
-    result.records_with_target_names.each do |record, target_name|
-        puts "#{record.class.name}: #{target_name}"
-    end
-
-
-## 11-3. highlights
+## 11-3. records_with_hit
 ----------------------------------------------------------------
 
-Elasticsearch が返したフィールド別 highlight Hash を取得する。
+ActiveRecord のレコードと、対応する Elasticsearch hit の情報を検索順で返す。
 
-    result.records_with_target_names.each do |record, target_name|
-        result.highlights(record, target_name).each do |field_name, fragments|
+    result.records_with_hit.each do |record, hit|
+        puts record.title
+        puts hit[:index]
+        puts hit[:id]
+        puts hit[:target_name]
+        puts hit[:source][:title]
+
+        hit[:highlight].each do |field_name, fragments|
             fragments.each do |fragment|
                 puts "#{field_name}: #{fragment}"
             end
         end
     end
 
-pre_tags、post_tags、encoder を指定した場合、その結果が加工されずに返る。
-対象 hit に highlight が無い場合は空 Hash を返す。
+hit は次のキーを持つ。
 
+    :index
+        Elasticsearch が返した _index。
 
-## 11-4. hit_source
-----------------------------------------------------------------
+    :id
+        Elasticsearch が返した _id。
 
-検索時に返された Elasticsearch の _source を確認するデバッグ用メソッド。
+    :source
+        Elasticsearch が返した _source。
+        フィールド名は Symbol。対象 hit に値が無い場合は空 Hash。
 
-    source = result.hit_source(record, target_name)
+    :highlight
+        Elasticsearch が返した highlight。
+        フィールド名は Symbol。対象 hit に値が無い場合は空 Hash。
 
-対象 hit が無い場合は空 Hash を返す。
-_source excludes に指定したフィールドは含まれない。
-highlight の取得には使用しない。
+    :target_name
+        レコードを復元した IndexTarget の target_name。
+
+1件でも _source が無い場合、ActiveRecord への復元は行わず、records と records_with_hit は空になる。
+Elasticsearch のレスポンスは raw_response に残り、総件数は records.es_total_count で確認できる。
 
 
 ## 11-5. raw_response
 ----------------------------------------------------------------
 
-Elasticsearch の生レスポンスを取得する。
+Elasticsearch の生レスポンスを返す。
 
     result.raw_response
+

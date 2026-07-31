@@ -71,7 +71,6 @@ module AreSearch
             # highlight を fields が Hash の共通形式へ変換する
             def normalize_highlight_options(highlight_opts)
                 return nil if highlight_opts.nil?
-                return nil if highlight_opts[:fields].nil?
 
                 normalized_fields = {}
                 highlight_fields = highlight_opts[:fields]
@@ -86,8 +85,6 @@ module AreSearch
                     end
                 end
 
-                return nil if normalized_fields.empty?
-
                 normalized_options = {}
                 highlight_opts.each do |key, value|
                     next if key == :fields
@@ -97,37 +94,6 @@ module AreSearch
                 normalized_options[:fields] = normalized_fields
 
                 normalized_options
-            end
-
-            # page / per_page から算出した from / size を max_result_window 内へ収める
-            def resolve_paging_params(index_targets, from, size)
-                max_result_window = resolve_max_result_window(index_targets)
-
-                if from >= max_result_window
-                    return [max_result_window, 0]
-                end
-
-                if from + size > max_result_window
-                    size = max_result_window - from
-                end
-
-                size = 0 if size < 0
-
-                [from, size]
-            end
-
-            # 最小の max_result_window を計算
-            def resolve_max_result_window(index_targets)
-                values = index_targets.map { |index_target| resolve_model_max_result_window(index_target) }
-
-                values.min
-            end
-
-            # モデルごとの最小の max_result_window を計算
-            def resolve_model_max_result_window(index_target)
-                model_index_settings = index_target.are_search_es_index_settings
-
-                model_index_settings[:max_result_window]
             end
 
             # フィールド別の terms オプションから ES リクエスト用の aggs を組み立てる。

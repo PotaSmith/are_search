@@ -46,8 +46,7 @@ require_relative "are_search/searcher/validator/search_option_validator"
 require_relative "are_search/searcher/validator/search_param_validator"
 
 require_relative "are_search/searcher/query_builder/query_builder_base"
-require_relative "are_search/searcher/query_builder/simple_query_builder"
-require_relative "are_search/searcher/query_builder/complex_field_query_builder"
+require_relative "are_search/searcher/query_builder/standard_query_builder"
 require_relative "are_search/searcher/query_builder/more_like_this_query_builder"
 require_relative "are_search/searcher/query_builder/raw_query_builder"
 require_relative "are_search/searcher/query_builder_selector"
@@ -384,26 +383,6 @@ module AreSearch
         return EMPTY_ES_INDEX_PREFIX if index_prefix_string.empty?
 
         index_prefix_string
-    end
-
-    # 複数 target 検索のショートハンド。
-    # query は Searcher の query_string として渡す。
-    def self.multi_search(index_targets, query, **options)
-        AreSearch::Searcher.search(
-            index_targets,
-            query_string: query,
-            **options,
-        )
-    end
-
-    # More Like This 検索のショートハンド。
-    # mlt は Searcher の More Like This 用オプションとして渡す。
-    def self.more_like_this(index_targets, mlt:, **options)
-        AreSearch::Searcher.search(
-            index_targets,
-            mlt: mlt,
-            **options,
-        )
     end
 
     def self.mark_index!(es_index_name)

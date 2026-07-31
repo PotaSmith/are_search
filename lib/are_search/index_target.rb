@@ -36,6 +36,27 @@ module AreSearch
             @ar_table_name = ar_table_name
         end
 
+        # 同じモデルと target_name を持つ IndexTarget を同一targetとして扱う。
+        def ==(other)
+            return false unless other.instance_of?(self.class)
+            return false unless model_class == other.model_class
+
+            target_name == other.target_name
+        end
+
+        # HashのkeyとArray#uniqでも同じ同一target判定を使用する。
+        def eql?(other)
+            self == other
+        end
+
+        # eql?で同一になるIndexTargetが同じHash値を返すようにする。
+        def hash
+            [
+                model_class,
+                target_name,
+            ].hash
+        end
+
         # alias名: {prefix}__{are_search_ar_table_name}__{target_name}
         # 検索・index・delete・sync 等、既存の呼び出し元はこの名前を参照する。
         # prefix は config/initializers/are_search.rb で設定。
@@ -113,11 +134,6 @@ module AreSearch
             )
         end
 
-        # 検索結果復元用のcomposite_keyを生成する
-        def are_search_es_composite_key(id)
-            "#{are_search_es_index_name}/#{id}"
-        end
-
         # 全件をElasticsearchに投入する（移行時・スキーマ変更時に実行する）。
         #
         # flock とマーカーファイルの管理は IndexManager.es_reindex に委ね、
@@ -138,19 +154,33 @@ module AreSearch
         end
 
         # 単一の index target を Searcher で検索する。
+        # query・fields・query_type は1件の queries へ変換する。
         # 指定された relation は、対象モデルを key にした model_relations へ変換して渡す。
         #
         # @return [SearchResult]
         #
         def are_search_es_search(query, **options)
-            if options.key?(:model_relations)
+            unsupported_options = []
+            [:model_relations, :queries].each do |option_name|
+                if options.key?(option_name)
+                    unsupported_options << option_name
+                end
+            end
+            if unsupported_options.any?
                 raise ArgumentError,
-                    "are_search_es_search に未知のオプションが指定されています: [:model_relations]"
+                    "are_search_es_search に未知のオプションが指定されています: #{unsupported_options.inspect}"
             end
 
             model = model_class
             index_targets = [self]
             relation_opt = options.delete(:relation)
+            query_options = {
+                query_string: query,
+                fields:       options.delete(:fields),
+            }
+            if options.key?(:query_type)
+                query_options[:query_type] = options.delete(:query_type)
+            end
 
             if relation_opt.nil? == false
                 options[:model_relations] = {
@@ -160,7 +190,7 @@ module AreSearch
 
             AreSearch::Searcher.search(
                 index_targets,
-                query_string: query,
+                queries: [query_options],
                 **options,
             )
         end
