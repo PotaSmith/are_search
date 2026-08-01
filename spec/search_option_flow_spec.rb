@@ -135,38 +135,32 @@ RSpec.describe "search option flow" do
         expect(body.dig(:query, :bool)).not_to have_key(:must)
     end
 
-    it "query_stringの非String scalar値を拒否する" do
-        [1, :query, true, false].each do |query_string|
-            expect do
-                AreSearch::Searcher.search(
-                    [article_index_target],
-                    queries: [
-                        {
-                            query_string: query_string,
-                            fields:       [:title],
-                        },
-                    ],
-                )
-            end.to raise_error(ArgumentError, /String/)
-        end
-    end
+    it "query_stringが制約に合わない場合はparams_invalidの空結果を返す" do
+        invalid_query_strings = [
+            nil,
+            1,
+            :query,
+            true,
+            false,
+            {},
+            [],
+        ]
 
-    it "query_stringに定義されていないnode_typeを拒否する" do
-        [{}, []].each do |query_string|
-            expect do
-                AreSearch::Searcher.search(
-                    [article_index_target],
-                    queries: [
-                        {
-                            query_string: query_string,
-                            fields:       [:title],
-                        },
-                    ],
-                )
-            end.to raise_error(
-                ArgumentError,
-                /node_type .* は定義されていません/,
+        invalid_query_strings.each do |query_string|
+            result = AreSearch::Searcher.search(
+                [article_index_target],
+                queries: [
+                    {
+                        query_string: query_string,
+                        fields:       [:title],
+                    },
+                ],
             )
+
+            expect(result.status).to eq(AreSearch::SearchResult::STATUS_PARAMS_INVALID)
+            expect(result.records).to eq([])
+            expect(result.records.current_page).to eq(1)
+            expect(result.records.per_page).to eq(25)
         end
     end
 
@@ -201,9 +195,22 @@ RSpec.describe "search option flow" do
                 count:  :asc,
             },
             aggs: {
-                status: {
-                    size:          10,
-                    min_doc_count: 0,
+                status_count: {
+                    terms: {
+                        field:         :status,
+                        size:          10,
+                        min_doc_count: 0,
+                    },
+                },
+                count_ranges: {
+                    range: {
+                        field: :count,
+                        ranges: [
+                            { to: 10 },
+                            { from: 10, to: 20, key: "middle" },
+                            { from: 20 },
+                        ],
+                    },
                 },
             },
             highlight: {
@@ -273,10 +280,18 @@ RSpec.describe "search option flow" do
                 count: :asc,
             },
         ])
-        expect(body.dig(:aggs, :status, :terms)).to eq(
+        expect(body.dig(:aggs, :status_count, :terms)).to eq(
+            field:         :status,
             size:          10,
             min_doc_count: 0,
-            field:         :status,
+        )
+        expect(body.dig(:aggs, :count_ranges, :range)).to eq(
+            field: :count,
+            ranges: [
+                { to: 10 },
+                { from: 10, to: 20, key: "middle" },
+                { from: 20 },
+            ],
         )
         expect(body[:highlight]).to include(
             fields: {
@@ -285,6 +300,37 @@ RSpec.describe "search option flow" do
                 },
             },
             max_analyzed_offset: 0,
+        )
+    end
+
+    it "aggsのArray形式をデフォルトbucket数付きtermsへ変換する" do
+        expect(AreSearch.default_aggs_size).to eq(200)
+
+        body = AreSearch::Searcher.search(
+            [article_index_target],
+            queries: [
+                {
+                    query_string: "",
+                    fields: [:title],
+                },
+            ],
+            aggs: [:status, :count],
+            dump_body: true,
+        )
+
+        expect(body[:aggs]).to eq(
+            status: {
+                terms: {
+                    field: :status,
+                    size:  AreSearch.default_aggs_size,
+                },
+            },
+            count: {
+                terms: {
+                    field: :count,
+                    size:  AreSearch.default_aggs_size,
+                },
+            },
         )
     end
 
@@ -340,12 +386,12 @@ RSpec.describe "search option flow" do
     end
 
     it "where系オプションを持ち、shouldを未知のオプションとして扱う" do
-        expect(AreSearch::Searcher::OPTION_DEFINITIONS.keys).to include(
+        expect(AreSearch::SearchOptionValidator::OPTION_DEFINITIONS.keys).to include(
             :where,
             :where_not,
             :where_or,
         )
-        expect(AreSearch::Searcher::OPTION_DEFINITIONS.keys).not_to include(:should)
+        expect(AreSearch::SearchOptionValidator::OPTION_DEFINITIONS.keys).not_to include(:should)
 
         expect do
             AreSearch::Searcher.search(
@@ -425,7 +471,7 @@ RSpec.describe "search option flow" do
             )
         end.to raise_error(
             ArgumentError,
-            /opts\[:where\] に未知のキーがあります: OtherModel\.secret/,
+            /opts\[:where\] に未知のキーがあります: :"OtherModel\.secret"/,
         )
     end
 
@@ -547,6 +593,11 @@ RSpec.describe "search option flow" do
                 boost_terms:          1,
                 max_word_length:       30,
                 include:               true,
+                stop_words:            ["ruby", "rails"],
+                per_field_analyzer: {
+                    title:  "standard",
+                    status: "keyword",
+                },
             },
             dump_body: true,
         )
@@ -562,6 +613,11 @@ RSpec.describe "search option flow" do
         expect(mlt[:boost_terms]).to eq(1)
         expect(mlt[:max_word_length]).to eq(30)
         expect(mlt[:include]).to eq(true)
+        expect(mlt[:stop_words]).to eq(["ruby", "rails"])
+        expect(mlt[:per_field_analyzer]).to eq(
+            title:  "standard",
+            status: "keyword",
+        )
         expect(mlt).not_to have_key(:instance)
         expect(mlt).not_to have_key(:index_target)
 
@@ -657,4 +713,3 @@ RSpec.describe "search option flow" do
         )
     end
 end
-

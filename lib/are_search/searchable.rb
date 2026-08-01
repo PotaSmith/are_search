@@ -82,8 +82,8 @@ module AreSearch
                 current_model_class = current_model_class.superclass
             end
 
-            data[AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME] = model_class_names
-            data[AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME] = self.id.to_s
+            data[AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME] = model_class_names
+            data[AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME] = self.id.to_s
 
             data
         end
@@ -145,21 +145,18 @@ module AreSearch
         def are_search_enqueue_es_sync_request
             AreSearch.logger.debug { "call are_search_enqueue_es_sync_request #{self.class.name} #{id}" }
 
-            request_sequence = AreSearch::SyncRequest.next_request_sequence
+            database_specific = AreSearch.database_specific
+            request_sequence = database_specific.next_request_sequence
+            request_sequence_at = Time.zone.now
 
             self.class.are_search_index_targets.each do |index_target|
-                AreSearch::SyncRequest.upsert(
-                    {
-                        ar_model_class_name:  self.class.name,
-                        index_target_name:    index_target.target_name,
-                        ar_instance_key:      id.to_s,
-                        es_index_name:        index_target.are_search_es_index_name,
-                        request_sequence:     request_sequence,
-                        request_sequence_at:  Time.zone.now,
-                        retry_count:          0,
-                        last_error:           nil,
-                    },
-                    unique_by: [:es_index_name, :ar_model_class_name, :ar_instance_key],
+                database_specific.upsert(
+                    ar_model_class_name: self.class.name,
+                    index_target_name:   index_target.target_name,
+                    ar_instance_key:     id.to_s,
+                    es_index_name:       index_target.are_search_es_index_name,
+                    request_sequence:    request_sequence,
+                    request_sequence_at: request_sequence_at,
                 )
             end
         end
@@ -283,13 +280,13 @@ module AreSearch
             def are_search_ar_table_name_errors(errors)
                 ar_table_name = are_search_ar_table_name
 
-                unless AreSearch.valid_es_index_name_element?(ar_table_name)
+                unless AreSearch::IndexDefinition.valid_es_index_name_element?(ar_table_name)
                     errors << "#{name}.are_search_ar_table_name は小文字の英字で始まり、小文字の英字とアンダーバーだけを使用した String を返してください: #{ar_table_name.inspect}"
                 end
 
-                if ar_table_name.to_s.include?(AreSearch::ES_INDEX_NAME_DELIMITER)
+                if ar_table_name.to_s.include?(AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER)
                     errors << "#{name}.are_search_ar_table_name に " \
-                        "#{AreSearch::ES_INDEX_NAME_DELIMITER.inspect} は使用できません: #{ar_table_name.inspect}"
+                        "#{AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER.inspect} は使用できません: #{ar_table_name.inspect}"
                 end
 
                 errors
@@ -325,14 +322,14 @@ module AreSearch
 
                     target_name_string = target_name.to_s
 
-                    unless AreSearch.valid_es_index_name_element?(target_name_string)
+                    unless AreSearch::IndexDefinition.valid_es_index_name_element?(target_name_string)
                         errors << "#{name}.are_search_es_mappings の target_name は小文字の英字で始まり、" \
                             "小文字の英字とアンダーバーだけを使用してください: #{target_name.inspect}"
                     end
 
-                    if target_name_string.include?(AreSearch::ES_INDEX_NAME_DELIMITER)
+                    if target_name_string.include?(AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER)
                         errors << "#{name}.are_search_es_mappings の target_name に " \
-                            "#{AreSearch::ES_INDEX_NAME_DELIMITER.inspect} は使用できません: #{target_name.inspect}"
+                            "#{AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER.inspect} は使用できません: #{target_name.inspect}"
                     end
 
                     unless target_mappings.instance_of?(Hash)

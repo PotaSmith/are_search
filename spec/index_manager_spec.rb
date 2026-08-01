@@ -75,22 +75,6 @@ RSpec.describe AreSearch::IndexManager do
     end
 
 
-    describe ".es_alias_name_from_index_name" do
-        it "AreSearch の物理 index 名なら末尾 timestamp を削って alias 名を返す" do
-            result = described_class.es_alias_name_from_index_name(
-                "test__articles__default__2026_07_03_03_10_00_123456",
-            )
-
-            expect(result).to eq("test__articles__default")
-        end
-
-        it "timestamp 形式でなければ nil を返す" do
-            result = described_class.es_alias_name_from_index_name("test__articles__default__20260703031000")
-
-            expect(result).to eq(nil)
-        end
-    end
-
     describe ".es_index_locked?" do
         it "互換用に IndexMarker.marked? の結果を返す" do
             expect(AreSearch::IndexMarker)

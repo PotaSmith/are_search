@@ -11,7 +11,7 @@ module AreSearch
             reserved_names = []
             return reserved_names unless hash.instance_of?(Hash)
 
-            AreSearch::RESERVED_ES_FIELD_NAMES.each do |reserved_name|
+            AreSearch::IndexDefinition::RESERVED_ES_FIELD_NAMES.each do |reserved_name|
                 if hash.key?(reserved_name)
                     reserved_names << reserved_name
                     next

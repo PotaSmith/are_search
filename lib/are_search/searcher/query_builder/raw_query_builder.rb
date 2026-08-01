@@ -3,6 +3,7 @@
 module AreSearch
     class RawQueryBuilder < QueryBuilderBase
         class << self
+
             # Raw検索の選択に必要なオプションを返す
             def must_params
                 [
@@ -13,6 +14,7 @@ module AreSearch
             # Raw検索と同時に指定できないオプションを返す
             def must_not_params
                 [
+                    :runtime_mappings,
                     :mlt,
                     :queries,
                     :where,
@@ -21,6 +23,7 @@ module AreSearch
                     :aggs,
                     :sort,
                     :highlight,
+                    :response,
                 ].freeze
             end
 

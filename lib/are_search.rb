@@ -3,44 +3,29 @@
 require "fileutils"
 require "securerandom"
 
-module AreSearch
-    # alias の各要素と、alias と物理 index timestamp の境界に使用する。
-    ES_INDEX_NAME_DELIMITER = "__"
-
-    # Elasticsearch index 名を構成する各要素の共通形式。
-    # 小文字英字で始まり、小文字英字とアンダーバーだけを使用する。
-    ES_INDEX_NAME_ELEMENT_PATTERN = /\A[a-z][a-z_]*\z/.freeze
-
-    # 空の index_prefix を index 名の先頭要素として残すための代理値。
-    EMPTY_ES_INDEX_PREFIX = "are_search_no_prefix"
-
-    # 値が Elasticsearch index 名の要素として使用できる形式かを判定する。
-    def self.valid_es_index_name_element?(value)
-        return false unless value.instance_of?(String)
-
-        value.match?(ES_INDEX_NAME_ELEMENT_PATTERN)
-    end
-end
-
+require_relative "are_search/errors"
 require_relative "are_search/version"
-require_relative "are_search/request_sequence_provider"
-require_relative "are_search/postgresql_request_sequence_provider"
+
+require_relative "are_search/index_definition"
 require_relative "are_search/index_marker"
+require_relative "are_search/index_manager"
 require_relative "are_search/index_target"
+require_relative "are_search/reindexer"
+
+require_relative "are_search/es_data_validator"
+require_relative "are_search/database_specific"
+require_relative "are_search/postgresql_database_specific"
+require_relative "are_search/searchable"
 require_relative "are_search/sync_request"
 require_relative "are_search/record_sync"
 require_relative "are_search/sync_job"
-require_relative "are_search/index_manager"
-require_relative "are_search/reindexer"
-require_relative "are_search/es_data_validator"
-require_relative "are_search/searchable"
-
 
 require_relative "are_search/searcher/search_result"
 require_relative "are_search/searcher/searcher_utils"
 require_relative "are_search/searcher/es_search_body_policy"
 require_relative "are_search/searcher/script_deny_es_search_body_policy"
 
+require_relative "are_search/searcher/validator/search_option_context"
 require_relative "are_search/searcher/validator/search_option_definition"
 require_relative "are_search/searcher/validator/search_option_validator"
 require_relative "are_search/searcher/validator/search_param_validator"
@@ -56,7 +41,7 @@ require_relative "are_search/searcher/body_builder/standard_body_builder"
 require_relative "are_search/searcher/body_builder/raw_body_builder"
 require_relative "are_search/searcher/body_builder_selector"
 
-require_relative "are_search/searcher/searcher"
+require_relative "are_search/searcher"
 
 
 require_relative "are_search/rake_utils" if defined?(Rails::Railtie)
@@ -66,7 +51,7 @@ module AreSearch
 
     # CJK Bigram + Unigram アナライザ設定
     # Solrの CJKBigramFilterFactory outputUnigrams="true" と等価
-    ANALYZER_SETTINGS = {
+    DEFAULT_ANALYZER_SETTINGS = {
         analysis: {
             filter: {
                 cjk_bigram_unigram: {
@@ -89,36 +74,21 @@ module AreSearch
         },
     }.freeze
 
-    RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME = :are_search_es_ar_model_class_name
-    RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME = :are_search_es_ar_instance_key
-    RESERVED_ES_FIELD_NAME_SETTING = { type: 'keyword' }
-
-    RESERVED_ES_FIELD_NAMES = [
-        RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME,
-        RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME,
-    ].freeze
-
-    QUERY_TYPE_COMBINED_FIELDS = :combined_fields
-    QUERY_TYPE_SIMPLE_QUERY_STRING = :simple_query_string
-
-    QUERY_TYPES = [
-        QUERY_TYPE_COMBINED_FIELDS,
-        QUERY_TYPE_SIMPLE_QUERY_STRING,
-    ].freeze
-
     AFTER_COMMIT_MODES = [:job, :direct, :none].freeze
 
-    class Error < StandardError; end
+    SEARCH_FAILURE_MODES = [
+        :empty_result,
+        :raise,
+    ].freeze
 
-    class NotConfiguredError < Error; end
-    class IndexOperationViolation < Error; end
-    class RakeOperationViolation < Error; end
-    class IndexLockUnavailable < Error; end
-    class IndexMarkerUnavailable < Error; end
+    private_constant :DEFAULT_ANALYZER_SETTINGS
+    private_constant :AFTER_COMMIT_MODES
+    private_constant :SEARCH_FAILURE_MODES
 
-    @analyzer_settings = ANALYZER_SETTINGS
+    @analyzer_settings = DEFAULT_ANALYZER_SETTINGS
     @es_search_body_policy = AreSearch::ScriptDenyEsSearchBodyPolicy
-    @request_sequence_provider = AreSearch::PostgreSQLRequestSequenceProvider
+    @search_failure_mode = :empty_result
+    @database_specific = AreSearch::PostgreSQLDatabaseSpecific
     @client_block = nil
     @index_prefix = nil
     @sync_request_delay = 120
@@ -165,25 +135,40 @@ module AreSearch
         @es_search_body_policy = policy_class
     end
 
-    def self.request_sequence_provider
-        @request_sequence_provider
+    # 検索を実行できない場合に、空結果を返すか例外を送出するかを返す。
+    def self.search_failure_mode
+        @search_failure_mode
     end
 
-    # sync request の世代番号を発行するproviderを設定する。
-    # RequestSequenceProvider自体ではなく、その継承クラスだけを受け付ける。
-    def self.request_sequence_provider=(provider_class)
-        valid_provider_class = provider_class.instance_of?(Class)
-
-        if valid_provider_class
-            valid_provider_class = provider_class < AreSearch::RequestSequenceProvider
-        end
-
-        unless valid_provider_class
+    # 検索を実行できない場合の扱いを設定する。
+    def self.search_failure_mode=(value)
+        unless SEARCH_FAILURE_MODES.include?(value)
             raise ArgumentError,
-                "request_sequence_provider は AreSearch::RequestSequenceProvider の継承クラスを指定してください"
+                "search_failure_mode は #{SEARCH_FAILURE_MODES.inspect} のいずれかで指定してください"
         end
 
-        @request_sequence_provider = provider_class
+        @search_failure_mode = value
+    end
+
+    def self.database_specific
+        @database_specific
+    end
+
+    # AreSearch が使用するDB固有処理を設定する。
+    # DatabaseSpecific自体ではなく、その継承クラスだけを受け付ける。
+    def self.database_specific=(database_specific_class)
+        valid_database_specific_class = database_specific_class.instance_of?(Class)
+
+        if valid_database_specific_class
+            valid_database_specific_class = database_specific_class < AreSearch::DatabaseSpecific
+        end
+
+        unless valid_database_specific_class
+            raise ArgumentError,
+                "database_specific は AreSearch::DatabaseSpecific の継承クラスを指定してください"
+        end
+
+        @database_specific = database_specific_class
     end
 
     def self.sync_request_delay
@@ -308,7 +293,7 @@ module AreSearch
 
 
     # Elasticsearch index 名の先頭要素を設定する。
-    # 空文字列は EMPTY_ES_INDEX_PREFIX へ置き換える。
+    # 空文字列は AreSearch::IndexDefinition::EMPTY_ES_INDEX_PREFIX へ置き換える。
     # 値を指定する場合は小文字英字で始まり、小文字英字とアンダーバーだけを許可する。
     def self.setup(index_prefix:, &block)
         raise ArgumentError, "setup にはクライアント生成のブロックが必要です" unless block
@@ -317,15 +302,15 @@ module AreSearch
         index_prefix_string = index_prefix.to_s
 
         if index_prefix_string.empty? == false
-            unless valid_es_index_name_element?(index_prefix_string)
+            unless AreSearch::IndexDefinition.valid_es_index_name_element?(index_prefix_string)
                 raise ArgumentError,
                     "index_prefix は小文字の英字で始まり、小文字の英字とアンダーバーだけを使用してください: #{index_prefix_string.inspect}"
             end
         end
 
-        if index_prefix_string.include?(ES_INDEX_NAME_DELIMITER)
+        if index_prefix_string.include?(AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER)
             raise ArgumentError,
-                "index_prefix に #{ES_INDEX_NAME_DELIMITER.inspect} は使用できません"
+                "index_prefix に #{AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER.inspect} は使用できません"
         end
 
         @index_prefix = index_prefix_string
@@ -354,6 +339,7 @@ module AreSearch
             "[AreSearch] elasticsearch client config inspect failed: #{e.class}: #{e.message}"
         end
     end
+    private_class_method :log_client_config
 
     def self.client
         raise NotConfiguredError, "AreSearch.setup が呼ばれていません" unless @client_block
@@ -380,9 +366,36 @@ module AreSearch
         raise NotConfiguredError, "AreSearch.setup が呼ばれていません" unless @index_prefix
 
         index_prefix_string = @index_prefix.to_s
-        return EMPTY_ES_INDEX_PREFIX if index_prefix_string.empty?
+        return AreSearch::IndexDefinition::EMPTY_ES_INDEX_PREFIX if index_prefix_string.empty?
 
         index_prefix_string
+    end
+
+    # aggs の Array 簡易形式で使用する bucket 数を返す。
+    def self.default_aggs_size
+        AreSearch::StandardBodyBuilder::DEFAULT_AGGS_SIZE
+    end
+
+    # 標準検索で combined_fields を使用する query_type を返す。
+    def self.query_type_combined_fields
+        AreSearch::StandardQueryBuilder::TYPE_COMBINED_FIELDS
+    end
+
+    # 標準検索で simple_query_string を使用する query_type を返す。
+    def self.query_type_simple_query_string
+        AreSearch::StandardQueryBuilder::TYPE_SIMPLE_QUERY_STRING
+    end
+
+    # Elasticsearch index 名の要素を、AreSearch の区切り文字で連結する。
+    # ワイルドカードを含む検索パターンにも使用するため、要素の妥当性は検査しない。
+    def self.join_es_index_name(*elements)
+        elements.join(AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER)
+    end
+
+    # 指定した物理 index を削除する。
+    # lock や marker は取得せず、IndexManager の低レベル削除処理へ委譲する。
+    def self.delete_physical_index!(physical_es_index_name)
+        AreSearch::IndexManager.es_delete_index!(physical_es_index_name)
     end
 
     def self.mark_index!(es_index_name)

@@ -1,10 +1,17 @@
 ## [Planned]
 
 - ドット付き等の特殊フィールドの許容オプションを追加
-- 検索のレスポンスデータ削減のための source と fields の設定
-- runtime field の mapping 適用と検索対応
 
 ## [Unreleased]
+
+- `request_sequence_provider` と `RequestSequenceProvider` を、DB固有処理の差し替え口となる `database_specific` と `DatabaseSpecific` へ変更し、同期要求の採番とupsertを `PostgreSQLDatabaseSpecific` へ統合
+- 検索時の `runtime_mappings` を追加。検索実行時は `enable_runtime_mappings: true` 指定時以外は例外
+- `response.fields` を追加し、Elasticsearchの `fields` へString配列を渡せるよう変更。検索結果の `records_with_hit` に `fields` を追加
+- 標準検索に `response.source` を追加。検索結果の `_source` は既定でActiveRecord復元用の予約フィールドだけに限定し、利用側がStringのsource pathを追加指定できるよう変更
+- 外部入力として使用する `queries.query_string`、where系の条件値、`page` が不正な場合、`search_failure_mode` に従って `STATUS_PARAMS_INVALID` の空結果を返すか `InvalidSearchOption` を送出するよう変更
+- `aggs` にフィールド配列の簡易形式を追加し、既定のbucket数を返す `AreSearch.default_aggs_size` を追加。その値を使用したterms aggregationへ変換するよう変更。Hash形式はfieldを持つElasticsearch aggregation形式へ統一し、aggregation種別を限定せずfieldだけをmappingと照合するよう整理
+- `highlight` はfieldsの簡易形式とフィールド検査を維持し、fields以外とフィールド別オプションは変更せずElasticsearchへ渡すよう整理
+- `mlt` はinstance、index_target、fieldsの検査を維持し、その他のパラメーターは値の型を限定せずElasticsearchへ渡すよう変更
 
 ## [0.7.0] - 2026-07-31
 

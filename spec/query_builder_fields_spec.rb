@@ -100,7 +100,7 @@ RSpec.describe "query builder fields" do
                         title: 2.0,
                         body:  1,
                     },
-                    query_type: AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING,
+                    query_type: AreSearch::StandardQueryBuilder::TYPE_SIMPLE_QUERY_STRING,
                 },
             ],
             dump_body: true,
@@ -127,7 +127,7 @@ RSpec.describe "query builder fields" do
                 {
                     query_string: query_string,
                     fields:       [:title],
-                    query_type:   AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING,
+                    query_type:   AreSearch::StandardQueryBuilder::TYPE_SIMPLE_QUERY_STRING,
                 },
             ],
             dump_body:    true,
@@ -151,7 +151,7 @@ RSpec.describe "query builder fields" do
                 {
                     query_string: simple_query,
                     fields:       [:title, :body],
-                    query_type:   AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING,
+                    query_type:   AreSearch::StandardQueryBuilder::TYPE_SIMPLE_QUERY_STRING,
                 },
             ],
             dump_body: true,

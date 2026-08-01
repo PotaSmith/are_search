@@ -701,42 +701,80 @@ RSpec.describe AreSearch::Searchable do
     end
 
     describe "#are_search_enqueue_es_sync_request" do
-        it "target ごとに SyncRequest を upsert する" do
+        it "同じ世代番号と時刻でtargetごとにDB固有処理へ同期要求を渡す" do
             model_class = build_searchable_class
             stub_const("Article", model_class)
             model_class.include(described_class)
             request_sequence_at = Time.zone.now
+            database_specific = class_double(AreSearch::DatabaseSpecific)
+
+            allow(model_class)
+                .to receive(:are_search_es_mappings)
+                .and_return(
+                    {
+                        default: {
+                            index_settings: {
+                                max_result_window: 2_000,
+                            },
+                            properties: {
+                                title: { type: "text" },
+                            },
+                        },
+                        archive: {
+                            index_settings: {
+                                max_result_window: 2_000,
+                            },
+                            properties: {
+                                title: { type: "text" },
+                            },
+                        },
+                    },
+                )
 
             allow(AreSearch)
                 .to receive(:index_prefix)
                 .and_return("test")
 
-            allow(AreSearch::SyncRequest)
+            allow(AreSearch)
+                .to receive(:database_specific)
+                .and_return(database_specific)
+
+            expect(database_specific)
                 .to receive(:next_request_sequence)
+                .once
                 .and_return(42)
 
-            allow(Time.zone)
+            expect(Time.zone)
                 .to receive(:now)
+                .once
                 .and_return(request_sequence_at)
 
             record = model_class.new
             record.id = 123
 
-            expect(AreSearch::SyncRequest)
+            expect(database_specific)
                 .to receive(:upsert)
                 .with(
-                    {
-                        ar_model_class_name:  "Article",
-                        index_target_name:    :default,
-                        ar_instance_key:      "123",
-                        es_index_name:        "test__articles__default",
-                        request_sequence:     42,
-                        request_sequence_at:  request_sequence_at,
-                        retry_count:          0,
-                        last_error:           nil,
-                    },
-                    unique_by: [:es_index_name, :ar_model_class_name, :ar_instance_key],
+                    ar_model_class_name: "Article",
+                    index_target_name:   :default,
+                    ar_instance_key:     "123",
+                    es_index_name:       "test__articles__default",
+                    request_sequence:    42,
+                    request_sequence_at: request_sequence_at,
                 )
+                .ordered
+
+            expect(database_specific)
+                .to receive(:upsert)
+                .with(
+                    ar_model_class_name: "Article",
+                    index_target_name:   :archive,
+                    ar_instance_key:     "123",
+                    es_index_name:       "test__articles__archive",
+                    request_sequence:    42,
+                    request_sequence_at: request_sequence_at,
+                )
+                .ordered
 
             record.are_search_enqueue_es_sync_request
         end
@@ -854,8 +892,8 @@ RSpec.describe AreSearch::Searchable do
             expect(result).to equal(data)
             expect(result).to eq(
                 title: "hello",
-                AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME => "123",
-                AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => ["SearchableArticle"],
+                AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME => "123",
+                AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => ["SearchableArticle"],
             )
         end
 
@@ -876,7 +914,7 @@ RSpec.describe AreSearch::Searchable do
             result = record.are_search_es_data_for_index!(index_target)
 
             expect(
-                result[AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME],
+                result[AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME],
             ).to eq([
                 "SearchableGrandChild",
                 "SearchableChild",

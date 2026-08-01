@@ -1,8 +1,10 @@
 # frozen_string_literal: true
 
 module AreSearch
-    # ページネーション結果コレクション
     class PaginatedCollection < Array
+
+        # ページネーション結果コレクション
+
         attr_reader :current_page, :per_page, :total_count, :es_total_count
 
         def initialize(records, current_page:, per_page:, total_count:, es_total_count: nil)
@@ -72,31 +74,32 @@ module AreSearch
         alias offset_value   offset        # kaminari互換
     end
 
-    # 検索結果オブジェクト
-    #
-    # records_with_hit
-    #   ActiveRecord のレコードと、対応する Elasticsearch の
-    #   _index, _id, _source、highlight、target_name 等の情報を検索順で返す。
-    #   フィールド名は Symbolで、先頭の "_" は削除し index, source, highlightのように変更。
-    #   _source、highlightは対象 hit に 対象 が無い場合は空 Hash。
-    #
-    # aggs(name = nil)
-    #   集計名を指定した場合は、key_as_string を優先した簡易集計結果を返す。
-    #   key がある bucket は [key, doc_count]、key がない bucket は doc_count。
-    #   対象 aggregation が無い場合は []。
-    #   集計名を省略した場合は、key を使った簡易集計結果全体を返す。
-    #
-    # status
-    #   検索の終了状態を返す。
-    #   :ok は検索実行済み、:params_invalid と :index_not_found は検索未実行。
-    #
-    # @param records [PaginatedCollection]
-    # @param records_with_hit [Array]
-    # @param aggs [Hash{Symbol => Array}]
-    # @param str_key_aggs [Hash{Symbol => Array}]
-    # @param status [Symbol]
-    #
     class SearchResult
+
+        # 検索結果オブジェクト
+        #
+        # records_with_hit
+        #   ActiveRecord のレコードと、対応する Elasticsearch の
+        #   _index, _id, _source、fields、highlight、target_name 等の情報を検索順で返す。
+        #   フィールド名は Symbolで、先頭の "_" は削除し index, source, fields, highlightのように変更。
+        #   _source、fields、highlightは対象 hit に値が無い場合は空 Hash。
+        #
+        # aggs(name = nil)
+        #   集計名を指定した場合は、key_as_string を優先した簡易集計結果を返す。
+        #   key がある bucket は [key, doc_count]、key がない bucket は doc_count。
+        #   対象 aggregation が無い場合は []。
+        #   集計名を省略した場合は、key を使った簡易集計結果全体を返す。
+        #
+        # status
+        #   検索の終了状態を返す。
+        #   :ok は検索実行済み、:params_invalid と :index_not_found は検索未実行。
+        #
+        # @param records [PaginatedCollection]
+        # @param records_with_hit [Array]
+        # @param aggs [Hash{Symbol => Array}]
+        # @param str_key_aggs [Hash{Symbol => Array}]
+        # @param status [Symbol]
+
         STATUS_OK = :ok
         STATUS_PARAMS_INVALID  = :params_invalid
         STATUS_INDEX_NOT_FOUND = :index_not_found

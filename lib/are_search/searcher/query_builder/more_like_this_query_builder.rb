@@ -3,6 +3,7 @@
 module AreSearch
     class MoreLikeThisQueryBuilder < QueryBuilderBase
         class << self
+
             # More Like This の選択に必要なオプションを返す。
             def must_params
                 [

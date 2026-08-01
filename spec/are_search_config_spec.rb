@@ -17,7 +17,7 @@ RSpec.describe AreSearch, "configuration" do
         original_rake_operation_enabled = described_class.rake_operation_enabled
         original_analyzer_settings = described_class.analyzer_settings
         original_es_search_body_policy = described_class.es_search_body_policy
-        original_request_sequence_provider = described_class.request_sequence_provider
+        original_database_specific = described_class.database_specific
         original_thread_client = Thread.current.thread_variable_get(:are_search_es_client)
         original_thread_client_pid = Thread.current.thread_variable_get(:are_search_es_client_pid)
 
@@ -41,7 +41,7 @@ RSpec.describe AreSearch, "configuration" do
         described_class.rake_operation_enabled = original_rake_operation_enabled
         described_class.analyzer_settings = original_analyzer_settings
         described_class.es_search_body_policy = original_es_search_body_policy
-        described_class.request_sequence_provider = original_request_sequence_provider
+        described_class.database_specific = original_database_specific
         Thread.current.thread_variable_set(:are_search_es_client, original_thread_client)
         Thread.current.thread_variable_set(:are_search_es_client_pid, original_thread_client_pid)
     end
@@ -65,7 +65,7 @@ RSpec.describe AreSearch, "configuration" do
             double("client")
         end
 
-        expect(described_class.index_prefix).to eq(AreSearch::EMPTY_ES_INDEX_PREFIX)
+        expect(described_class.index_prefix).to eq(AreSearch::IndexDefinition::EMPTY_ES_INDEX_PREFIX)
     end
 
     it "index_prefix に index 名の区切り文字は使用できない" do
@@ -141,27 +141,27 @@ RSpec.describe AreSearch, "configuration" do
         end
     end
 
-    it "request_sequence_provider は RequestSequenceProvider の継承クラスを受け付ける" do
-        provider_class = Class.new(AreSearch::RequestSequenceProvider)
+    it "database_specific は DatabaseSpecific の継承クラスを受け付ける" do
+        database_specific_class = Class.new(AreSearch::DatabaseSpecific)
 
-        described_class.request_sequence_provider = provider_class
+        described_class.database_specific = database_specific_class
 
-        expect(described_class.request_sequence_provider).to equal(provider_class)
+        expect(described_class.database_specific).to equal(database_specific_class)
     end
 
-    it "request_sequence_provider は基底クラスと無関係な値を拒否する" do
+    it "database_specific は基底クラスと無関係な値を拒否する" do
         invalid_values = [
-            AreSearch::RequestSequenceProvider,
+            AreSearch::DatabaseSpecific,
             Class.new,
             Object.new,
         ]
 
         invalid_values.each do |invalid_value|
             expect do
-                described_class.request_sequence_provider = invalid_value
+                described_class.database_specific = invalid_value
             end.to raise_error(
                 ArgumentError,
-                "request_sequence_provider は AreSearch::RequestSequenceProvider の継承クラスを指定してください",
+                "database_specific は AreSearch::DatabaseSpecific の継承クラスを指定してください",
             )
         end
     end

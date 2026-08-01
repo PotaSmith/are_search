@@ -138,6 +138,148 @@ RSpec.describe AreSearch::Searcher do
 
 
     describe ".search status" do
+        around do |example|
+            original_search_failure_mode = AreSearch.search_failure_mode
+            AreSearch.search_failure_mode = :empty_result
+
+            example.run
+        ensure
+            AreSearch.search_failure_mode = original_search_failure_mode
+        end
+
+        it "検索パラメーターが不正ならデフォルトページのparams_invalid空結果を返す" do
+            allow(article_model)
+                .to receive(:include?)
+                .with(AreSearch::Searchable)
+                .and_return(true)
+
+            expect(AreSearch::SearchParamValidator)
+                .to receive(:validate)
+                .with([article_index_target], [article_model], page: "2")
+                .and_return([nil, "opts[:page] は正の整数で指定してください"])
+
+            expect(AreSearch::QueryBuilderSelector).not_to receive(:select)
+            expect(AreSearch::BodyBuilderSelector).not_to receive(:select)
+            expect(AreSearch.es_search_body_policy).not_to receive(:valid?)
+            expect(AreSearch).not_to receive(:client)
+
+            result = described_class.search(
+                [article_index_target],
+                page: "2",
+            )
+
+            expect(result.status).to eq(AreSearch::SearchResult::STATUS_PARAMS_INVALID)
+            expect(result.records).to eq([])
+            expect(result.records.current_page).to eq(1)
+            expect(result.records.per_page).to eq(25)
+            expect(result.records.total_count).to eq(0)
+            expect(result.records_with_hit).to eq([])
+        end
+
+        it "search_failure_modeがraiseなら検索パラメーター不正を例外にする" do
+            AreSearch.search_failure_mode = :raise
+
+            allow(article_model)
+                .to receive(:include?)
+                .with(AreSearch::Searchable)
+                .and_return(true)
+
+            expect(AreSearch::SearchParamValidator)
+                .to receive(:validate)
+                .with([article_index_target], [article_model], page: "2")
+                .and_return([nil, "opts[:page] は正の整数で指定してください"])
+
+            expect do
+                described_class.search(
+                    [article_index_target],
+                    page: "2",
+                )
+            end.to raise_error(AreSearch::InvalidSearchOption, /正の整数/)
+        end
+
+        it "検索body policyに拒否された場合はparams_invalid空結果を返す" do
+            queries = [
+                {
+                    query_string: "Rails",
+                    fields: [:title],
+                },
+            ]
+            valid_options = {
+                queries: queries,
+            }
+
+            allow(article_model)
+                .to receive(:include?)
+                .with(AreSearch::Searchable)
+                .and_return(true)
+
+            expect(AreSearch::SearchParamValidator)
+                .to receive(:validate)
+                .with(
+                    [article_index_target],
+                    [article_model],
+                    queries: queries,
+                )
+                .and_return([valid_options, nil])
+
+            allow(AreSearch.es_search_body_policy)
+                .to receive(:valid?)
+                .and_return(false)
+
+            expect(AreSearch::IndexManager).not_to receive(:es_index_alias_exists?)
+            expect(AreSearch).not_to receive(:client)
+
+            result = described_class.search(
+                [article_index_target],
+                queries: queries,
+            )
+
+            expect(result.status).to eq(AreSearch::SearchResult::STATUS_PARAMS_INVALID)
+            expect(result.records).to eq([])
+        end
+
+        it "search_failure_modeがraiseなら検索body policyの拒否を例外にする" do
+            AreSearch.search_failure_mode = :raise
+
+            queries = [
+                {
+                    query_string: "Rails",
+                    fields: [:title],
+                },
+            ]
+            valid_options = {
+                queries: queries,
+            }
+
+            allow(article_model)
+                .to receive(:include?)
+                .with(AreSearch::Searchable)
+                .and_return(true)
+
+            expect(AreSearch::SearchParamValidator)
+                .to receive(:validate)
+                .with(
+                    [article_index_target],
+                    [article_model],
+                    queries: queries,
+                )
+                .and_return([valid_options, nil])
+
+            allow(AreSearch.es_search_body_policy)
+                .to receive(:valid?)
+                .and_return(false)
+
+            expect(AreSearch::IndexManager).not_to receive(:es_index_alias_exists?)
+            expect(AreSearch).not_to receive(:client)
+
+            expect do
+                described_class.search(
+                    [article_index_target],
+                    queries: queries,
+                )
+            end.to raise_error(AreSearch::InvalidSearchBody, /es_search_body_policy/)
+        end
+
         it "対象 index の alias が無ければ index_not_found の空結果を返す" do
             valid_options = {}
             query = { match_all: {} }
@@ -153,7 +295,7 @@ RSpec.describe AreSearch::Searcher do
             expect(AreSearch::SearchParamValidator)
                 .to receive(:validate)
                 .with([article_index_target], [article_model])
-                .and_return(valid_options)
+                .and_return([valid_options, nil])
 
             expect(AreSearch::QueryBuilderSelector)
                 .to receive(:select)
@@ -197,6 +339,52 @@ RSpec.describe AreSearch::Searcher do
             expect(result.records_with_hit).to eq([])
         end
 
+        it "search_failure_modeがraiseならindex不存在を例外にする" do
+            AreSearch.search_failure_mode = :raise
+
+            queries = [
+                {
+                    query_string: "Rails",
+                    fields: [:title],
+                },
+            ]
+            valid_options = {
+                queries: queries,
+            }
+
+            allow(article_model)
+                .to receive(:include?)
+                .with(AreSearch::Searchable)
+                .and_return(true)
+
+            expect(AreSearch::SearchParamValidator)
+                .to receive(:validate)
+                .with(
+                    [article_index_target],
+                    [article_model],
+                    queries: queries,
+                )
+                .and_return([valid_options, nil])
+
+            allow(AreSearch.es_search_body_policy)
+                .to receive(:valid?)
+                .and_return(true)
+
+            allow(AreSearch::IndexManager)
+                .to receive(:es_index_alias_exists?)
+                .with("test__articles__default")
+                .and_return(false)
+
+            expect(AreSearch).not_to receive(:client)
+
+            expect do
+                described_class.search(
+                    [article_index_target],
+                    queries: queries,
+                )
+            end.to raise_error(AreSearch::SearchIndexNotFound, /alias/)
+        end
+
         it "MLT基準 index の alias が無ければ index_not_found の空結果を返す" do
             mlt_options = {
                 instance:     double("document"),
@@ -223,7 +411,7 @@ RSpec.describe AreSearch::Searcher do
                     [article_model],
                     mlt: mlt_options,
                 )
-                .and_return(valid_options)
+                .and_return([valid_options, nil])
 
             expect(AreSearch::QueryBuilderSelector)
                 .to receive(:select)
@@ -508,21 +696,21 @@ RSpec.describe AreSearch::Searcher do
                     "_index" => "test__articles__default__2026_07_03_03_10_00_123456",
                     "_id" => "1",
                     "_source" => {
-                        AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
+                        AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
                             "SpecialArticle",
                             "Article",
                         ],
-                        AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s => "1",
+                        AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s => "1",
                     },
                 },
                 {
                     "_index" => "test__articles__default__2026_07_03_03_10_00_123456",
                     "_id" => "2",
                     "_source" => {
-                        AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
+                        AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
                             "Document",
                         ],
-                        AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s => "2",
+                        AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s => "2",
                     },
                 },
             ]
@@ -548,13 +736,14 @@ RSpec.describe AreSearch::Searcher do
                             index: "test__articles__default__2026_07_03_03_10_00_123456",
                             id: "1",
                             source: {
-                                AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => [
+                                AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => [
                                     "SpecialArticle",
                                     "Article",
                                 ],
-                                AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME => "1",
+                                AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME => "1",
                             },
                             highlight: {},
+                            fields: {},
                             target_name: :default,
                         },
                     ],
@@ -600,7 +789,7 @@ RSpec.describe AreSearch::Searcher do
                     "_index" => "test__articles__default__2026_07_03_03_10_00_123456",
                     "_id" => "1",
                     "_source" => {
-                        AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
+                        AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
                             "FirstArticle",
                         ],
                     },
@@ -609,7 +798,7 @@ RSpec.describe AreSearch::Searcher do
                     "_index" => "test__articles__default__2026_07_03_03_10_00_123456",
                     "_id" => "2",
                     "_source" => {
-                        AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
+                        AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
                             "SecondArticle",
                         ],
                     },
@@ -637,11 +826,12 @@ RSpec.describe AreSearch::Searcher do
                             index: "test__articles__default__2026_07_03_03_10_00_123456",
                             id: "1",
                             source: {
-                                AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => [
+                                AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => [
                                     "FirstArticle",
                                 ],
                             },
                             highlight: {},
+                            fields: {},
                             target_name: :default,
                         },
                     ],
@@ -651,11 +841,12 @@ RSpec.describe AreSearch::Searcher do
                             index: "test__articles__default__2026_07_03_03_10_00_123456",
                             id: "2",
                             source: {
-                                AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => [
+                                AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => [
                                     "SecondArticle",
                                 ],
                             },
                             highlight: {},
+                            fields: {},
                             target_name: :default,
                         },
                     ],
@@ -673,12 +864,15 @@ RSpec.describe AreSearch::Searcher do
                             "_index" => "test__articles__default__2026_07_03_03_10_00_123456",
                             "_id" => "1",
                             "_source" => {
-                                AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
-                                AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s => "1",
+                                AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
+                                AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s => "1",
                                 "title" => "Rails guide",
                             },
                             "highlight" => {
                                 "title" => ["<em>Rails</em> guide"],
+                            },
+                            "fields" => {
+                                "runtime_score" => [1.5],
                             },
                         },
                     ],
@@ -710,12 +904,15 @@ RSpec.describe AreSearch::Searcher do
                         index: "test__articles__default__2026_07_03_03_10_00_123456",
                         id: "1",
                         source: {
-                            AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => ["Article"],
-                            AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME => "1",
+                            AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => ["Article"],
+                            AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME => "1",
                             title: "Rails guide",
                         },
                         highlight: {
                             title: ["<em>Rails</em> guide"],
+                        },
+                        fields: {
+                            runtime_score: [1.5],
                         },
                         target_name: :default,
                     },

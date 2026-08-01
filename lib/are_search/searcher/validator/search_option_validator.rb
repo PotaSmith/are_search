@@ -2,24 +2,10 @@
 
 module AreSearch
     class SearchOptionValidator
-        class TypeNotFound; end
-
         class << self
+
             # 検索オプションまたは単一nodeを定義に従って検査し、正規化済みの値を返す。
-            def validate(opts, definition, context)
-                normalized_context = normalize_context(context)
-
-                validate_options(
-                    opts,
-                    definition,
-                    normalized_context,
-                )
-            end
-
-            private
-
-            # OPTION_DEFINITIONS全体を使い、検索オプションHashを検査して正規化する。
-            def validate_options(opts, definitions, context)
+            def validate(opts, definitions, context)
                 if opts.instance_of?(Hash) == false
                     raise ArgumentError,
                         "opts は Hash で指定してください: #{opts.inspect}"
@@ -32,7 +18,7 @@ module AreSearch
 
                     if definitions[raw_option_name] == nil
                         raise ArgumentError,
-                            "未知の検索オプションが指定されています: #{raw_option_name}"
+                            "未知の検索オプションが指定されています: #{raw_option_name.inspect}"
                     end
                     # 上を通過した時点で sym 確定
                     sym_option_name = raw_option_name
@@ -48,8 +34,28 @@ module AreSearch
                 normalized_options
             end
 
-            # nodeの実体型からscalar、Hash、Arrayの処理へ一度だけ分岐する。
+            private
+
+            # node定義にerror_classがある場合、このnode以下の検査エラーだけを指定例外へ付け替える。
             def parse_node(node, definitions, path, context)
+                parse_node_value(
+                    node,
+                    definitions,
+                    path,
+                    context,
+                )
+            rescue ArgumentError => error
+                error_class = definitions[:error_class]
+
+                if error_class.nil?
+                    raise
+                end
+
+                raise error_class, error.message
+            end
+
+            # nodeの実体型からscalar、Hash、Arrayの処理へ一度だけ分岐する。
+            def parse_node_value(node, definitions, path, context)
                 # 型強制があるか
                 definition_type = definitions[:type]
 
@@ -138,7 +144,7 @@ module AreSearch
 
                     if selected_value_definition == nil
                         raise ArgumentError,
-                            "#{path} に未知のキーがあります: #{raw_key}"
+                            "#{path} に未知のキーがあります: #{raw_key.inspect}"
                     end
 
                     normalized_hash[raw_key] = parse_node(
@@ -252,6 +258,8 @@ module AreSearch
                     parse_positive_integer(value, path)
                 when "query_type"
                     parse_query_type_value(value, path)
+                when "symbol"
+                    parse_symbol_value(value, path)
                 when "symbol_key"
                     parse_symbol_key(value, path)
                 when "sort_field"
@@ -418,12 +426,12 @@ module AreSearch
             def parse_query_type_value(value, path)
                 query_type = parse_symbol_value(value, path)
 
-                if AreSearch::QUERY_TYPES.include?(query_type)
+                if AreSearch::StandardQueryBuilder::TYPES.include?(query_type)
                     return query_type
                 end
 
                 raise ArgumentError,
-                    "#{path} は #{AreSearch::QUERY_TYPES.inspect} のいずれかで指定してください: #{value.inspect}"
+                    "#{path} は #{AreSearch::StandardQueryBuilder::TYPES.inspect} のいずれかで指定してください: #{value.inspect}"
             end
 
             # sym key かどうか確認
@@ -472,16 +480,13 @@ module AreSearch
             end
 
             # フィールド名を指定されたcontextのフィールド一覧と照合する。
-            def parse_context_field(field_name, context, context_key, path)
-                if context.nil? || context[context_key].nil?
-                    raise ArgumentError,
-                        "#{path} の検査には context[:#{context_key}] が必要です"
-                end
+            def parse_context_field(field_name, context, context_method, path)
+                context_fields = context.public_send(context_method)
 
-                return field_name if context[context_key].include?(field_name)
+                return field_name if context_fields.include?(field_name)
 
                 raise ArgumentError,
-                    "#{path} に context[:#{context_key}] に含まれないフィールドが指定されています: " \
+                    "#{path} に context.#{context_method} に含まれないフィールドが指定されています: " \
                     "#{field_name.inspect}"
             end
 
@@ -509,101 +514,6 @@ module AreSearch
 
                 raise ArgumentError,
                     "#{path} は AreSearch::IndexTarget で指定してください: #{value.inspect}"
-            end
-
-            ##############################################################
-            # context 初期化
-            ##############################################################
-
-            # SearchOptionValidator外で収集した検索対象情報を検査用に正規化する。
-            def normalize_context(context)
-                return nil if context.nil?
-
-                if context.instance_of?(Hash) == false
-                    raise ArgumentError,
-                        "context は Hash で指定してください: #{context.inspect}"
-                end
-
-                context_keys = [
-                    :models,
-                    :any_fields,
-                    :all_fields,
-                    :any_text_without_non_text_fields,
-                    :all_valid_text_fields,
-                    :any_text_or_keyword_without_other_type_fields,
-                    :all_valid_text_or_keyword_fields,
-                    :any_non_text_without_text_fields,
-                    :all_valid_non_text_fields,
-                ]
-                missing_keys = context_keys - context.keys
-                unknown_keys = context.keys - context_keys
-
-                if missing_keys.empty? == false
-                    raise ArgumentError,
-                        "context に必要なキーがありません: #{missing_keys.inspect}"
-                end
-
-                if unknown_keys.empty? == false
-                    raise ArgumentError,
-                        "context に未知のキーがあります: #{unknown_keys.inspect}"
-                end
-
-                normalized_context = {
-                    models: normalize_context_models(context[:models]),
-                }
-
-                context_keys.each do |context_key|
-                    next if context_key == :models
-
-                    normalized_context[context_key] = normalize_context_fields(
-                        context[context_key],
-                        "context[:#{context_key}]",
-                    )
-                end
-
-                normalized_context
-            end
-
-            # contextのモデル一覧がClassのArrayであることを確認して複製する。
-            def normalize_context_models(models)
-                if models.instance_of?(Array) == false
-                    raise ArgumentError,
-                        "context[:models] は Array で指定してください: #{models.inspect}"
-                end
-
-                normalized_models = []
-
-                models.each do |model|
-                    if model.instance_of?(Class) == false
-                        raise ArgumentError,
-                            "context[:models] はモデルClassのArrayで指定してください: #{model.inspect}"
-                    end
-
-                    normalized_models << model
-                end
-
-                normalized_models.uniq
-            end
-
-            # contextのフィールド一覧をSymbolへ統一する。
-            def normalize_context_fields(fields, path)
-                if fields.instance_of?(Array) == false
-                    raise ArgumentError,
-                        "#{path} は Array で指定してください: #{fields.inspect}"
-                end
-
-                normalized_fields = []
-
-                fields.each do |field|
-                    unless field.instance_of?(String) || field.instance_of?(Symbol)
-                        raise ArgumentError,
-                            "#{path} は String または Symbol のArrayで指定してください: #{field.inspect}"
-                    end
-
-                    normalized_fields << field.to_sym
-                end
-
-                normalized_fields.uniq
             end
         end
     end

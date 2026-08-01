@@ -5,9 +5,12 @@
 AreSearchは、RailsとElasticsearchの検索・同期・運用を実装しつつ、利用側が構成や処理へ直接介入できる余地を残した検索基盤です。
 
 Elasticsearch を隠すための gem ではありません。
-Rails モデルから Elasticsearch への index、reindex、非同期同期、基本的な検索ヘルパーを提供します。
 
-複雑な検索は、Elasticsearch の Query DSL を理解したうえで `AreSearch::Searcher.search` の `raw_body` に直接書く方針です。
+AreSearch は、gem 独自の検索方法を覚えることに価値があるとは考えていません。
+Elasticsearch を使うなら、gem 固有の記法よりも Elasticsearch 自体を理解する方が長く役立ちます。
+SQL を理解しないまま Active Record の使い方だけを覚える状態が危ういのと同じように、Elasticsearch を理解せず検索 gem の操作だけに依存する設計を AreSearch では避けます。
+
+Rails モデルから Elasticsearch への index、reindex、非同期同期、基本的な検索ヘルパーを提供します。
 
 ## 方針
 
@@ -30,14 +33,14 @@ sync request、index marker、rake タスク、アラートメールを通じて
 何が正常で、何が未処理・失敗・固着・index 操作中なのかを、アプリ運用者が判断できるようにします。
 
 
-## PostgreSQL と同期要求の保証
+## データベースと同期要求の保証
 
-AreSearch が対象とするデータベースは PostgreSQL です。
+検索対象レコードの変更と `are_search_sync_requests` への同期要求の記録は、同じデータベースの同一トランザクション内で行います。
+そのため、検索対象モデルと `are_search_sync_requests` が同じデータベースに存在する限り、「検索対象レコードの変更だけが commit され、その変更を Elasticsearch へ反映するための sync request が存在しない」という状態は、Rails または使用するデータベースのトランザクション機能自体に不具合がない限り、ありえません。
 
-検索対象レコードの変更と `are_search_sync_requests` への同期要求の記録は、同じ PostgreSQL データベースの同一トランザクション内で行います。
-そのため、検索対象モデルと `are_search_sync_requests` が同じデータベースに存在する限り、「検索対象レコードの変更だけが commit され、その変更を Elasticsearch へ反映するための sync request が存在しない」という状態は、Rails または PostgreSQL のトランザクション機能自体に不具合がない限り、ありえません。
+`after_commit` での直接同期、Job の登録、Elasticsearch への同期に失敗した場合でも、sync request はデータベースに残ります。残った要求は rake タスクから再処理できます。
 
-`after_commit` での直接同期、Job の登録、Elasticsearch への同期に失敗した場合でも、sync request は PostgreSQL に残ります。残った要求は rake タスクから再処理できます。
+AreSearch は、標準のDBとしてPostgreSQLを使用しますが、DB固有処理は設定で差し替え可能です。
 
 
 ## 使っている index を reindex しない

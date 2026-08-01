@@ -223,16 +223,16 @@ RSpec.describe "search paging" do
                         "_index"  => "test__articles__default__2026_07_03_03_10_00_123456",
                         "_id"     => "1",
                         "_source" => {
-                            AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
-                            AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s     => "1",
+                            AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
+                            AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s     => "1",
                         },
                     },
                     {
                         "_index"  => "test__articles__default__2026_07_03_03_10_00_123456",
                         "_id"     => "2",
                         "_source" => {
-                            AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
-                            AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s     => "2",
+                            AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
+                            AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s     => "2",
                         },
                     },
                 ],
@@ -270,10 +270,11 @@ RSpec.describe "search paging" do
                     index: "test__articles__default__2026_07_03_03_10_00_123456",
                     id: "1",
                     source: {
-                        AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => ["Article"],
-                        AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME => "1",
+                        AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => ["Article"],
+                        AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME => "1",
                     },
                     highlight: {},
+                    fields: {},
                     target_name: :default,
                 },
             ],
@@ -324,7 +325,7 @@ RSpec.describe "search paging" do
                         "_index" => "test__articles__default__2026_07_03_03_10_00_123456",
                         "_id" => "1",
                         "_source" => {
-                            AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
+                            AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
                         },
                     },
                     {
@@ -396,6 +397,13 @@ RSpec.describe "search paging" do
                         { "key" => 1_785_369_600_000, "key_as_string" => "2026-07", "doc_count" => 3 },
                     ],
                 },
+                "score_ranges" => {
+                    "buckets" => [
+                        { "key" => "*-1.0", "to" => 1.0, "doc_count" => 10 },
+                        { "key" => "middle", "from" => 1.0, "to" => 2.0, "doc_count" => 3 },
+                        { "key" => "2.0-*", "from" => 2.0, "doc_count" => 1 },
+                    ],
+                },
                 "anonymous_filters" => {
                     "buckets" => [
                         { "doc_count" => 10 },
@@ -443,6 +451,16 @@ RSpec.describe "search paging" do
                             field:             :published_at,
                             calendar_interval: :day,
                             format:            "yyyy-MM",
+                        },
+                    },
+                    score_ranges: {
+                        range: {
+                            field: :score,
+                            ranges: [
+                                { to: 1.0 },
+                                { from: 1.0, to: 2.0, key: "middle" },
+                                { from: 2.0 },
+                            ],
                         },
                     },
                     anonymous_filters: {
@@ -502,6 +520,13 @@ RSpec.describe "search paging" do
                 ["2026-07", 3],
             ],
         )
+        expect(result.aggs(:score_ranges)).to eq(
+            [
+                ["*-1.0", 10],
+                ["middle", 3],
+                ["2.0-*", 1],
+            ],
+        )
         expect(result.aggs(:anonymous_filters)).to eq([10, 3])
         expect(result.aggs(:keyed_status)).to eq([])
         expect(result.aggs(:avg_price)).to eq([])
@@ -517,6 +542,11 @@ RSpec.describe "search paging" do
             formatted_date: [
                 [1_785_283_200_000, 10],
                 [1_785_369_600_000, 3],
+            ],
+            score_ranges: [
+                ["*-1.0", 10],
+                ["middle", 3],
+                ["2.0-*", 1],
             ],
             anonymous_filters: [10, 3],
         )
@@ -564,21 +594,24 @@ RSpec.describe "search paging" do
         expect(received_bodies[1][:track_total_hits]).to eq(true)
     end
 
-    it "pageとper_pageは正の整数だけを許可する" do
-        expect do
-            AreSearch::Searcher.search(
-                [article_index_target],
-                queries: [
-                    {
-                        query_string: "",
-                        fields:    [:title],
-                    },
-                ],
-                page:      "2",
-                per_page:  20,
-                dump_body: true,
-            )
-        end.to raise_error(ArgumentError, /正の整数/)
+    it "pageが不正ならparams_invalidの空結果を返し、per_pageが不正なら例外にする" do
+        result = AreSearch::Searcher.search(
+            [article_index_target],
+            queries: [
+                {
+                    query_string: "",
+                    fields:    [:title],
+                },
+            ],
+            page:      "2",
+            per_page:  20,
+            dump_body: true,
+        )
+
+        expect(result.status).to eq(AreSearch::SearchResult::STATUS_PARAMS_INVALID)
+        expect(result.records).to eq([])
+        expect(result.records.current_page).to eq(1)
+        expect(result.records.per_page).to eq(25)
 
         expect do
             AreSearch::Searcher.search(
@@ -671,7 +704,7 @@ RSpec.describe "search paging" do
                 expect(args[:body].dig(:query, :bool, :filter)).to eq([
                     {
                         terms: {
-                            AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME =>
+                            AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME =>
                                 ["Article"],
                         },
                     },
@@ -733,7 +766,7 @@ RSpec.describe "search paging" do
                     },
                     {
                         terms: {
-                            AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME =>
+                            AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME =>
                                 ["Article", "Document"],
                         },
                     },
@@ -784,7 +817,7 @@ RSpec.describe "search paging" do
                     },
                     {
                         terms: {
-                            AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME =>
+                            AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME =>
                                 ["Article"],
                         },
                     },

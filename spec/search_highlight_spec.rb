@@ -207,24 +207,66 @@ RSpec.describe "search highlight" do
         )
     end
 
-    it "fieldsのHash形式では空のフィールドオプションを受け付けない" do
-        expect do
-            AreSearch::Searcher.search(
-                [article_index_target],
-                queries: [
-                    {
-                        query_string: "",
-                        fields: [:title],
-                    },
-                ],
-                highlight: {
-                    fields: {
-                        title: {},
+    it "fieldsのHash形式では空のフィールドオプションを受け付ける" do
+        body = AreSearch::Searcher.search(
+            [article_index_target],
+            queries: [
+                {
+                    query_string: "",
+                    fields: [:title],
+                },
+            ],
+            highlight: {
+                fields: {
+                    title: {},
+                },
+            },
+            dump_body: true,
+        )
+
+        expect(body[:highlight]).to eq(
+            fields: {
+                title: {},
+            },
+        )
+    end
+
+    it "fields以外のElasticsearchパラメーターを加工せず渡す" do
+        body = AreSearch::Searcher.search(
+            [article_index_target],
+            queries: [
+                {
+                    query_string: "Rails",
+                    fields: [:title],
+                },
+            ],
+            highlight: {
+                fields: {
+                    title: {
+                        matched_fields: [:title, :body],
                     },
                 },
-                dump_body: true,
-            )
-        end.to raise_error(ArgumentError)
+                pre_tags: ["<mark>"],
+                post_tags: ["</mark>"],
+                options: {
+                    custom: [1, true, nil],
+                },
+            },
+            dump_body: true,
+        )
+
+        expect(body[:highlight]).to eq(
+            fields: {
+                title: {
+                    matched_fields: [:title, :body],
+                },
+            },
+            pre_tags: ["<mark>"],
+            post_tags: ["</mark>"],
+            options: {
+                custom: [1, true, nil],
+            },
+        )
     end
 
     it "textまたはkeyword以外のフィールドをhighlight対象にできない" do
@@ -248,7 +290,7 @@ RSpec.describe "search highlight" do
             )
         end.to raise_error(
             ArgumentError,
-            /opts\[:highlight\]\[fields\] に未知のキーがあります: count/,
+            /opts\[:highlight\]\[fields\] に未知のキーがあります: :count/,
         )
     end
 

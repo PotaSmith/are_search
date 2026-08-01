@@ -17,7 +17,17 @@ module AreSearch
             end
             verify_no_parent_child_index_targets!(index_targets)
 
-            valid_options = SearchParamValidator.validate(index_targets, models, **options)
+            valid_options, error_message = SearchParamValidator.validate(index_targets, models, **options)
+
+            if error_message.nil? == false
+                return search_failure_result(
+                    1,
+                    25,
+                    status: SearchResult::STATUS_PARAMS_INVALID,
+                    error_class: AreSearch::InvalidSearchOption,
+                    error_message: error_message,
+                )
+            end
 
             query_options = valid_options.dup
             body_options = valid_options.dup
@@ -30,7 +40,9 @@ module AreSearch
             model_relations_opts = search_options.delete(:model_relations)
             page_opts            = search_options.delete(:page)
             per_page_opts        = search_options.delete(:per_page)
-            dump_body_opts       = search_options.delete(:dump_body)
+
+            enable_runtime_mappings_opts = search_options.delete(:enable_runtime_mappings)
+            dump_body_opts               = search_options.delete(:dump_body)
 
             # 未使用のオプションがあるか
             left_options = query_options.keys & body_options.keys & search_options.keys
@@ -38,9 +50,14 @@ module AreSearch
                 raise ArgumentError, "余分な検索パラメーターがあります。#{left_options.inspect}"
             end
 
-            # AreSearch::DumpBody は廃止
             return body if dump_body_opts == true
 
+            runtime_mappings_exists = body.key?(:runtime_mappings) || body.key?("runtime_mappings")
+
+            if runtime_mappings_exists && enable_runtime_mappings_opts != true
+                raise ArgumentError,
+                    "runtime_mappings を使用する場合は enable_runtime_mappings: true を指定してください"
+            end
 
             # --- 変換 ---
             model_relations = {}
@@ -51,21 +68,34 @@ module AreSearch
             page     = AreSearch::SearcherUtils.resolve_default_option(page_opts, 1)
             per_page = AreSearch::SearcherUtils.resolve_default_option(per_page_opts, 25)
 
-            return empty_search_result(page, per_page, status: SearchResult::STATUS_PARAMS_INVALID)  unless AreSearch.es_search_body_policy.valid?(body)
+            body_for_policy = body.dup
+            body_for_policy.delete(:runtime_mappings)
+            body_for_policy.delete("runtime_mappings")
+
+            if AreSearch.es_search_body_policy.valid?(body_for_policy) == false
+                return search_failure_result(
+                    page,
+                    per_page,
+                    status: SearchResult::STATUS_PARAMS_INVALID,
+                    error_class: AreSearch::InvalidSearchBody,
+                    error_message: "検索bodyがes_search_body_policyに拒否されました",
+                )
+            end
 
             index_targets_for_exists_check = collect_index_targets_for_exists_check(index_targets, valid_options)
             if check_index_exists?(index_targets_for_exists_check) == false
-                return empty_search_result(
+                return search_failure_result(
                     page,
                     per_page,
                     status: SearchResult::STATUS_INDEX_NOT_FOUND,
+                    error_class: AreSearch::SearchIndexNotFound,
+                    error_message: "検索に必要なElasticsearch aliasが存在しません",
                 )
             end
 
             search_index = index_targets.map(&:are_search_es_index_name).join(",")
             # 検索
             response = AreSearch.client.search(index: search_index, body: body)
-
 
             build_result(
                 response,
@@ -149,6 +179,15 @@ module AreSearch
                         "#{index_target.are_search_es_index_name}: #{other_model.name}, #{model.name}"
                 end
             end
+        end
+
+        # 検索を実行できない場合に、設定に従って例外または空結果を返す。
+        def search_failure_result(page, per_page, status:, error_class:, error_message:)
+            if AreSearch.search_failure_mode == :raise
+                raise error_class, error_message
+            end
+
+            empty_search_result(page, per_page, status: status)
         end
 
         # 検索を実行せず返す空結果を、終了理由の status 付きで作る。
@@ -359,12 +398,14 @@ module AreSearch
 
                     source    = (hit["_source"]   || {}).transform_keys(&:to_sym)
                     highlight = (hit["highlight"] || {}).transform_keys(&:to_sym)
+                    fields    = (hit["fields"]    || {}).transform_keys(&:to_sym)
 
                     hit_info = {
                         index: hit["_index"],
                         id: hit["_id"],
                         highlight: highlight,
                         source: source,
+                        fields: fields,
                         target_name: index_target.target_name,
                     }
                     records          << record
@@ -381,7 +422,7 @@ module AreSearch
         # hit に保存された Searchable 継承系統へ検索対象モデルが含まれるか判定する。
         def hit_matches_index_target?(hit, index_target)
             model_class_names =
-                hit["_source"][AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s]
+                hit["_source"][AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s]
 
             if model_class_names.instance_of?(Array)
                 return model_class_names.include?(index_target.model_class.name)
@@ -393,7 +434,7 @@ module AreSearch
         # index_to_index_targets は alias 名をキーにした index target 候補配列の map。
         def index_targets_for_hit_index(index_to_index_targets, hit_index)
             # Elasticsearch の hit に含まれる物理 index 名から alias 名を復元する。
-            alias_name = AreSearch::IndexManager.es_alias_name_from_index_name(hit_index)
+            alias_name = AreSearch::IndexDefinition.es_alias_name_from_index_name(hit_index)
 
             # AreSearch の物理 index 命名形式でなければ対応する target はない。
             return nil if alias_name.nil?

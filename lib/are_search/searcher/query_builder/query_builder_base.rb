@@ -3,6 +3,7 @@
 module AreSearch
     class QueryBuilderBase
         class << self
+
             def must_params
                 [].freeze
             end

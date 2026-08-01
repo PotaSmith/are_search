@@ -3,6 +3,7 @@
 module AreSearch
     class BodyBuilderBase
         class << self
+
             def must_params
                 [].freeze
             end

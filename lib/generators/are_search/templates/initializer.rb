@@ -13,6 +13,8 @@ AreSearch.logger = logger
 # sync request回収rakeを実行する環境のみtrueにする
 # AreSearch.rake_operation_enabled = true
 
+AreSearch.search_failure_mode = Rails.env.development? ? :raise : :empty_result
+
 AreSearch.setup(
     index_prefix: "#{ConfVars.get(:are_search, :index_prefix)}_#{Rails.env}"
 ) do

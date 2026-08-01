@@ -136,10 +136,10 @@ RSpec.describe AreSearch::IndexTarget do
                 },
             )
             expect(mappings[:properties]).not_to have_key(
-                AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME,
+                AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME,
             )
             expect(mappings[:properties]).not_to have_key(
-                AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME,
+                AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME,
             )
         end
 
@@ -161,10 +161,10 @@ RSpec.describe AreSearch::IndexTarget do
             mappings_for_index = index_target.are_search_es_mappings_for_index
 
             expect(mappings_for_index[:properties]).to include(
-                AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME =>
-                    AreSearch::RESERVED_ES_FIELD_NAME_SETTING,
-                AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME =>
-                    AreSearch::RESERVED_ES_FIELD_NAME_SETTING,
+                AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME =>
+                    AreSearch::IndexDefinition::RESERVED_ES_FIELD_NAME_SETTING,
+                AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME =>
+                    AreSearch::IndexDefinition::RESERVED_ES_FIELD_NAME_SETTING,
             )
         end
 
@@ -172,7 +172,7 @@ RSpec.describe AreSearch::IndexTarget do
             mappings_for_index = index_target.are_search_es_mappings_for_index
 
             expect(mappings_for_index[:_source]).to eq(
-                includes: AreSearch::RESERVED_ES_FIELD_NAMES,
+                includes: AreSearch::IndexDefinition::RESERVED_ES_FIELD_NAMES,
             )
         end
 
@@ -202,8 +202,8 @@ RSpec.describe AreSearch::IndexTarget do
                 expect(mappings_for_index[:_source]).to eq(
                     includes: [
                         :title,
-                        AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME,
-                        AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME,
+                        AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME,
+                        AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME,
                     ],
                     excludes: [:body],
                 )
@@ -225,10 +225,10 @@ RSpec.describe AreSearch::IndexTarget do
             original_properties = target_mappings[:default][:properties]
 
             expect(original_properties).not_to have_key(
-                AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME,
+                AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME,
             )
             expect(original_properties).not_to have_key(
-                AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME,
+                AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME,
             )
         end
 
@@ -238,10 +238,10 @@ RSpec.describe AreSearch::IndexTarget do
             mappings = index_target.are_search_es_mappings
 
             expect(mappings[:properties]).not_to have_key(
-                AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME,
+                AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME,
             )
             expect(mappings[:properties]).not_to have_key(
-                AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME,
+                AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME,
             )
         end
 
@@ -325,7 +325,7 @@ RSpec.describe AreSearch::IndexTarget do
                             {
                                 query_string: "Rails",
                                 fields:       [:title],
-                                query_type:   AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING,
+                                query_type:   AreSearch::StandardQueryBuilder::TYPE_SIMPLE_QUERY_STRING,
                             },
                         ],
                         model_relations: { model_class => relation },
@@ -338,7 +338,7 @@ RSpec.describe AreSearch::IndexTarget do
             result = index_target.are_search_es_search(
                 "Rails",
                 fields:     [:title],
-                query_type: AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING,
+                query_type: AreSearch::StandardQueryBuilder::TYPE_SIMPLE_QUERY_STRING,
                 relation:   relation,
                 page:       2,
             )
@@ -432,11 +432,7 @@ RSpec.describe AreSearch::IndexTarget do
                         terms: [3, 4],
                     },
                 },
-                aggs: {
-                    id: {
-                        size: 20,
-                    },
-                },
+                aggs: [:id],
                 page: 2,
                 per_page: 20,
                 sort: {

@@ -96,7 +96,7 @@ text 型以外のフィールドは指定できない。
 query_type の既定値は combined_fields。
 空白で区切られた検索語を AND 条件として検索する。
 
-    query_type: AreSearch::QUERY_TYPE_COMBINED_FIELDS
+    query_type: AreSearch.query_type_combined_fields
 
 simple_query_string の指定例。
 
@@ -104,7 +104,7 @@ simple_query_string の指定例。
         {
             query_string: 'Ruby + (Rails | Elasticsearch) -"Java VM"',
             fields:       [:title, :body],
-            query_type:   AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING,
+            query_type:   AreSearch.query_type_simple_query_string,
         },
     ]
 
@@ -133,8 +133,8 @@ query_string は変換せず Elasticsearch へ渡す。
 
 query_type は次の定数のいずれかを指定する。
 
-    AreSearch::QUERY_TYPE_COMBINED_FIELDS
-    AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING
+    AreSearch.query_type_combined_fields
+    AreSearch.query_type_simple_query_string
 
 
 ## 2-2. More Like This
@@ -168,7 +168,7 @@ fields に指定するフィールドには store: true が必要。
         store: true,
     }
 
-その他の指定は Elasticsearch の more_like_this のドキュメントを参照する。
+Symbolのkeyで指定し、内容はチェックせずElasticsearchへ渡す。
 min_term_freq、min_doc_freq、max_query_terms の既定値は、それぞれ 2、5、25。
 
 
@@ -201,6 +201,7 @@ raw_body と同時に使用できる AreSearch 側のオプション。
     :page
     :per_page
     :build_model_bool
+    :enable_runtime_mappings
     :dump_body
 
 from と size は page / per_page から設定する。
@@ -232,6 +233,7 @@ raw_body には query.bool が必要。Symbol と String の key を使用でき
 
 標準検索と More Like This で使用できる共通オプション。
 
+    :runtime_mappings
     :where
     :where_not
     :where_or
@@ -240,6 +242,8 @@ raw_body には query.bool が必要。Symbol と String の key を使用でき
     :per_page
     :model_relations
     :highlight
+    :response
+    :enable_runtime_mappings
     :dump_body
 
 sort は標準検索でのみ使用できる。
@@ -265,10 +269,87 @@ sort は標準検索でのみ使用できる。
     aggs
         1つ以上の target に存在し、同名フィールドが text 型として定義されていないフィールド。
 
-標準検索オプションのフィールド名は、各 target の properties 直下に定義された Symbol に限る。
+runtime_mappingsで定義したフィールドは、typeに応じてpropertiesと同じ条件で判定する。
+同名のpropertiesがある場合は、runtime fieldのtypeを優先する。
+
+標準検索オプションの通常フィールド名は、各 target の properties 直下に定義された Symbol に限る。
+runtime_mappingsのフィールド名は、そのHash直下のSymbolを使用する。
+response.sourceとresponse.fieldsはmappingとの照合を行わない。
 
 
-## 3-1. 外部入力として使用する値
+## 3-1. runtime_mappings
+----------------------------------------------------------------
+
+検索時だけ使用するruntime fieldを指定する。
+
+    result = AreSearch::Searcher.search(
+        [article_index],
+        runtime_mappings: {
+            runtime_status: {
+                type: "keyword",
+                script: {
+                    source: "emit('published')",
+                },
+            },
+        },
+        queries: [
+            {
+                query_string: "Rails",
+                fields:       [:title],
+            },
+        ],
+        where: {
+            runtime_status: {
+                term: "published",
+            },
+        },
+        response: {
+            fields: ["runtime_status"],
+        },
+        enable_runtime_mappings: true,
+    )
+
+runtime_mappingsは1件以上のruntime fieldを持つHashで指定する。
+runtime field名と各field定義のkeyはSymbolを使用し、typeはStringまたはSymbolで必ず指定する。
+type以外の値は変更せずElasticsearchへ渡す。
+
+runtime_mappingsを使用する場合は、Searcher.searchのトップレベルに
+`enable_runtime_mappings: true`を指定する。
+ただし、dump_body: true の場合は、enable_runtime_mappings の指定有無を検査しない。
+runtime_mappingsは検索body policyの検査対象から除外され、それ以外のbodyは通常どおり検査される。
+
+raw_body検索ではruntime_mappingsをraw_body内へ指定し、
+`enable_runtime_mappings: true`はSearcher.searchのトップレベルへ指定する。
+
+
+## 3-2. response
+----------------------------------------------------------------
+
+検索結果へ追加で含める_sourceとfieldsを指定する。
+
+    response: {
+        source: [
+            "title",
+            "payload.display.*",
+        ],
+        fields: [
+            "runtime_status",
+            "published_at",
+        ],
+    }
+
+source未指定時は、ActiveRecordの復元に必要な予約フィールドだけを_sourceから取得する。
+指定したsource pathは予約フィールドへ追加される。
+
+sourceとfieldsはStringのArrayで指定する。
+propertiesやmappingの _source.includes / excludes との照合は行わない。
+indexの _source に保存されていない値はsourceへ含まれない。
+fieldsの値はElasticsearchのfieldsへそのまま指定する。
+
+raw_body検索ではresponseを使用せず、_sourceとfieldsをbodyへ直接指定する。
+
+
+## 3-3. 外部入力として使用する値
 ----------------------------------------------------------------
 
 外部入力として指定できる値。
@@ -278,6 +359,8 @@ sort は標準検索でのみ使用できる。
     page
 
 各オプションの型と制約が適用される。
+これらの値が制約に合わない場合、search_failure_mode が :empty_result なら検索を実行せず、
+STATUS_PARAMS_INVALID の空結果を返す。:raise なら AreSearch::InvalidSearchOption を送出する。
 page は正の Integer で指定し、max_result_window 以降のページは0件になる。
 
 
@@ -450,52 +533,7 @@ Relation の条件に合わない結果と、DB に存在しない結果は除�
 includes、joins なども Relation に指定できる。
 
 
-# 6. aggs
-================================================================
-
-指定フィールドを terms aggregation で集計する。
-text 型フィールドは指定できない。
-
-    result = AreSearch::Searcher.search(
-        [article_index],
-        queries: [
-            {
-                query_string: "Rails",
-                fields:       [:title, :body],
-            },
-        ],
-        aggs: {
-            status: {
-                size: 20,
-            },
-            category: {
-                size: 50,
-            },
-        },
-    )
-
-    result.aggs(:category).each do |name, count|
-        puts "#{name}: #{count}"
-    end
-
-各フィールドには正の整数の size が必要。
-その他の指定には、String、Integer、Float、true、false を値に持つ terms オプションを使用できる。
-
-result.aggs(name) は Array 形式の buckets を簡易化して返す。
-
-    key がある
-        [[key, doc_count], ...]
-        key_as_string がある場合は key の代わりに使用する。
-
-    key がない
-        [doc_count, ...]
-
-対象 aggregation が無い、buckets が無い、または Array 形式でない場合は空 Array を返す。
-引数なしの result.aggs は内部の key を使用した結果全体を Hash で返す。
-生の aggregation 結果は result.raw_response で返す。
-
-
-# 7. page / per_page
+# 6. page / per_page
 ================================================================
 
     result = AreSearch::Searcher.search(
@@ -529,7 +567,7 @@ result.records.total_count は、現在ページでDB復元できなかった件
 Elasticsearch の総件数は result.records.es_total_count で返す。
 
 
-# 8. sort
+# 7. sort
 ================================================================
 
 sort は標準検索で使用できる。
@@ -547,6 +585,59 @@ Hash はキーの記述順を優先順位として使用する。
 sort の値は String または Symbol。指定の詳細は Elasticsearch のドキュメントを参照する。
 
 
+# 8. aggs
+================================================================
+
+非textフィールドを aggregation に使用する。
+フィールド名だけを指定する場合は Array を使用する。
+
+    aggs: [:status, :category]
+
+各フィールドは、フィールド名と同名の terms aggregation へ変換する。
+size には AreSearch.default_aggs_size の値を使用する。デフォルト値は200。
+
+集計名やオプションを指定する場合は Elasticsearch 形式の Hash を使用する。
+
+    aggs: {
+        status_count: {
+            terms: {
+                field: :status,
+                size: 20,
+            },
+        },
+        score_ranges: {
+            range: {
+                field: :score,
+                ranges: [
+                    { to: 1.0 },
+                    { from: 1.0, to: 2.0, key: "middle" },
+                    { from: 2.0 },
+                ],
+            },
+        },
+    }
+
+集計名と aggregation 種別は Symbol。aggregation body の field は必須。
+検索オプションの検査では aggregation 種別を限定せず、field が非textフィールドであることだけを確認する。その他の指定は変更せず Elasticsearch へ渡す。
+
+    result.aggs(:status_count).each do |name, count|
+        puts "#{name}: #{count}"
+    end
+
+result.aggs(name) は Array 形式の buckets を簡易化して返す。
+
+    key がある
+        [[key, doc_count], ...]
+        key_as_string がある場合は key の代わりに使用する。
+
+    key がない
+        [doc_count, ...]
+
+対象 aggregation が無い、buckets が無い、または Array 形式でない場合は空 Array を返す。
+引数なしの result.aggs は内部の key を使用した結果全体を Hash で返す。
+簡易結果の対象外になる場合は result.raw_response を参照する。
+
+
 # 9. highlight
 ================================================================
 
@@ -558,18 +649,6 @@ fields は必須で、text または keyword 型フィールドを指定する�
     highlight: {
         fields: [:title, :body, :status],
     }
-
-一致部分は、デフォルトでは <em> と </em> で囲まれる。
-
-タグを変更する場合。
-
-    highlight: {
-        fields:    [:title, :body],
-        pre_tags:  ["<mark>"],
-        post_tags: ["</mark>"],
-    }
-
-pre_tags と post_tags は String の Array で指定する。
 
 フィールド別オプションを指定する場合。
 
@@ -587,7 +666,7 @@ pre_tags と post_tags は String の Array で指定する。
         require_field_match: false,
     }
 
-fields は Array または Hash で指定する。Hash のフィールド別オプションは空にできない。
+fields は Array または Hash で指定する。Array は空のフィールド別オプションを持つ Hash へ変換する。
 fields に指定するフィールドには store: true が必要。
 
     body: {
@@ -595,6 +674,8 @@ fields に指定するフィールドには store: true が必要。
         store: true,
     }
 
+検索オプションの検査では fields のフィールドだけを確認し、その他の指定は変更せず Elasticsearch へ渡す。
+簡易結果の対象外になる highlight 設定を使用した場合は result.raw_response を参照する。
 その他の指定は Elasticsearch の highlighting のドキュメントを参照する。
 mapping または index_settings の変更後は reindex が必要。
 
@@ -638,7 +719,7 @@ raw_body 検索では、page、per_page、build_model_bool を反映した body 
 status は SearchResult の定数で判定する。
 
     if result.status == AreSearch::SearchResult::STATUS_PARAMS_INVALID
-        # EsSearchBodyPolicy に拒否された場合の処理
+        # 外部入力値が不正、または EsSearchBodyPolicy に拒否された場合の処理
     end
 
 戻り値。
@@ -650,7 +731,8 @@ status は SearchResult の定数で判定する。
 
     AreSearch::SearchResult::STATUS_PARAMS_INVALID
         値は :params_invalid。
-        EsSearchBodyPolicy が検索bodyを拒否したため、検索を実行せず空結果を返した。
+        外部入力として使用する値が制約に合わない、または EsSearchBodyPolicy が検索bodyを拒否したため、
+        検索を実行せず空結果を返した。
 
     AreSearch::SearchResult::STATUS_INDEX_NOT_FOUND
         値は :index_not_found。
@@ -677,6 +759,7 @@ ActiveRecord のレコードと、対応する Elasticsearch hit の情報を検
         puts hit[:id]
         puts hit[:target_name]
         puts hit[:source][:title]
+        puts hit[:fields][:runtime_status]
 
         hit[:highlight].each do |field_name, fragments|
             fragments.each do |fragment|
@@ -697,6 +780,11 @@ hit は次のキーを持つ。
         Elasticsearch が返した _source。
         フィールド名は Symbol。対象 hit に値が無い場合は空 Hash。
 
+    :fields
+        Elasticsearch が返した fields。
+        フィールド名は Symbol。値のArrayは変更しない。
+        対象 hit に値が無い場合は空 Hash。
+
     :highlight
         Elasticsearch が返した highlight。
         フィールド名は Symbol。対象 hit に値が無い場合は空 Hash。
@@ -714,4 +802,3 @@ Elasticsearch のレスポンスは raw_response に残り、総件数は record
 Elasticsearch の生レスポンスを返す。
 
     result.raw_response
-

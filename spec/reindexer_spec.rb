@@ -17,8 +17,8 @@ RSpec.describe AreSearch::Reindexer do
             properties: {
                 id:    { type: "long" },
                 title: { type: "text" },
-                are_search_es_ar_model_class_name: AreSearch::RESERVED_ES_FIELD_NAME_SETTING,
-                are_search_es_ar_instance_key:     AreSearch::RESERVED_ES_FIELD_NAME_SETTING,
+                are_search_es_ar_model_class_name: AreSearch::IndexDefinition::RESERVED_ES_FIELD_NAME_SETTING,
+                are_search_es_ar_instance_key:     AreSearch::IndexDefinition::RESERVED_ES_FIELD_NAME_SETTING,
             },
         }
     end

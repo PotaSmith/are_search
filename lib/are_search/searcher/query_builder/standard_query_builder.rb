@@ -2,9 +2,19 @@
 
 module AreSearch
     class StandardQueryBuilder < QueryBuilderBase
+
+        TYPE_COMBINED_FIELDS = :combined_fields
+        TYPE_SIMPLE_QUERY_STRING = :simple_query_string
+
+        TYPES = [
+            TYPE_COMBINED_FIELDS,
+            TYPE_SIMPLE_QUERY_STRING,
+        ].freeze
+
         SIMPLE_QUERY_STRING_FLAGS = "AND|OR|NOT|PHRASE|PRECEDENCE|WHITESPACE|ESCAPE"
 
         class << self
+
             # 標準検索の選択に必要なオプションを返す。
             def must_params
                 [
@@ -76,17 +86,17 @@ module AreSearch
             def build_text_query_clause(query_string, fields_opts, query_type)
                 resolved_query_type = query_type
                 if resolved_query_type.nil?
-                    resolved_query_type = AreSearch::QUERY_TYPE_COMBINED_FIELDS
+                    resolved_query_type = TYPE_COMBINED_FIELDS
                 end
 
-                if resolved_query_type == AreSearch::QUERY_TYPE_COMBINED_FIELDS
+                if resolved_query_type == TYPE_COMBINED_FIELDS
                     return build_combined_fields_clause(
                         query_string,
                         fields_opts,
                     )
                 end
 
-                if resolved_query_type == AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING
+                if resolved_query_type == TYPE_SIMPLE_QUERY_STRING
                     return build_simple_query_string_clause(
                         query_string,
                         fields_opts,

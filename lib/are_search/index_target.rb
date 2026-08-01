@@ -2,6 +2,7 @@
 
 module AreSearch
     class IndexTarget
+
         attr_reader :model_class, :target_name
 
         # モデルと target_name を保持し、index 名に使用できない値を拒否する。
@@ -10,25 +11,25 @@ module AreSearch
             raise ArgumentError, "target name が必要です" if target_name.nil?
 
             ar_table_name = model_class.are_search_ar_table_name
-            unless AreSearch.valid_es_index_name_element?(ar_table_name)
+            unless AreSearch::IndexDefinition.valid_es_index_name_element?(ar_table_name)
                 raise ArgumentError,
                     "are_search_ar_table_name は小文字の英字で始まり、小文字の英字とアンダーバーだけを使用した String を返してください: #{ar_table_name.inspect}"
             end
 
-            if ar_table_name.include?(AreSearch::ES_INDEX_NAME_DELIMITER)
+            if ar_table_name.include?(AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER)
                 raise ArgumentError,
-                    "are_search_ar_table_name に #{AreSearch::ES_INDEX_NAME_DELIMITER.inspect} は使用できません"
+                    "are_search_ar_table_name に #{AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER.inspect} は使用できません"
             end
 
             target_name_string = target_name.to_s
-            unless AreSearch.valid_es_index_name_element?(target_name_string)
+            unless AreSearch::IndexDefinition.valid_es_index_name_element?(target_name_string)
                 raise ArgumentError,
                     "target name は小文字の英字で始まり、小文字の英字とアンダーバーだけを使用してください: #{target_name.inspect}"
             end
 
-            if target_name_string.include?(AreSearch::ES_INDEX_NAME_DELIMITER)
+            if target_name_string.include?(AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER)
                 raise ArgumentError,
-                    "target name に #{AreSearch::ES_INDEX_NAME_DELIMITER.inspect} は使用できません"
+                    "target name に #{AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER.inspect} は使用できません"
             end
 
             @model_class = model_class
@@ -65,7 +66,7 @@ module AreSearch
                 AreSearch.index_prefix,
                 @ar_table_name,
                 target_name,
-            ].join(AreSearch::ES_INDEX_NAME_DELIMITER)
+            ].join(AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER)
         end
 
         # index作成時の index settings
@@ -108,8 +109,8 @@ module AreSearch
 
             add_reserved_source_includes!(mappings)
 
-            mappings[:properties][AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME] = AreSearch::RESERVED_ES_FIELD_NAME_SETTING
-            mappings[:properties][AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME] = AreSearch::RESERVED_ES_FIELD_NAME_SETTING
+            mappings[:properties][AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME] = AreSearch::IndexDefinition::RESERVED_ES_FIELD_NAME_SETTING
+            mappings[:properties][AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME] = AreSearch::IndexDefinition::RESERVED_ES_FIELD_NAME_SETTING
 
             mappings
         end
@@ -136,12 +137,12 @@ module AreSearch
 
         # 全件をElasticsearchに投入する（移行時・スキーマ変更時に実行する）。
         #
-        # flock とマーカーファイルの管理は IndexManager.es_reindex に委ね、
+        # flock と IndexMarker の管理は IndexManager.es_reindex に委ね、
         # その内側で create とバッチ投入を実行する。
         #
         # es_reindex は別プロセスが実行中で flock を取得できなかった場合に false を返す。
         #
-        # es_reindex の内側（flock 取得済み・マーカーファイル作成済み）で
+        # es_reindex の内側（flock 取得済み・IndexMarker 作成済み）で
         # 新しい physical index を作成し、その physical index へ bulk 投入する。
         # block が正常終了し、返された失敗 ID 配列が空の場合のみ、
         # IndexManager 側で alias の切り替えを試みる。
@@ -254,7 +255,7 @@ module AreSearch
                 source_includes << configured_includes
             end
 
-            AreSearch::RESERVED_ES_FIELD_NAMES.each do |reserved_field_name|
+            AreSearch::IndexDefinition::RESERVED_ES_FIELD_NAMES.each do |reserved_field_name|
                 next if source_includes_field?(source_includes, reserved_field_name)
 
                 source_includes << reserved_field_name
@@ -278,3 +279,4 @@ module AreSearch
         end
     end
 end
+

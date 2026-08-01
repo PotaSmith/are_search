@@ -86,9 +86,23 @@ RSpec.describe AreSearch::SearchParamValidator do
         )
     end
 
+
+    # 成功した検証結果だけを取り出し、エラーが返っていないことを確認する。
+    def validate_options(index_targets, models, **options)
+        valid_options, error_message = described_class.validate(
+            index_targets,
+            models,
+            **options,
+        )
+
+        expect(error_message).to eq(nil)
+
+        valid_options
+    end
+
     describe ".validate" do
         it "定義されたnested HashとArrayを検査して入力形式を維持する" do
-            result = described_class.validate(
+            result, error_message = described_class.validate(
                 [article_index_target],
                 [article_model],
                 queries: [
@@ -106,6 +120,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                 ],
             )
 
+            expect(error_message).to eq(nil)
             expect(result.dig(:queries, 0, :fields)).to eq([:title])
             expect(result[:where]).to eq([
                 {
@@ -117,7 +132,7 @@ RSpec.describe AreSearch::SearchParamValidator do
         end
 
         it "queries配下のfieldsはtext型のArrayまたは正のboostを持つHashを受け付ける" do
-            array_result = described_class.validate(
+            array_result = validate_options(
                 [article_index_target],
                 [article_model],
                 queries: [
@@ -127,7 +142,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                     },
                 ],
             )
-            hash_result = described_class.validate(
+            hash_result = validate_options(
                 [article_index_target],
                 [article_model],
                 queries: [
@@ -201,7 +216,7 @@ RSpec.describe AreSearch::SearchParamValidator do
         end
 
         it "queriesはquery_stringとfieldsを必須とし、fieldsのArrayとHashを受け付ける" do
-            result = described_class.validate(
+            result = validate_options(
                 [article_index_target],
                 [article_model],
                 queries: [
@@ -242,8 +257,8 @@ RSpec.describe AreSearch::SearchParamValidator do
             end.to raise_error(ArgumentError)
         end
 
-        it "mltはinstance、index_target、fieldsを必須とし、その他の単体値パラメーターを受け付ける" do
-            result = described_class.validate(
+        it "mltはinstance、index_target、fieldsを必須とし、その他のパラメーターを値の型を限定せず受け付ける" do
+            result = validate_options(
                 [article_index_target],
                 [article_model],
                 mlt: {
@@ -256,6 +271,11 @@ RSpec.describe AreSearch::SearchParamValidator do
                     min_word_length:      2,
                     minimum_should_match: "30%",
                     boost_terms:          1.5,
+                    stop_words:           ["ruby", "rails"],
+                    per_field_analyzer: {
+                        title:  "standard",
+                        status: "keyword",
+                    },
                 },
             )
 
@@ -269,6 +289,11 @@ RSpec.describe AreSearch::SearchParamValidator do
                 min_word_length:      2,
                 minimum_should_match: "30%",
                 boost_terms:          1.5,
+                stop_words:           ["ruby", "rails"],
+                per_field_analyzer: {
+                    title:  "standard",
+                    status: "keyword",
+                },
             )
 
             required_keys = [
@@ -319,44 +344,10 @@ RSpec.describe AreSearch::SearchParamValidator do
                     },
                 )
             end.to raise_error(ArgumentError)
-
-            future_param_result = described_class.validate(
-                [article_index_target],
-                [article_model],
-                mlt: {
-                    instance:     mlt_instance,
-                    index_target: mlt_index_target,
-                    fields:       [:title],
-                    future_param: 1.5,
-                },
-            )
-
-            expect(future_param_result[:mlt]).to eq(
-                instance:     mlt_instance,
-                index_target: mlt_index_target,
-                fields:       [:title],
-                future_param: 1.5,
-            )
-
-            expect do
-                described_class.validate(
-                    [article_index_target],
-                    [article_model],
-                    mlt: {
-                        instance:     mlt_instance,
-                        index_target: mlt_index_target,
-                        fields:       [:title],
-                        future_param: :invalid,
-                    },
-                )
-            end.to raise_error(
-                ArgumentError,
-                /String、Integer、Float、true、falseのいずれか/,
-            )
         end
 
         it "where系は非textフィールドのterm、terms、rangeだけを受け付ける" do
-            result = described_class.validate(
+            result = validate_options(
                 [article_index_target],
                 [article_model],
                 queries: [
@@ -414,7 +405,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                 )
             end.to raise_error(
                 ArgumentError,
-                /opts\[:where\] に未知のキーがあります: title/,
+                /opts\[:where\] に未知のキーがあります: :title/,
             )
 
             expect do
@@ -435,7 +426,7 @@ RSpec.describe AreSearch::SearchParamValidator do
         end
 
         it "where系のterm、terms、rangeはFloatを受け付ける" do
-            result = described_class.validate(
+            result = validate_options(
                 [article_index_target],
                 [article_model],
                 queries: [
@@ -488,46 +479,99 @@ RSpec.describe AreSearch::SearchParamValidator do
             ])
         end
 
-        it "where系の値をString、Integer、Float、Booleanに限定する" do
-            invalid_conditions = [
+        it "外部入力として使用する値が不正な場合はエラーメッセージを返す" do
+            invalid_options = [
                 {
-                    status: {
-                        term: [],
-                    },
+                    queries: [
+                        {
+                            query_string: nil,
+                            fields: [:title],
+                        },
+                    ],
                 },
                 {
-                    status: {
-                        terms: ["published", {}],
-                    },
-                },
-                {
-                    count: {
-                        range: {
-                            gte: 1..2,
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
+                    where: {
+                        status: {
+                            term: [],
                         },
                     },
                 },
+                {
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
+                    where: {
+                        status: {
+                            terms: ["published", {}],
+                        },
+                    },
+                },
+                {
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
+                    where: {
+                        count: {
+                            range: {
+                                gte: 1..2,
+                            },
+                        },
+                    },
+                },
+                {
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
+                    page: "2",
+                },
             ]
 
-            invalid_conditions.each do |where|
-                expect do
-                    described_class.validate(
-                        [article_index_target],
-                        [article_model],
-                        queries: [
-                            {
-                                query_string: "",
-                                fields: [:title],
-                            },
-                        ],
-                        where: where,
-                    )
-                end.to raise_error(ArgumentError)
+            invalid_options.each do |options|
+                valid_options, error_message = described_class.validate(
+                    [article_index_target],
+                    [article_model],
+                    **options,
+                )
+
+                expect(valid_options).to eq(nil)
+                expect(error_message).to be_instance_of(String)
+                expect(error_message.empty?).to eq(false)
             end
         end
 
+        it "外部入力以外の値が不正な場合は例外を伝播する" do
+            expect do
+                described_class.validate(
+                    [article_index_target],
+                    [article_model],
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
+                    per_page: 0,
+                )
+            end.to raise_error(ArgumentError, /正の整数/)
+        end
+
         it "sortは全targetにある非textフィールドと_score、_docだけを受け付ける" do
-            result = described_class.validate(
+            result = validate_options(
                 [article_index_target, document_index_target],
                 [article_model, document_model],
                 queries: [
@@ -598,8 +642,19 @@ RSpec.describe AreSearch::SearchParamValidator do
             end.to raise_error(ArgumentError, /all_valid_non_text_fields/)
         end
 
-        it "aggsは非textフィールド、highlightはtextまたはkeywordフィールドを検査する" do
-            result = described_class.validate(
+        it "aggsはArray簡易形式とfieldを持つElasticsearch形式を受け付ける" do
+            array_result = validate_options(
+                [article_index_target],
+                [article_model],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:title],
+                    },
+                ],
+                aggs: [:status, :count],
+            )
+            hash_result = validate_options(
                 [article_index_target],
                 [article_model],
                 queries: [
@@ -609,142 +664,164 @@ RSpec.describe AreSearch::SearchParamValidator do
                     },
                 ],
                 aggs: {
+                    status_count: {
+                        terms: {
+                            field: :status,
+                            size: 20,
+                            include: {
+                                partition: 0,
+                                num_partitions: 20,
+                            },
+                        },
+                    },
+                    score_ranges: {
+                        range: {
+                            field: :score,
+                            ranges: [
+                                { to: 1.0 },
+                                { from: 1.0, to: 2.0, key: "middle" },
+                                { from: 2.0 },
+                            ],
+                            keyed: true,
+                        },
+                    },
+                    average_score: {
+                        avg: {
+                            field: :score,
+                            missing: 0,
+                        },
+                    },
+                },
+            )
+
+            expect(array_result[:aggs]).to eq([:status, :count])
+            expect(hash_result[:aggs]).to eq(
+                status_count: {
+                    terms: {
+                        field: :status,
+                        size: 20,
+                        include: {
+                            partition: 0,
+                            num_partitions: 20,
+                        },
+                    },
+                },
+                score_ranges: {
+                    range: {
+                        field: :score,
+                        ranges: [
+                            { to: 1.0 },
+                            { from: 1.0, to: 2.0, key: "middle" },
+                            { from: 2.0 },
+                        ],
+                        keyed: true,
+                    },
+                },
+                average_score: {
+                    avg: {
+                        field: :score,
+                        missing: 0,
+                    },
+                },
+            )
+        end
+
+        it "aggsは集計名と対象フィールドだけを検査する" do
+            invalid_aggs = [
+                [:title],
+                {
+                    title_count: {
+                        terms: {
+                            field: :title,
+                        },
+                    },
+                },
+                {
+                    title_average: {
+                        avg: {
+                            field: :title,
+                        },
+                    },
+                },
+                {
+                    missing_field: {
+                        avg: {
+                            missing: 0,
+                        },
+                    },
+                },
+                {
+                    status_count: {
+                        terms: {
+                            field: :status,
+                        },
+                        range: {
+                            field: :score,
+                        },
+                    },
+                },
+                {
                     status: {
                         size: 20,
                     },
-                    count: {
-                        size: 10,
-                    },
-                    score: {
-                        size:    10,
-                        missing: 0.5,
-                    },
                 },
+            ]
+
+            invalid_aggs.each do |aggs|
+                expect do
+                    described_class.validate(
+                        [article_index_target],
+                        [article_model],
+                        queries: [
+                            {
+                                query_string: "",
+                                fields: [:title],
+                            },
+                        ],
+                        aggs: aggs,
+                    )
+                end.to raise_error(ArgumentError)
+            end
+        end
+
+        it "highlightはfieldsだけを検査してその他の指定を維持する" do
+            result = validate_options(
+                [article_index_target],
+                [article_model],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:title],
+                    },
+                ],
                 highlight: {
                     fields: {
-                        title: {
-                            fragment_size: 120,
-                        },
+                        title: {},
                         status: {
-                            number_of_fragments: 0,
+                            matched_fields: [:title, :status],
                         },
                     },
-                    type: "unified",
-                    require_field_match: false,
+                    pre_tags: ["<mark>"],
+                    post_tags: ["</mark>"],
+                    options: {
+                        custom: [1, true, nil],
+                    },
                 },
             )
 
-            expect(result[:aggs]).to eq(
-                status: {
-                    size: 20,
-                },
-                count: {
-                    size: 10,
-                },
-                score: {
-                    size:    10,
-                    missing: 0.5,
-                },
-            )
             expect(result[:highlight]).to eq(
                 fields: {
-                    title: {
-                        fragment_size: 120,
-                    },
+                    title: {},
                     status: {
-                        number_of_fragments: 0,
+                        matched_fields: [:title, :status],
                     },
                 },
-                type: "unified",
-                require_field_match: false,
+                pre_tags: ["<mark>"],
+                post_tags: ["</mark>"],
+                options: {
+                    custom: [1, true, nil],
+                },
             )
-
-            expect do
-                described_class.validate(
-                    [article_index_target],
-                    [article_model],
-                    queries: [
-                        {
-                            query_string: "",
-                            fields: [:title],
-                        },
-                    ],
-                    aggs: {
-                        title: {
-                            size: 10,
-                        },
-                    },
-                )
-            end.to raise_error(ArgumentError)
-
-            expect do
-                described_class.validate(
-                    [article_index_target],
-                    [article_model],
-                    queries: [
-                        {
-                            query_string: "",
-                            fields: [:title],
-                        },
-                    ],
-                    aggs: {
-                        status: {
-                            include: "published.*",
-                        },
-                    },
-                )
-            end.to raise_error(ArgumentError)
-
-            expect do
-                described_class.validate(
-                    [article_index_target],
-                    [article_model],
-                    queries: [
-                        {
-                            query_string: "",
-                            fields: [:title],
-                        },
-                    ],
-                    aggs: {
-                        status: {
-                            size: 0,
-                        },
-                    },
-                )
-            end.to raise_error(ArgumentError)
-
-            expect do
-                described_class.validate(
-                    [article_index_target],
-                    [article_model],
-                    queries: [
-                        {
-                            query_string: "",
-                            fields: [:title],
-                        },
-                    ],
-                    aggs: {
-                        status: {
-                            size:  10,
-                            field: "count",
-                        },
-                    },
-                )
-            end.to raise_error(ArgumentError, /指定できないキー.*field/)
-
-            expect do
-                described_class.validate(
-                    [article_index_target],
-                    [article_model],
-                    queries: [
-                        {
-                            query_string: "",
-                            fields: [:title],
-                        },
-                    ],
-                    aggs: [:status],
-                )
-            end.to raise_error(ArgumentError)
 
             expect do
                 described_class.validate(
@@ -774,9 +851,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                     ],
                     highlight: {
                         fields: {
-                            count: {
-                                number_of_fragments: 0,
-                            },
+                            count: {},
                         },
                     },
                 )
@@ -784,7 +859,7 @@ RSpec.describe AreSearch::SearchParamValidator do
         end
 
         it "pageとper_pageは正のIntegerだけを受け付ける" do
-            result = described_class.validate(
+            result = validate_options(
                 [article_index_target],
                 [article_model],
                 queries: [
@@ -799,6 +874,25 @@ RSpec.describe AreSearch::SearchParamValidator do
 
             expect(result[:page]).to eq(2)
             expect(result[:per_page]).to eq(25)
+        end
+
+        it "不正なpageはエラーメッセージを返し不正なper_pageは例外にする" do
+            [0, -1, 1.5, "1"].each do |value|
+                valid_options, error_message = described_class.validate(
+                    [article_index_target],
+                    [article_model],
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
+                    page: value,
+                )
+
+                expect(valid_options).to eq(nil)
+                expect(error_message).to match(/正の整数/)
+            end
 
             [0, -1, 1.5, "1"].each do |value|
                 expect do
@@ -811,7 +905,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                                 fields: [:title],
                             },
                         ],
-                        page: value,
+                        per_page: value,
                     )
                 end.to raise_error(ArgumentError, /正の整数/)
             end
@@ -821,7 +915,7 @@ RSpec.describe AreSearch::SearchParamValidator do
             model = AreSearch::SyncRequest
             relation = model.where(last_error: nil)
 
-            result = described_class.validate(
+            result = validate_options(
                 [article_index_target],
                 [model],
                 queries: [
@@ -909,7 +1003,7 @@ RSpec.describe AreSearch::SearchParamValidator do
         end
 
         it "raw_bodyとbuild_model_boolの型を検査する" do
-            result = described_class.validate(
+            result = validate_options(
                 [article_index_target],
                 [article_model],
                 raw_body: {
@@ -980,7 +1074,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                 )
             end.to raise_error(
                 ArgumentError,
-                /opts\[:where\] に未知のキーがあります: status/,
+                /opts\[:where\] に未知のキーがあります: :status/,
             )
         end
     end
@@ -1009,7 +1103,7 @@ RSpec.describe AreSearch::SearcherUtils do
 
             expect(result).to eq(
                 terms: {
-                    AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => [
+                    AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => [
                         "Article",
                         "Document",
                     ],
@@ -1018,4 +1112,3 @@ RSpec.describe AreSearch::SearcherUtils do
         end
     end
 end
-

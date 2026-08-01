@@ -1,33 +1,20 @@
 # frozen_string_literal: true
 
 module AreSearch
-    # 物理インデックスのライフサイクル管理。
-    #
-    # 役割:
-    # - 物理インデックス名の生成
-    # - alias の作成・切替
-    # - 旧方式 index の削除
-    # - 古い物理インデックスの clean_up
-    # - index 操作用 flock / marker 管理
-    #
-    # Searchable は参照しない。
-    # モデル依存の bulk 投入処理は Searchable 側に置く。
     module IndexManager
         extend self
 
-        PHYSICAL_INDEX_TIMESTAMP_SUFFIX = Regexp.new(
-            "#{Regexp.escape(AreSearch::ES_INDEX_NAME_DELIMITER)}" \
-                "\\d{4}_\\d{2}_\\d{2}_\\d{2}_\\d{2}_\\d{2}_\\d{6}\\z",
-        ).freeze
-
-        # AreSearch の物理 index 名から alias 名を復元する。
-        # timestamp 形式の物理 index 名でなければ nil を返す。
-        def es_alias_name_from_index_name(index_name)
-            index_name_string = index_name.to_s
-            return nil unless index_name_string.match?(PHYSICAL_INDEX_TIMESTAMP_SUFFIX)
-
-            index_name_string.sub(PHYSICAL_INDEX_TIMESTAMP_SUFFIX, "")
-        end
+        # 物理インデックスのライフサイクル管理。
+        #
+        # 役割:
+        # - 物理インデックス名の生成
+        # - alias の作成・切替
+        # - 旧方式 index の削除
+        # - 古い物理インデックスの clean_up
+        # - index 操作用 flock / marker 管理
+        #
+        # Searchable は参照しない。
+        # モデル依存の bulk 投入処理は Searchable 側に置く。
 
         # 互換用。実体は DB 上の index marker の存在判定。
         #
@@ -189,7 +176,7 @@ module AreSearch
             [
                 es_index_name,
                 timestamp,
-            ].join(AreSearch::ES_INDEX_NAME_DELIMITER)
+            ].join(AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER)
         end
 
         def get_raw_es_index_names(index_pattern)
@@ -205,12 +192,12 @@ module AreSearch
         # foo__backup          → nil      → 除外
         def get_physical_es_index_names(es_index_name)
             # 指定 alias 名から始まる index を広めに取得する。
-            raw_index_names = get_raw_es_index_names("#{es_index_name}#{AreSearch::ES_INDEX_NAME_DELIMITER}*")
+            raw_index_names = get_raw_es_index_names("#{es_index_name}#{AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER}*")
 
             raw_index_names.reject do |index_name|
                 # timestamp 付き物理 index 名なら、生成元の alias 名を復元する。
                 # timestamp 形式でなければ nil を返す。
-                alias_name = es_alias_name_from_index_name(index_name)
+                alias_name = AreSearch::IndexDefinition.es_alias_name_from_index_name(index_name)
 
                 # 復元できない index と、別 alias から生成された物理 index を除外する。
                 alias_name != es_index_name
@@ -227,7 +214,7 @@ module AreSearch
         end
 
         def newest_physical_index_name(physical_names)
-            timestamped_names = physical_names.select { |physical_name| physical_name.to_s.match?(PHYSICAL_INDEX_TIMESTAMP_SUFFIX) }
+            timestamped_names = physical_names.select { |physical_name| physical_name.to_s.match?(AreSearch::IndexDefinition::PHYSICAL_INDEX_TIMESTAMP_SUFFIX) }
 
             return timestamped_names.sort.last if timestamped_names.any?
 

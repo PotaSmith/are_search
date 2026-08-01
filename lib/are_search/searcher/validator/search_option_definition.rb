@@ -1,66 +1,67 @@
 # frozen_string_literal: true
 
-# 検索オプション定義。
-#
-# 値が置かれる位置には、許可するnode_typeごとの定義を置く。
-# node_typeの候補は :scalar / :hash / :array を最大1件ずつ指定する。
-#
-#     {
-#         scalar: {
-#             type: "string",
-#         },
-#         hash: {
-#             key_values: [],
-#         },
-#         array: {
-#             children: {},
-#         },
-#     }
-#
-# scalar nodeとHash keyは、どちらも単一値として共通の:typeで型を定義する。
-# Hash keyの完全一致による選択だけは:key_nameで定義する。
-#
-# Hashだけは、各key_valueについてkeyによる定義選択を先に行う。
-# 選択されたkey_value定義の:valueを、valueのnode_typeと組み合わせて再帰検査する。
-#
-#     {
-#         hash: {
-#             must_keys: [:fields],
-#             must_not_keys: [:like],
-#             item_count: 1,
-#             key_values: [
-#                 {
-#                     key: {
-#                         key_name: :fields,
-#                     },
-#                     value: {
-#                         array: {
-#                             children: {
-#                                 scalar: {
-#                                     type: "string",
-#                                 },
-#                             },
-#                         },
-#                     },
-#                 },
-#             ],
-#         },
-#     }
-#
-# Arrayはkey_value定義を持たない。
-# 各要素をnodeとして、共通の:childrenと組み合わせて再帰検査する。
-#
-# Hashは:key_values、Arrayは:childrenを必ず持つ。
-# 任意の内容を許可する場合も、任意node用の子定義を明示する。
-
 module AreSearch
-    module Searcher
-        extend self
+    class SearchOptionValidator
+
+        # 検索オプション定義。
+        #
+        # 値が置かれる位置には、許可するnode_typeごとの定義を置く。
+        # node_typeの候補は :scalar / :hash / :array を最大1件ずつ指定する。
+        #
+        #     {
+        #         scalar: {
+        #             type: "string",
+        #         },
+        #         hash: {
+        #             key_values: [],
+        #         },
+        #         array: {
+        #             children: {},
+        #         },
+        #     }
+        #
+        # scalar nodeとHash keyは、どちらも単一値として共通の:typeで型を定義する。
+        # Hash keyの完全一致による選択だけは:key_nameで定義する。
+        #
+        # Hashだけは、各key_valueについてkeyによる定義選択を先に行う。
+        # 選択されたkey_value定義の:valueを、valueのnode_typeと組み合わせて再帰検査する。
+        #
+        #     {
+        #         hash: {
+        #             must_keys: [:fields],
+        #             must_not_keys: [:like],
+        #             item_count: 1,
+        #             key_values: [
+        #                 {
+        #                     key: {
+        #                         key_name: :fields,
+        #                     },
+        #                     value: {
+        #                         array: {
+        #                             children: {
+        #                                 scalar: {
+        #                                     type: "string",
+        #                                 },
+        #                             },
+        #                         },
+        #                     },
+        #                 },
+        #             ],
+        #         },
+        #     }
+        #
+        # Arrayはkey_value定義を持たない。
+        # 各要素をnodeとして、共通の:childrenと組み合わせて再帰検査する。
+        #
+        # Hashは:key_values、Arrayは:childrenを必ず持つ。
+        # 任意の内容を許可する場合も、任意node用の子定義を明示する。
+        # node定義に:error_classを指定すると、そのnode以下のArgumentErrorを指定例外へ付け替える。
 
         # 検索オプション定義の:typeに指定できる名前付き型。
         OPTION_DEFINITION_TYPES = [
             "any",
             "string",
+            "symbol",
             "not_nil",
             "boolean",
             "str_or_sym",
@@ -102,6 +103,7 @@ module AreSearch
                                     key_name: :term,
                                 },
                                 value: {
+                                    error_class: AreSearch::InvalidSearchOption,
                                     scalar: {
                                         type: "str_or_int_or_float_or_bool",
                                     },
@@ -112,6 +114,7 @@ module AreSearch
                                     key_name: :terms,
                                 },
                                 value: {
+                                    error_class: AreSearch::InvalidSearchOption,
                                     array: {
                                         allow_empty: true,
                                         children: {
@@ -127,6 +130,7 @@ module AreSearch
                                     key_name: :range,
                                 },
                                 value: {
+                                    error_class: AreSearch::InvalidSearchOption,
                                     hash: {
                                         key_values: [
                                             {
@@ -188,6 +192,34 @@ module AreSearch
             },
         }.freeze
 
+        # fieldを使用するaggregationで共通するbody定義。
+        # fieldだけを非textフィールドとして検査し、その他はElasticsearchへそのまま渡す。
+        AGGREGATION_BODY_DEFINITIONS = {
+            hash: {
+                must_keys: [:field],
+                key_values: [
+                    {
+                        key: {
+                            key_name: :field,
+                        },
+                        value: {
+                            scalar: {
+                                type: "any_non_text_without_text_field",
+                            },
+                        },
+                    },
+                    {
+                        key: {
+                            type: "symbol_key",
+                        },
+                        value: {
+                            type: "any",
+                        },
+                    },
+                ],
+            },
+        }.freeze
+
         OPTION_DEFINITIONS = {
             # raw_body: {
             #     query: {
@@ -210,10 +242,48 @@ module AreSearch
                 },
             },
 
-            # build_model_bool: true
-            build_model_bool: {
-                scalar: {
-                    type: "boolean",
+            # runtime_mappings: {
+            #     runtime_status: {
+            #         type: "keyword",
+            #         script: {
+            #             source: "emit('published')",
+            #         },
+            #     },
+            # }
+            runtime_mappings: {
+                hash: {
+                    key_values: [
+                        {
+                            key: {
+                                type: "symbol",
+                            },
+                            value: {
+                                hash: {
+                                    must_keys: [:type],
+                                    key_values: [
+                                        {
+                                            key: {
+                                                key_name: :type,
+                                            },
+                                            value: {
+                                                scalar: {
+                                                    type: "str_or_sym",
+                                                },
+                                            },
+                                        },
+                                        {
+                                            key: {
+                                                type: "symbol_key",
+                                            },
+                                            value: {
+                                                type: "any",
+                                            },
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    ],
                 },
             },
 
@@ -221,7 +291,7 @@ module AreSearch
             #     {
             #         query_string: "Rails",
             #         fields: [:title, :body],
-            #         query_type: AreSearch::QUERY_TYPE_SIMPLE_QUERY_STRING,
+            #         query_type: AreSearch::StandardQueryBuilder::TYPE_SIMPLE_QUERY_STRING,
             #     },
             #     {
             #         query_string: "Ruby",
@@ -245,6 +315,7 @@ module AreSearch
                                         key_name: :query_string,
                                     },
                                     value: {
+                                        error_class: AreSearch::InvalidSearchOption,
                                         scalar: {
                                             type: "string",
                                         },
@@ -331,9 +402,7 @@ module AreSearch
                                 type: "symbol_key",
                             },
                             value: {
-                                scalar: {
-                                    type: "str_or_int_or_float_or_bool",
-                                },
+                                type: "any",
                             },
                         },
                     ],
@@ -377,54 +446,6 @@ module AreSearch
             # ]
             where_or: CONDITION_DEFINITIONS,
 
-            # aggs: {
-            #     status: {
-            #         size: 20,
-            #     },
-            #     category: {
-            #         size: 50,
-            #     },
-            # }
-            aggs: {
-                hash: {
-                    key_values: [
-                        {
-                            key: {
-                                type: "any_non_text_without_text_field",
-                            },
-                            value: {
-                                hash: {
-                                    must_keys: [:size],
-                                    must_not_keys: [:field],
-                                    key_values: [
-                                        {
-                                            key: {
-                                                key_name: :size,
-                                            },
-                                            value: {
-                                                scalar: {
-                                                    type: "positive_integer",
-                                                },
-                                            },
-                                        },
-                                        {
-                                            key: {
-                                                type: "symbol_key",
-                                            },
-                                            value: {
-                                                scalar: {
-                                                    type: "str_or_int_or_float_or_bool",
-                                                },
-                                            },
-                                        },
-                                    ],
-                                },
-                            },
-                        },
-                    ],
-                },
-            },
-
             # model_relations: {
             #     Article  => Article.visible.includes(:user, :tags),
             #     Document => Document.published.includes(:author),
@@ -448,6 +469,7 @@ module AreSearch
 
             # page: 2
             page: {
+                error_class: AreSearch::InvalidSearchOption,
                 scalar: {
                     type: "positive_integer",
                 },
@@ -489,6 +511,58 @@ module AreSearch
                 },
             },
 
+            # aggs: [:status, :category]
+            #
+            # aggs: {
+            #     status_count: {
+            #         terms: {
+            #             field: :status,
+            #             size: 20,
+            #         },
+            #     },
+            #     score_ranges: {
+            #         range: {
+            #             field: :score,
+            #             ranges: [
+            #                 { to: 1.0 },
+            #                 { from: 1.0, to: 2.0 },
+            #                 { from: 2.0 },
+            #             ],
+            #         },
+            #     },
+            # }
+            aggs: {
+                array: {
+                    children: {
+                        scalar: {
+                            type: "any_non_text_without_text_field",
+                        },
+                    },
+                },
+                hash: {
+                    key_values: [
+                        {
+                            key: {
+                                type: "symbol_key",
+                            },
+                            value: {
+                                hash: {
+                                    item_count: 1,
+                                    key_values: [
+                                        {
+                                            key: {
+                                                type: "symbol_key",
+                                            },
+                                            value: AGGREGATION_BODY_DEFINITIONS,
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    ],
+                },
+            },
+
             # highlight: {
             #     fields: [:title, :body],
             # }
@@ -522,48 +596,7 @@ module AreSearch
                                                 type: "any_text_or_keyword_without_other_type_field",
                                             },
                                             value: {
-                                                hash: {
-                                                    key_values: [
-                                                        {
-                                                            key: {
-                                                                key_name: :pre_tags,
-                                                            },
-                                                            value: {
-                                                                array: {
-                                                                    children: {
-                                                                        scalar: {
-                                                                            type: "string",
-                                                                        },
-                                                                    },
-                                                                },
-                                                            },
-                                                        },
-                                                        {
-                                                            key: {
-                                                                key_name: :post_tags,
-                                                            },
-                                                            value: {
-                                                                array: {
-                                                                    children: {
-                                                                        scalar: {
-                                                                            type: "string",
-                                                                        },
-                                                                    },
-                                                                },
-                                                            },
-                                                        },
-                                                        {
-                                                            key: {
-                                                                type: "symbol_key",
-                                                            },
-                                                            value: {
-                                                                scalar: {
-                                                                    type: "str_or_int_or_bool",
-                                                                },
-                                                            },
-                                                        },
-                                                    ],
-                                                },
+                                                type: "any",
                                             },
                                         },
                                     ],
@@ -579,43 +612,71 @@ module AreSearch
                         },
                         {
                             key: {
-                                key_name: :pre_tags,
-                            },
-                            value: {
-                                array: {
-                                    children: {
-                                        scalar: {
-                                            type: "string",
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                        {
-                            key: {
-                                key_name: :post_tags,
-                            },
-                            value: {
-                                array: {
-                                    children: {
-                                        scalar: {
-                                            type: "string",
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                        {
-                            key: {
                                 type: "symbol_key",
                             },
                             value: {
-                                scalar: {
-                                    type: "str_or_int_or_bool",
+                                type: "any",
+                            },
+                        },
+                    ],
+                },
+            },
+
+            # response: {
+            #     source: [
+            #         "title",
+            #         "payload.*",
+            #     ],
+            #     fields: [
+            #         "runtime_status",
+            #     ],
+            # }
+            response: {
+                hash: {
+                    key_values: [
+                        {
+                            key: {
+                                key_name: :source,
+                            },
+                            value: {
+                                array: {
+                                    children: {
+                                        scalar: {
+                                            type: "string",
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                        {
+                            key: {
+                                key_name: :fields,
+                            },
+                            value: {
+                                array: {
+                                    children: {
+                                        scalar: {
+                                            type: "string",
+                                        },
+                                    },
                                 },
                             },
                         },
                     ],
+                },
+            },
+
+            # build_model_bool: true
+            build_model_bool: {
+                scalar: {
+                    type: "boolean",
+                },
+            },
+
+            # enable_runtime_mappings: true
+            enable_runtime_mappings: {
+                scalar: {
+                    type: "boolean",
                 },
             },
 

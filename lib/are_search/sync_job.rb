@@ -2,6 +2,7 @@
 
 module AreSearch
     class SyncJob < ActiveJob::Base
+
         queue_as :are_search
 
         # 一時的失敗（ESサーバ起因の 5xx・タイムアウト系、および接続・通信系）のみ

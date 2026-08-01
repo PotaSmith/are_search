@@ -3,6 +3,7 @@
 module AreSearch
     class RawBodyBuilder < BodyBuilderBase
         class << self
+
             # Raw body構築に必要なオプションを返す
             def must_params
                 [

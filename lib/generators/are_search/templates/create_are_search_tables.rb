@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class <%= migration_class_name %> < ActiveRecord::Migration[<%= ActiveRecord::Migration.current_version %>]
+
     def up
         execute <<~SQL
             CREATE SEQUENCE are_search_sync_requests_request_sequence

@@ -12,6 +12,7 @@ require "fileutils"
 # bundle exec rake are_search:check_all_models
 
 namespace :are_search do
+
     desc "AreSearch.sync_request_delay 秒以上未同期の are_search_sync_requests を再同期する"
     task run_sync_requests: :environment do
         AreSearch.validate_rake_operation_enabled!
@@ -360,7 +361,7 @@ namespace :are_search do
 
         begin
             response = AreSearch.client.indices.get(
-                index: "#{AreSearch.index_prefix}#{AreSearch::ES_INDEX_NAME_DELIMITER}*",
+                index: "#{AreSearch.index_prefix}#{AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER}*",
             )
             actual_index_names = response.keys
         rescue Elastic::Transport::Transport::Errors::NotFound

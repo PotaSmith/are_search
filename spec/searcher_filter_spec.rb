@@ -157,49 +157,37 @@ RSpec.describe AreSearch::Searcher, "filters" do
         )
     end
 
-    it "termはString、Integer、Float、Booleanの単一値だけを受け付ける" do
+    it "termの値が制約に合わない場合はparams_invalidの空結果を返す" do
         [[], {}].each do |value|
-            expect do
-                described_class.search(
-                    [index_target],
-                    queries: [
-                        {
-                            query_string: "",
-                            fields: [:search_text],
-                        },
-                    ],
-                    where: {
-                        retry_count: {
-                            term: value,
-                        },
+            result = described_class.search(
+                [index_target],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:search_text],
                     },
-                    dump_body: true,
-                )
-            end.to raise_error(ArgumentError)
+                ],
+                where: {
+                    retry_count: {
+                        term: value,
+                    },
+                },
+                dump_body: true,
+            )
+
+            expect(result.status).to eq(AreSearch::SearchResult::STATUS_PARAMS_INVALID)
+            expect(result.records).to eq([])
         end
     end
 
-    it "termsはArrayを必要とし、各要素をString、Integer、Float、Booleanに限定する" do
-        expect do
-            described_class.search(
-                [index_target],
-                queries: [
-                    {
-                        query_string: "",
-                        fields: [:search_text],
-                    },
-                ],
-                where: {
-                    index_target_name: {
-                        terms: "default",
-                    },
-                },
-                dump_body: true,
-            )
-        end.to raise_error(ArgumentError)
+    it "termsの値が制約に合わない場合はparams_invalidの空結果を返す" do
+        invalid_values = [
+            "default",
+            ["default", {}],
+        ]
 
-        expect do
-            described_class.search(
+        invalid_values.each do |value|
+            result = described_class.search(
                 [index_target],
                 queries: [
                     {
@@ -209,12 +197,15 @@ RSpec.describe AreSearch::Searcher, "filters" do
                 ],
                 where: {
                     index_target_name: {
-                        terms: ["default", {}],
+                        terms: value,
                     },
                 },
                 dump_body: true,
             )
-        end.to raise_error(ArgumentError)
+
+            expect(result.status).to eq(AreSearch::SearchResult::STATUS_PARAMS_INVALID)
+            expect(result.records).to eq([])
+        end
     end
 
     it "termsの空Arrayを許可する" do
@@ -295,25 +286,26 @@ RSpec.describe AreSearch::Searcher, "filters" do
         )
     end
 
-    it "rangeは1件以上のHashを必要とし、各値をString、Integer、Float、Booleanに限定する" do
+    it "rangeの値が制約に合わない場合はparams_invalidの空結果を返す" do
         [1..10, {}, { gte: [1] }].each do |value|
-            expect do
-                described_class.search(
-                    [index_target],
-                    queries: [
-                        {
-                            query_string: "",
-                            fields: [:search_text],
-                        },
-                    ],
-                    where: {
-                        retry_count: {
-                            range: value,
-                        },
+            result = described_class.search(
+                [index_target],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:search_text],
                     },
-                    dump_body: true,
-                )
-            end.to raise_error(ArgumentError)
+                ],
+                where: {
+                    retry_count: {
+                        range: value,
+                    },
+                },
+                dump_body: true,
+            )
+
+            expect(result.status).to eq(AreSearch::SearchResult::STATUS_PARAMS_INVALID)
+            expect(result.records).to eq([])
         end
     end
 
@@ -411,7 +403,7 @@ RSpec.describe AreSearch::Searcher, "filters" do
             )
         end.to raise_error(
             ArgumentError,
-            /opts\[:where\] に未知のキーがあります: search_text/,
+            /opts\[:where\] に未知のキーがあります: :search_text/,
         )
     end
 
@@ -442,8 +434,8 @@ RSpec.describe AreSearch::Searcher, "filters" do
                 "_index" => "test__sync_requests__default__2026_07_03_03_10_00_123456",
                 "_id" => record.id.to_s,
                 "_source" => {
-                    AreSearch::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => model_class.name,
-                    AreSearch::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s => record.id.to_s,
+                    AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => model_class.name,
+                    AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s => record.id.to_s,
                 },
             }
         end
@@ -475,4 +467,3 @@ RSpec.describe AreSearch::Searcher, "filters" do
         expect(result.records).to eq([included_record])
     end
 end
-

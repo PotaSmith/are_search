@@ -1,17 +1,18 @@
 # frozen_string_literal: true
 
-# lib/tasks/are_search_retry_alert.rake
-#
-# are_search_sync_requests のうち retry_count / force_attempt_count が閾値に到達した行、
-# または last_error があるまま長時間残っている行を検出し、
-# 管理者へメールで通知する rake タスクのサンプル。
-#
-#   bundle exec rake are_search:alert_retry_exceeded
-#
-# 宛先・送信元は AreSearchRetryAlertTask 内の定数を環境に合わせて書き換えること。
-# メール送信は利用側Railsアプリの config.action_mailer の設定を使う。
-
 module AreSearchRetryAlertTask
+
+    # lib/tasks/are_search_retry_alert.rake
+    #
+    # are_search_sync_requests のうち retry_count / force_attempt_count が閾値に到達した行、
+    # または last_error があるまま長時間残っている行を検出し、
+    # 管理者へメールで通知する rake タスクのサンプル。
+    #
+    #   bundle exec rake are_search:alert_retry_exceeded
+    #
+    # 宛先・送信元は AreSearchRetryAlertTask 内の定数を環境に合わせて書き換えること。
+    # メール送信は利用側Railsアプリの config.action_mailer の設定を使う。
+
     # 通知先・送信元（環境に合わせて書き換える）
     ALERT_MAIL_TO   = "admin@example.com"
     ALERT_MAIL_FROM = "noreply@example.com"

@@ -4,7 +4,7 @@ require "spec_helper"
 
 RSpec.describe AreSearch::SearchOptionValidator do
     def build_context(**overrides)
-        context = {
+        context_values = {
             models: [],
             any_fields: [],
             all_fields: [],
@@ -16,7 +16,13 @@ RSpec.describe AreSearch::SearchOptionValidator do
             all_valid_non_text_fields: [],
         }
 
-        context.merge(overrides)
+        context = AreSearch::SearchOptionContext.new([], [], {})
+
+        context_values.merge(overrides).each do |name, value|
+            context.instance_variable_set("@#{name}", value)
+        end
+
+        context
     end
 
     # 単一nodeをトップレベルオプションとして検査し、nodeの結果だけを返す。
@@ -97,7 +103,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
                 )
             end.to raise_error(
                 ArgumentError,
-                "未知の検索オプションが指定されています: unknown",
+                "未知の検索オプションが指定されています: :unknown",
             )
         end
 
@@ -163,6 +169,85 @@ RSpec.describe AreSearch::SearchOptionValidator do
                 ArgumentError,
                 /node_type :scalar は定義されていません/,
             )
+        end
+    end
+
+    describe ".validate のerror_class処理" do
+        it "オプション全体の検査エラーを指定例外へ付け替える" do
+            definition = scalar_definition("positive_integer")
+            definition[:error_class] = AreSearch::InvalidSearchOption
+
+            expect do
+                validate_node("1", definition)
+            end.to raise_error(
+                AreSearch::InvalidSearchOption,
+                /正の整数/,
+            )
+        end
+
+        it "Arrayのchildren以下の検査エラーだけを指定例外へ付け替える" do
+            definition = {
+                array: {
+                    children: {
+                        error_class: AreSearch::InvalidSearchOption,
+                        scalar: {
+                            type: "positive_integer",
+                        },
+                    },
+                },
+            }
+
+            expect do
+                validate_node([1, "2"], definition)
+            end.to raise_error(
+                AreSearch::InvalidSearchOption,
+                /正の整数/,
+            )
+
+            expect do
+                validate_node("2", definition)
+            end.to raise_error(ArgumentError, /node_type :scalar/)
+        end
+
+        it "Hashのvalue以下の検査エラーだけを指定例外へ付け替える" do
+            definition = {
+                hash: {
+                    key_values: [
+                        {
+                            key: {
+                                key_name: :query_string,
+                            },
+                            value: {
+                                error_class: AreSearch::InvalidSearchOption,
+                                scalar: {
+                                    type: "string",
+                                },
+                            },
+                        },
+                    ],
+                },
+            }
+
+            expect do
+                validate_node(
+                    {
+                        query_string: nil,
+                    },
+                    definition,
+                )
+            end.to raise_error(
+                AreSearch::InvalidSearchOption,
+                /String/,
+            )
+
+            expect do
+                validate_node(
+                    {
+                        fields: [:title],
+                    },
+                    definition,
+                )
+            end.to raise_error(ArgumentError, /未知のキー/)
         end
     end
 
@@ -481,7 +566,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
                 )
             end.to raise_error(
                 ArgumentError,
-                "opts[:value] に未知のキーがあります: foo",
+                "opts[:value] に未知のキーがあります: :foo",
             )
         end
 
@@ -593,7 +678,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
                 )
             end.to raise_error(
                 ArgumentError,
-                "opts[:value] に未知のキーがあります: unknown",
+                "opts[:value] に未知のキーがあります: :unknown",
             )
         end
 
@@ -867,7 +952,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
                 ],
             )
 
-            special_context[:any_fields].each do |value|
+            special_context.any_fields.each do |value|
                 result = validate_node(
                     value,
                     scalar_definition("any_valid_field"),
@@ -887,127 +972,6 @@ RSpec.describe AreSearch::SearchOptionValidator do
             end.to raise_error(ArgumentError, /wrong number of arguments/)
         end
 
-        it "context参照型は必要なcontextが無ければ拒否する" do
-            expect do
-                validate_node(
-                    :title,
-                    scalar_definition("any_valid_field"),
-                )
-            end.to raise_error(
-                ArgumentError,
-                "opts[:value] の検査には context[:any_fields] が必要です",
-            )
-        end
-
-        it "contextのHash形式、必要キー、未知キーを検査する" do
-            expect do
-                validate_node(
-                    :title,
-                    scalar_definition("any_valid_field"),
-                    context: [],
-                )
-            end.to raise_error(
-                ArgumentError,
-                "context は Hash で指定してください: []",
-            )
-
-            expect do
-                validate_node(
-                    :title,
-                    scalar_definition("any_valid_field"),
-                    context: {
-                        models: [],
-                    },
-                )
-            end.to raise_error(ArgumentError, /context に必要なキーがありません/)
-
-            invalid_context = build_context(
-                unknown: [],
-            )
-
-            expect do
-                validate_node(
-                    :title,
-                    scalar_definition("any_valid_field"),
-                    context: invalid_context,
-                )
-            end.to raise_error(
-                ArgumentError,
-                "context に未知のキーがあります: [:unknown]",
-            )
-        end
-
-        it "contextのmodelsをモデルClassのArrayに限定する" do
-            expect do
-                validate_node(
-                    :title,
-                    scalar_definition("any_valid_field"),
-                    context: build_context(
-                        models: nil,
-                    ),
-                )
-            end.to raise_error(
-                ArgumentError,
-                "context[:models] は Array で指定してください: nil",
-            )
-
-            invalid_model = Object.new
-
-            expect do
-                validate_node(
-                    :title,
-                    scalar_definition("any_valid_field"),
-                    context: build_context(
-                        models: [invalid_model],
-                    ),
-                )
-            end.to raise_error(
-                ArgumentError,
-                /context\[:models\] はモデルClassのArrayで指定してください/,
-            )
-        end
-
-        it "contextのフィールド集合をStringまたはSymbolのArrayに限定する" do
-            expect do
-                validate_node(
-                    :title,
-                    scalar_definition("any_valid_field"),
-                    context: build_context(
-                        any_fields: nil,
-                    ),
-                )
-            end.to raise_error(
-                ArgumentError,
-                "context[:any_fields] は Array で指定してください: nil",
-            )
-
-            expect do
-                validate_node(
-                    :title,
-                    scalar_definition("any_valid_field"),
-                    context: build_context(
-                        any_fields: [:title, 1],
-                    ),
-                )
-            end.to raise_error(
-                ArgumentError,
-                "context[:any_fields] は String または Symbol のArrayで指定してください: 1",
-            )
-        end
-
-        it "contextのフィールド名をSymbolへ統一し重複を除く" do
-            string_context = build_context(
-                any_fields: ["title", :title],
-            )
-
-            result = validate_node(
-                :title,
-                scalar_definition("any_valid_field"),
-                context: string_context,
-            )
-
-            expect(result).to eq(:title)
-        end
     end
 
     describe "OPTION_DEFINITIONSによるfields検査" do
@@ -1018,14 +982,14 @@ RSpec.describe AreSearch::SearchOptionValidator do
             invalid_options = [
                 { query_string: "Rails" },
                 { fields: [:title] },
-                { query_type: AreSearch::QUERY_TYPE_COMBINED_FIELDS },
+                { query_type: AreSearch::StandardQueryBuilder::TYPE_COMBINED_FIELDS },
             ]
 
             invalid_options.each do |options|
                 expect do
                     described_class.validate(
                         options,
-                        AreSearch::Searcher::OPTION_DEFINITIONS,
+                        AreSearch::SearchOptionValidator::OPTION_DEFINITIONS,
                         context,
                     )
                 end.to raise_error(ArgumentError, /未知の検索オプション/)
@@ -1052,7 +1016,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
                         },
                     ],
                 },
-                AreSearch::Searcher::OPTION_DEFINITIONS,
+                AreSearch::SearchOptionValidator::OPTION_DEFINITIONS,
                 context,
             )
 
@@ -1089,7 +1053,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
                             },
                         ],
                     },
-                    /context\[:any_text_without_non_text_fields\].*"title"/,
+                    /context\.any_text_without_non_text_fields.*"title"/,
                 ],
                 [
                     {
@@ -1102,7 +1066,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
                             },
                         ],
                     },
-                    /opts\[:queries\]\[0\]\[fields\] に未知のキーがあります: title/,
+                    /opts\[:queries\]\[0\]\[fields\] に未知のキーがあります: "title"/,
                 ],
                 [
                     {
@@ -1112,7 +1076,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
                             fields:       ["title"],
                         },
                     },
-                    /context\[:any_text_or_keyword_without_other_type_fields\].*"title"/,
+                    /context\.any_text_or_keyword_without_other_type_fields.*"title"/,
                 ],
                 [
                     {
@@ -1122,13 +1086,13 @@ RSpec.describe AreSearch::SearchOptionValidator do
                             },
                         },
                     },
-                    /opts\[:where\] に未知のキーがあります: status/,
+                    /opts\[:where\] に未知のキーがあります: "status"/,
                 ],
                 [
                     {
                         sort: "status",
                     },
-                    /context\[:all_valid_non_text_fields\].*"status"/,
+                    /context\.all_valid_non_text_fields.*"status"/,
                 ],
                 [
                     {
@@ -1136,17 +1100,19 @@ RSpec.describe AreSearch::SearchOptionValidator do
                             "status" => :asc,
                         },
                     },
-                    /opts\[:sort\] に未知のキーがあります: status/,
+                    /opts\[:sort\] に未知のキーがあります: "status"/,
                 ],
                 [
                     {
                         aggs: {
                             "status" => {
-                                size: 10,
+                                terms: {
+                                    field: :status,
+                                },
                             },
                         },
                     },
-                    /opts\[:aggs\] に未知のキーがあります: status/,
+                    /opts\[:aggs\] に未知のキーがあります: "status"/,
                 ],
                 [
                     {
@@ -1154,7 +1120,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
                             fields: ["title"],
                         },
                     },
-                    /context\[:any_text_or_keyword_without_other_type_fields\].*"title"/,
+                    /context\.any_text_or_keyword_without_other_type_fields.*"title"/,
                 ],
                 [
                     {
@@ -1166,7 +1132,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
                             },
                         },
                     },
-                    /opts\[:highlight\]\[fields\] に未知のキーがあります: title/,
+                    /opts\[:highlight\]\[fields\] に未知のキーがあります: "title"/,
                 ],
             ]
 
@@ -1174,7 +1140,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
                 expect do
                     described_class.validate(
                         options,
-                        AreSearch::Searcher::OPTION_DEFINITIONS,
+                        AreSearch::SearchOptionValidator::OPTION_DEFINITIONS,
                         context,
                     )
                 end.to raise_error(ArgumentError, expected_message)

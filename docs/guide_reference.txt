@@ -21,6 +21,7 @@ config/initializers/are_search.rb の AreSearch.setup 後に指定する。
     AreSearch.validate_es_data               = true
     AreSearch.after_commit_mode              = :direct
     AreSearch.batch_size                     = 500
+    AreSearch.search_failure_mode            = :empty_result
     AreSearch.es_search_body_policy          = AreSearch::ScriptDenyEsSearchBodyPolicy
 
 
@@ -142,7 +143,33 @@ index 作成時に Elasticsearch の settings へ渡す analyzer 設定。
 変更後は対象 target の reindex が必要。
 
 
-## 1-12. es_search_body_policy
+## 1-12. search_failure_mode
+----------------------------------------------------------------
+
+外部入力として使用する queries.query_string、where / where_not / where_or の条件値、page の不正、
+検索body policyによる拒否、index不存在で検索を実行できない場合の扱い。
+
+    :empty_result
+        status付きの空結果を返す。ライブラリ側のデフォルト。
+
+    :raise
+        原因に対応する例外を送出する。
+
+送出する例外。
+
+    外部入力として使用する検索値の不正
+        AreSearch::InvalidSearchOption
+
+    検索body policyによる拒否
+        AreSearch::InvalidSearchBody
+
+    index不存在
+        AreSearch::SearchIndexNotFound
+
+生成される initializer は、development環境で :raise、それ以外で :empty_result を設定する。
+
+
+## 1-13. es_search_body_policy
 ----------------------------------------------------------------
 
 Elasticsearchへ送信する検索bodyと、mappingのフィールド名を検査するpolicy。
@@ -388,7 +415,8 @@ commit 後の処理は after_commit_mode に従う。
 ## 5-1. DB更新とsync requestのトランザクション保証
 ----------------------------------------------------------------
 
-通常の保存・touch・削除では、検索対象レコードの変更と sync request の作成を、同じ PostgreSQL データベースの同一トランザクション内で行う。
+標準のDB固有処理はPostgreSQL向け実装を使用し、`AreSearch.database_specific` で差し替え可能。
+通常の保存・touch・削除では、検索対象レコードの変更と sync request の作成を、同じデータベースの同一トランザクション内で行う。
 
     トランザクション内
         検索対象レコードを変更
@@ -397,7 +425,7 @@ commit 後の処理は after_commit_mode に従う。
     commit後
         after_commit_mode に従って同期を開始
 
-検索対象モデルと are_search_sync_requests が同じデータベースに存在する限り、次の状態は、Rails または PostgreSQL のトランザクション機能自体に不具合がない限り、ありえない。
+検索対象モデルと are_search_sync_requests が同じデータベースに存在する限り、次の状態は、Rails または使用するデータベースのトランザクション機能自体に不具合がない限り、ありえない。
 
     検索対象レコードの変更だけが commit されている
     その変更に対応する sync request が存在しない
@@ -547,7 +575,7 @@ sync request を経由せず、index marker も確認しない。
 ## 7-3. 物理 index の手動削除
 ----------------------------------------------------------------
 
-    AreSearch::IndexManager.es_delete_index!(physical_index_name)
+    AreSearch.delete_physical_index!(physical_index_name)
 
 AreSearch.index_operation_enabled = true が必要。
 lock や marker を取得しないため、通常は clean up を使用する。
@@ -613,7 +641,7 @@ commit 後は AreSearch.after_commit_mode に従う。
         何も開始せず、rake の通常同期に任せる。
 
 どのモードでも SyncRequest は callback で作成済み。
-after_commit、Job 登録、Elasticsearch 同期のいずれかが失敗しても、未完了要求は PostgreSQL に残る。
+after_commit、Job 登録、Elasticsearch 同期のいずれかが失敗しても、未完了要求はデータベースに残る。
 
 通常同期の開始時は processing_token と processing_at を設定する。
 processing_token が boolean の処理中フラグではなく token なのは、Job の再処理に対応するため。

@@ -3,9 +3,12 @@
 require "json"
 
 module AreSearch
-    # Elasticsearchへ送信するbodyとfield名からscript系キーを拒否する標準policy。
     class ScriptDenyEsSearchBodyPolicy < EsSearchBodyPolicy
+
+        # Elasticsearchへ送信するbodyとfield名からscript系キーを拒否する標準policy。
+
         class << self
+
             # Elasticsearch serializerでJSON化した結果を走査する。
             def valid?(es_params)
                 serialized_params = Elasticsearch::API.serializer.dump(es_params)

@@ -5,9 +5,12 @@
 AreSearch is a search platform that implements search, synchronization, and operations for Rails and Elasticsearch while leaving room for applications to intervene directly in its configuration and processing.
 
 It is not a gem for hiding Elasticsearch.
-It provides Rails models with indexing, reindexing, asynchronous synchronization, and basic search helpers for Elasticsearch.
 
-For complex searches, the intended approach is to write Elasticsearch Query DSL directly in the `raw_body` option of `AreSearch::Searcher.search` after understanding the DSL.
+AreSearch does not consider learning gem-specific search methods to be valuable in itself.
+When using Elasticsearch, understanding Elasticsearch itself is more useful in the long term than learning notation specific to a gem.
+Just as relying only on Active Record without understanding SQL is risky, AreSearch avoids designs that depend only on search gem operations without understanding Elasticsearch.
+
+It provides Rails models with indexing, reindexing, asynchronous synchronization, and basic search helpers for Elasticsearch.
 
 ## Policy
 
@@ -30,14 +33,14 @@ Through sync requests, index markers, rake tasks, and alert emails, it leaves vi
 It is designed so that application operators can determine what is normal, what is pending, what failed, what is stuck, and what is currently under index operation.
 
 
-## PostgreSQL and synchronization guarantees
+## Database and synchronization guarantees
 
-AreSearch targets PostgreSQL as its Active Record database.
+Changes to searchable records and the corresponding synchronization requests in `are_search_sync_requests` are written in the same transaction on the same database.
+As long as the searchable models and `are_search_sync_requests` use the same database, a state where a record change is committed without a sync request for reflecting that change in Elasticsearch cannot occur unless the transaction mechanism in Rails or the database itself is faulty.
 
-Changes to searchable records and the corresponding synchronization requests in `are_search_sync_requests` are written in the same transaction on the same PostgreSQL database.
-As long as the searchable models and `are_search_sync_requests` use the same database, a state where a record change is committed without a sync request for reflecting that change in Elasticsearch cannot occur unless the transaction mechanism in Rails or PostgreSQL itself is faulty.
+Even if direct synchronization from `after_commit`, job enqueueing, or Elasticsearch synchronization fails, the sync request remains in the database and can be processed later by the rake task.
 
-Even if direct synchronization from `after_commit`, job enqueueing, or Elasticsearch synchronization fails, the sync request remains in PostgreSQL and can be processed later by the rake task.
+AreSearch uses PostgreSQL as its standard database, but database-specific processing can be replaced through configuration.
 
 
 ## Do not reindex an index that is being used
