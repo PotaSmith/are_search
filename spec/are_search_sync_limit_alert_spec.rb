@@ -74,6 +74,8 @@ RSpec.describe "are_search sync limit alert task" do
         expect(body).to include("last_callback_try_at : #{last_callback_try_at}")
         expect(body).to include("last_completed_at :    #{last_completed_at}")
         expect(body).to include("last_error_at :        #{last_error_at}")
+        expect(body).not_to include("last_error :")
+        expect(body).not_to include("timeout")
     end
 
     it "複数の通知条件に該当する同じ要求は合計件数で重複しない" do

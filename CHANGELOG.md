@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+- Elasticsearch client 作成時のデバッグログで、接続先情報だけを出力し、`user` / `password` などの認証情報を含めないよう変更
+- sync limit alert メールから `last_error` 本文を除外。`last_error_at` と通知条件は維持し、エラー詳細は `are_search_sync_requests` で確認する形へ変更
 - Elasticsearch の alias と物理 index の判定を整理。`EsAdapter#index_alias_exists?` で alias 存在確認を boolean として扱い、alias 名と同名の物理 index 判定では通常 alias を物理 index と誤認しないよう修正。重複していた `IndexManager#index_alias_exists?` を削除して判定を `EsAdapter` へ統一
 - 検索結果取得用の `response.stored_fields` と `response.docvalue_fields` を追加。Elasticsearch の `stored_fields` / `docvalue_fields` へ String 配列を渡し、取得値を既存の `records_with_hit` の `hit[:fields]` から参照できるよう変更
 - `response.fields` は通常 field の値を `_source` から取得するため、`store: true` だけでは取得できないことをガイドへ明記。`stored_fields`、`docvalue_fields`、runtime field との取得経路の違いを整理

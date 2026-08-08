@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "stringio"
+
 RSpec.describe AreSearch do
     it "has a version number" do
         expect(AreSearch::VERSION).not_to be nil
@@ -34,6 +36,49 @@ RSpec.describe AreSearch do
         it "client 設定のログ出力メソッドを公開しない" do
             expect(described_class.respond_to?(:log_client_config)).to eq(false)
             expect(described_class.respond_to?(:log_client_config, true)).to eq(true)
+        end
+
+        it "client 設定ログには接続先だけを出して認証情報を含めない" do
+            log_output = StringIO.new
+            logger = ActiveSupport::Logger.new(log_output)
+            logger.level = ::Logger::DEBUG
+
+            client = Elasticsearch::Client.new(
+                url: "https://elastic_user:elastic_password@example.com:9200",
+                adapter: :net_http,
+                transport_options: {
+                    request: {
+                        open_timeout: 2,
+                        timeout:      10,
+                    },
+                    ssl: {
+                        verify: false,
+                    },
+                },
+            )
+
+            connection_host = client.transport.connections.connections.first.host
+            expect(connection_host[:user]).to eq("elastic_user")
+            expect(connection_host[:password]).to eq("elastic_password")
+
+            development_env = ActiveSupport::EnvironmentInquirer.new("development")
+            allow(Rails)
+                .to receive(:env)
+                .and_return(development_env)
+            allow(described_class)
+                .to receive(:logger)
+                .and_return(logger)
+
+            described_class.send(:log_client_config, client)
+
+            log_message = log_output.string
+
+            expect(log_message).to include("[AreSearch] elasticsearch client created")
+            expect(log_message).to include('scheme: "https"')
+            expect(log_message).to include('host: "example.com"')
+            expect(log_message).to include("port: 9200")
+            expect(log_message).not_to include("elastic_user")
+            expect(log_message).not_to include("elastic_password")
         end
     end
 

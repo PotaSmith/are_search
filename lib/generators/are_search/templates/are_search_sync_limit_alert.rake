@@ -102,7 +102,6 @@ module AreSearchSyncLimitAlertTask
             lines << "last_force_try_at :    #{sync_request.last_force_try_at}"
             lines << "updated_at :           #{sync_request.updated_at}"
             lines << "last_error_at :        #{sync_request.last_error_at}"
-            lines << "last_error :           #{sync_request.last_error}"
 
             lines << "--------------"
         end

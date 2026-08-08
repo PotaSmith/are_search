@@ -307,10 +307,17 @@ module AreSearch
         client.transport.connections.connections.each do |connection|
             faraday_connection = connection.connection
             adapter = faraday_connection.builder.adapter
+            host = connection.host
+            log_host = {
+                scheme: host[:scheme],
+                host:   host[:host],
+                port:   host[:port],
+                path:   host[:path],
+            }
 
             AreSearch.logger.debug do
                 "[AreSearch] elasticsearch client created " \
-                    "host=#{connection.host.inspect} " \
+                    "host=#{log_host.inspect} " \
                     "adapter=#{adapter.inspect} " \
                     "open_timeout=#{faraday_connection.options.open_timeout.inspect} " \
                     "timeout=#{faraday_connection.options.timeout.inspect} " \
