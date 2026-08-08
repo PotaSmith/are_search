@@ -36,6 +36,4 @@ Gem::Specification.new do |spec|
     spec.add_dependency "elasticsearch", "~> 9.0"
     spec.add_dependency "elastic-transport"
     spec.add_dependency "faraday"
-
-    spec.add_dependency "progress_bar"
 end
