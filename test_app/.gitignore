@@ -21,9 +21,22 @@
 !/tmp/pids/
 !/tmp/pids/.keep
 
+/node_modules/
+/app/assets/builds/*
+!/app/assets/builds/.keep
 /public/assets
+
+/.github
+/config/deploy*.yml
+/.kamal
+
+/.devcontainer
+
+/.dockerignore
+/Dockerfile*
 
 # Ignore key files for decrypting credentials and more.
 /config/*.key
+/config/credentials/*.key
 
 /config/conf_vars
