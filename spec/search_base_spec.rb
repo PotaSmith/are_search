@@ -12,41 +12,43 @@ RSpec.describe AreSearch::Searcher do
     let(:article_index_target) do
         double(
             "article_index_target",
-            model_class:                  article_model,
-            target_name:                  :default,
-            are_search_es_index_name:     "test__articles__default",
-            are_search_es_mappings:       {
+            model_class:                       article_model,
+            index_target_name:                       :default,
+            are_search_index_alias_name:          "test__articles__default",
+            are_search_index_alias_exists?: true,
+            are_search_index_marked?:       false,
+            are_search_index_mappings:            {
                 properties: {
                     title: { type: "text" },
                 },
             },
-            are_search_es_index_settings: { max_result_window: 2_000 },
+            are_search_index_settings: { max_result_window: 2_000 },
         )
     end
     let(:document_index_target) do
         double(
             "document_index_target",
-            model_class:                  document_model,
-            target_name:                  :default,
-            are_search_es_index_name:     "test__documents__default",
-            are_search_es_mappings:       {
+            model_class:                       document_model,
+            index_target_name:                       :default,
+            are_search_index_alias_name:          "test__documents__default",
+            are_search_index_alias_exists?: true,
+            are_search_index_marked?:       false,
+            are_search_index_mappings:            {
                 properties: {
                     name: { type: "text" },
                 },
             },
-            are_search_es_index_settings: { max_result_window: 2_000 },
+            are_search_index_settings: { max_result_window: 2_000 },
         )
     end
 
     describe ".check_index_exists?" do
         it "全 index target の alias が存在すれば true を返す" do
-            expect(AreSearch::IndexManager)
-                .to receive(:es_index_alias_exists?)
-                .with("test__articles__default")
+            expect(article_index_target)
+                .to receive(:are_search_index_alias_exists?)
                 .and_return(true)
-            expect(AreSearch::IndexManager)
-                .to receive(:es_index_alias_exists?)
-                .with("test__documents__default")
+            expect(document_index_target)
+                .to receive(:are_search_index_alias_exists?)
                 .and_return(true)
 
             result = described_class.check_index_exists?([
@@ -58,13 +60,11 @@ RSpec.describe AreSearch::Searcher do
         end
 
         it "ひとつでも alias が無ければ false を返す" do
-            allow(AreSearch::IndexManager)
-                .to receive(:es_index_alias_exists?)
-                .with("test__articles__default")
+            allow(article_index_target)
+                .to receive(:are_search_index_alias_exists?)
                 .and_return(true)
-            allow(AreSearch::IndexManager)
-                .to receive(:es_index_alias_exists?)
-                .with("test__documents__default")
+            allow(document_index_target)
+                .to receive(:are_search_index_alias_exists?)
                 .and_return(false)
 
             result = described_class.check_index_exists?([
@@ -78,13 +78,11 @@ RSpec.describe AreSearch::Searcher do
 
     describe ".index_marked?" do
         it "対象 index のいずれかに marker があれば true を返す" do
-            allow(AreSearch::IndexMarker)
-                .to receive(:marked?)
-                .with("test__articles__default")
+            allow(article_index_target)
+                .to receive(:are_search_index_marked?)
                 .and_return(false)
-            allow(AreSearch::IndexMarker)
-                .to receive(:marked?)
-                .with("test__documents__default")
+            allow(document_index_target)
+                .to receive(:are_search_index_marked?)
                 .and_return(true)
 
             result = described_class.index_marked?([
@@ -160,7 +158,7 @@ RSpec.describe AreSearch::Searcher do
 
             expect(AreSearch::QueryBuilderSelector).not_to receive(:select)
             expect(AreSearch::BodyBuilderSelector).not_to receive(:select)
-            expect(AreSearch.es_search_body_policy).not_to receive(:valid?)
+            expect(AreSearch.search_body_policy).not_to receive(:valid?)
             expect(AreSearch).not_to receive(:client)
 
             result = described_class.search(
@@ -222,11 +220,11 @@ RSpec.describe AreSearch::Searcher do
                 )
                 .and_return([valid_options, nil])
 
-            allow(AreSearch.es_search_body_policy)
+            allow(AreSearch.search_body_policy)
                 .to receive(:valid?)
                 .and_return(false)
 
-            expect(AreSearch::IndexManager).not_to receive(:es_index_alias_exists?)
+            expect(article_index_target).not_to receive(:are_search_index_alias_exists?)
             expect(AreSearch).not_to receive(:client)
 
             result = described_class.search(
@@ -265,11 +263,11 @@ RSpec.describe AreSearch::Searcher do
                 )
                 .and_return([valid_options, nil])
 
-            allow(AreSearch.es_search_body_policy)
+            allow(AreSearch.search_body_policy)
                 .to receive(:valid?)
                 .and_return(false)
 
-            expect(AreSearch::IndexManager).not_to receive(:es_index_alias_exists?)
+            expect(article_index_target).not_to receive(:are_search_index_alias_exists?)
             expect(AreSearch).not_to receive(:client)
 
             expect do
@@ -277,7 +275,7 @@ RSpec.describe AreSearch::Searcher do
                     [article_index_target],
                     queries: queries,
                 )
-            end.to raise_error(AreSearch::InvalidSearchBody, /es_search_body_policy/)
+            end.to raise_error(AreSearch::InvalidSearchBody, /search_body_policy/)
         end
 
         it "対象 index の alias が無ければ index_not_found の空結果を返す" do
@@ -317,7 +315,7 @@ RSpec.describe AreSearch::Searcher do
                 .with([article_index_target], query, {})
                 .and_return(body)
 
-            expect(AreSearch.es_search_body_policy)
+            expect(AreSearch.search_body_policy)
                 .to receive(:valid?)
                 .with(body)
                 .and_return(true)
@@ -366,13 +364,12 @@ RSpec.describe AreSearch::Searcher do
                 )
                 .and_return([valid_options, nil])
 
-            allow(AreSearch.es_search_body_policy)
+            allow(AreSearch.search_body_policy)
                 .to receive(:valid?)
                 .and_return(true)
 
-            allow(AreSearch::IndexManager)
-                .to receive(:es_index_alias_exists?)
-                .with("test__articles__default")
+            allow(article_index_target)
+                .to receive(:are_search_index_alias_exists?)
                 .and_return(false)
 
             expect(AreSearch).not_to receive(:client)
@@ -436,7 +433,7 @@ RSpec.describe AreSearch::Searcher do
                 .with([article_index_target], query, valid_options)
                 .and_return(body)
 
-            expect(AreSearch.es_search_body_policy)
+            expect(AreSearch.search_body_policy)
                 .to receive(:valid?)
                 .with(body)
                 .and_return(true)
@@ -544,12 +541,12 @@ RSpec.describe AreSearch::Searcher do
             parent_index_target = double(
                 "parent_index_target",
                 model_class:              parent_model,
-                are_search_es_index_name: "test__articles__default",
+                are_search_index_alias_name: "test__articles__default",
             )
             child_index_target = double(
                 "child_index_target",
                 model_class:              child_model,
-                are_search_es_index_name: "test__articles__default",
+                are_search_index_alias_name: "test__articles__default",
             )
 
             expect do
@@ -570,12 +567,12 @@ RSpec.describe AreSearch::Searcher do
             parent_index_target = double(
                 "parent_index_target",
                 model_class:              parent_model,
-                are_search_es_index_name: "test__articles__default",
+                are_search_index_alias_name: "test__articles__default",
             )
             child_index_target = double(
                 "child_index_target",
                 model_class:              child_model,
-                are_search_es_index_name: "test__special_articles__default",
+                are_search_index_alias_name: "test__special_articles__default",
             )
 
             expect do
@@ -594,12 +591,12 @@ RSpec.describe AreSearch::Searcher do
             first_index_target = double(
                 "first_index_target",
                 model_class:              first_child_model,
-                are_search_es_index_name: "test__articles__default",
+                are_search_index_alias_name: "test__articles__default",
             )
             second_index_target = double(
                 "second_index_target",
                 model_class:              second_child_model,
-                are_search_es_index_name: "test__articles__default",
+                are_search_index_alias_name: "test__articles__default",
             )
 
             expect do
@@ -636,12 +633,12 @@ RSpec.describe AreSearch::Searcher do
             first_index_target = double(
                 "first_index_target",
                 model_class:              first_child_model,
-                are_search_es_index_name: "test__articles__default",
+                are_search_index_alias_name: "test__articles__default",
             )
             second_index_target = double(
                 "second_index_target",
                 model_class:              second_child_model,
-                are_search_es_index_name: "test__articles__default",
+                are_search_index_alias_name: "test__articles__default",
             )
 
             result = described_class.send(
@@ -696,21 +693,21 @@ RSpec.describe AreSearch::Searcher do
                     "_index" => "test__articles__default__2026_07_03_03_10_00_123456",
                     "_id" => "1",
                     "_source" => {
-                        AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
+                        AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
                             "SpecialArticle",
                             "Article",
                         ],
-                        AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s => "1",
+                        AreSearch::IndexDefinition::RESERVED_AR_INSTANCE_KEY_FIELD_NAME.to_s => "1",
                     },
                 },
                 {
                     "_index" => "test__articles__default__2026_07_03_03_10_00_123456",
                     "_id" => "2",
                     "_source" => {
-                        AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
+                        AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
                             "Document",
                         ],
-                        AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s => "2",
+                        AreSearch::IndexDefinition::RESERVED_AR_INSTANCE_KEY_FIELD_NAME.to_s => "2",
                     },
                 },
             ]
@@ -736,15 +733,15 @@ RSpec.describe AreSearch::Searcher do
                             index: "test__articles__default__2026_07_03_03_10_00_123456",
                             id: "1",
                             source: {
-                                AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => [
+                                AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME => [
                                     "SpecialArticle",
                                     "Article",
                                 ],
-                                AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME => "1",
+                                AreSearch::IndexDefinition::RESERVED_AR_INSTANCE_KEY_FIELD_NAME => "1",
                             },
                             highlight: {},
                             fields: {},
-                            target_name: :default,
+                            index_target_name: :default,
                         },
                     ],
                 ],
@@ -765,14 +762,14 @@ RSpec.describe AreSearch::Searcher do
             first_index_target = double(
                 "first_index_target",
                 model_class:                  first_child_model,
-                target_name:                  :default,
-                are_search_es_index_name:     "test__articles__default",
+                index_target_name:                  :default,
+                are_search_index_alias_name:     "test__articles__default",
             )
             second_index_target = double(
                 "second_index_target",
                 model_class:                  second_child_model,
-                target_name:                  :default,
-                are_search_es_index_name:     "test__articles__default",
+                index_target_name:                  :default,
+                are_search_index_alias_name:     "test__articles__default",
             )
 
             expect(first_child_model)
@@ -789,7 +786,7 @@ RSpec.describe AreSearch::Searcher do
                     "_index" => "test__articles__default__2026_07_03_03_10_00_123456",
                     "_id" => "1",
                     "_source" => {
-                        AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
+                        AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
                             "FirstArticle",
                         ],
                     },
@@ -798,7 +795,7 @@ RSpec.describe AreSearch::Searcher do
                     "_index" => "test__articles__default__2026_07_03_03_10_00_123456",
                     "_id" => "2",
                     "_source" => {
-                        AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
+                        AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => [
                             "SecondArticle",
                         ],
                     },
@@ -826,13 +823,13 @@ RSpec.describe AreSearch::Searcher do
                             index: "test__articles__default__2026_07_03_03_10_00_123456",
                             id: "1",
                             source: {
-                                AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => [
+                                AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME => [
                                     "FirstArticle",
                                 ],
                             },
                             highlight: {},
                             fields: {},
-                            target_name: :default,
+                            index_target_name: :default,
                         },
                     ],
                     [
@@ -841,13 +838,13 @@ RSpec.describe AreSearch::Searcher do
                             index: "test__articles__default__2026_07_03_03_10_00_123456",
                             id: "2",
                             source: {
-                                AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => [
+                                AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME => [
                                     "SecondArticle",
                                 ],
                             },
                             highlight: {},
                             fields: {},
-                            target_name: :default,
+                            index_target_name: :default,
                         },
                     ],
                 ],
@@ -864,8 +861,8 @@ RSpec.describe AreSearch::Searcher do
                             "_index" => "test__articles__default__2026_07_03_03_10_00_123456",
                             "_id" => "1",
                             "_source" => {
-                                AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
-                                AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s => "1",
+                                AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
+                                AreSearch::IndexDefinition::RESERVED_AR_INSTANCE_KEY_FIELD_NAME.to_s => "1",
                                 "title" => "Rails guide",
                             },
                             "highlight" => {
@@ -904,8 +901,8 @@ RSpec.describe AreSearch::Searcher do
                         index: "test__articles__default__2026_07_03_03_10_00_123456",
                         id: "1",
                         source: {
-                            AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => ["Article"],
-                            AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME => "1",
+                            AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME => ["Article"],
+                            AreSearch::IndexDefinition::RESERVED_AR_INSTANCE_KEY_FIELD_NAME => "1",
                             title: "Rails guide",
                         },
                         highlight: {
@@ -914,7 +911,7 @@ RSpec.describe AreSearch::Searcher do
                         fields: {
                             runtime_score: [1.5],
                         },
-                        target_name: :default,
+                        index_target_name: :default,
                     },
                 ],
             ])

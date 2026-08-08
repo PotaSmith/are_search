@@ -17,14 +17,18 @@ RSpec.describe AreSearch::Reindexer do
             properties: {
                 id:    { type: "long" },
                 title: { type: "text" },
-                are_search_es_ar_model_class_name: AreSearch::IndexDefinition::RESERVED_ES_FIELD_NAME_SETTING,
-                are_search_es_ar_instance_key:     AreSearch::IndexDefinition::RESERVED_ES_FIELD_NAME_SETTING,
+                are_search_reserved_ar_model_class_name: AreSearch::IndexDefinition::RESERVED_INDEX_FIELD_NAME_SETTING,
+                are_search_reserved_ar_instance_key:     AreSearch::IndexDefinition::RESERVED_INDEX_FIELD_NAME_SETTING,
             },
         }
     end
 
     let(:index_settings) do
         { max_result_window: 50_000 }
+    end
+
+    let(:sync_stage_name) do
+        "default"
     end
 
     let(:model) do
@@ -37,12 +41,12 @@ RSpec.describe AreSearch::Reindexer do
     let(:index_target) do
         double(
             "index_target",
-            model_class:                    model,
-            target_name:                    :default,
-            are_search_es_index_name:       "test__articles__default",
-            are_search_es_mappings:         mappings,
-            are_search_es_mappings_for_index: mappings_for_index,
-            are_search_es_index_settings:   index_settings,
+            model_class:                      model,
+            index_target_name:                      :default,
+            are_search_index_alias_name:         "test__articles__default",
+            are_search_index_mappings:           mappings,
+            are_search_index_mappings_for_index: mappings_for_index,
+            are_search_index_settings:     index_settings,
         )
     end
 
@@ -64,6 +68,31 @@ RSpec.describe AreSearch::Reindexer do
         end
     end
 
+    def run_index_manager_block(result, physical_index_name, &block)
+        result[:stop_phase] = :index_to_new_index
+
+        if block.call(physical_index_name)
+            result[:result] = :success
+            result[:stop_phase] = nil
+            result[:done_phases] = [
+                :lock_index,
+                :create_marker,
+                :create_new_index,
+                :index_to_new_index,
+                :delete_alias_duplicate_index,
+                :switch_alias,
+            ]
+        else
+            result[:message] =
+                "bulk 投入に失敗した ID があるため alias を切り替えませんでした"
+            result[:done_phases] = [
+                :lock_index,
+                :create_marker,
+                :create_new_index,
+            ]
+        end
+    end
+
     before do
         allow(AreSearch).to receive(:client).and_return(client)
         stub_const("ProgressBar", progress_bar_class)
@@ -78,19 +107,29 @@ RSpec.describe AreSearch::Reindexer do
                 2
             end
 
-            it "delegates index guard and bulk indexes records into the yielded physical index" do
-                first_record = instance_double(
-                    "Article",
-                    id: 1,
-                    are_search_es_indexable?: true,
-                    are_search_es_data_for_index!: { id: 1, title: "first" },
-                )
-                second_record = instance_double(
-                    "Article",
-                    id: 2,
-                    are_search_es_indexable?: true,
-                    are_search_es_data_for_index!: { id: 2, title: "second" },
-                )
+            it "IndexManagerへ結果Hashを渡し、生成された物理indexへbulk投入する" do
+                first_record = instance_double("Article", id: 1)
+                second_record = instance_double("Article", id: 2)
+
+                expect(first_record)
+                    .to receive(:are_search_indexable?)
+                    .with(:default, sync_stage_name)
+                    .and_return(true)
+
+                expect(first_record)
+                    .to receive(:are_search_index_data_for_index!)
+                    .with(index_target, sync_stage_name)
+                    .and_return(id: 1, title: "first")
+
+                expect(second_record)
+                    .to receive(:are_search_indexable?)
+                    .with(:default, sync_stage_name)
+                    .and_return(true)
+
+                expect(second_record)
+                    .to receive(:are_search_index_data_for_index!)
+                    .with(index_target, sync_stage_name)
+                    .and_return(id: 2, title: "second")
 
                 allow(model).to receive(:find_in_batches) do |batch_size:, &block|
                     expect(batch_size).to eq(500)
@@ -104,21 +143,51 @@ RSpec.describe AreSearch::Reindexer do
                     { id: 2, title: "second" },
                 ]
 
-                expect(AreSearch::IndexManager).to receive(:es_reindex) do |index_name, actual_index_settings, index_mappings, &block|
-                    expect(index_name).to eq("test__articles__default")
-                    expect(actual_index_settings).to eq(index_settings)
-                    expect(index_mappings).to eq(mappings_for_index)
+                expect(AreSearch::IndexManager)
+                    .to receive(:reindex) do |index_alias_name, actual_index_settings, index_mappings, operation, result, &block|
+                        expect(index_alias_name).to eq("test__articles__default")
+                        expect(actual_index_settings).to eq(index_settings)
+                        expect(index_mappings).to eq(mappings_for_index)
+                        expect(operation).to eq("reindex")
+                        expect(result).to eq(
+                            result:      :not_success,
+                            message:     '',
+                            failed_ids:  [],
+                            stop_phase:  nil,
+                            done_phases: [],
+                        )
 
-                    block.call("test_articles__20240101120000")
-                end
+                        run_index_manager_block(
+                            result,
+                            "test_articles__20240101120000",
+                            &block
+                        )
+                    end
 
-                expect(client).to receive(:bulk)
+                expect(client)
+                    .to receive(:bulk)
                     .with(body: expected_body)
                     .and_return("errors" => false, "items" => [])
 
-                result = described_class.reindex_index_target(index_target)
+                result = described_class.reindex_index_target(
+                    index_target,
+                    sync_stage_name,
+                )
 
-                expect(result).to eq([])
+                expect(result).to eq(
+                    result:      :success,
+                    message:     '',
+                    failed_ids:  [],
+                    stop_phase:  nil,
+                    done_phases: [
+                        :lock_index,
+                        :create_marker,
+                        :create_new_index,
+                        :index_to_new_index,
+                        :delete_alias_duplicate_index,
+                        :switch_alias,
+                    ],
+                )
             end
         end
 
@@ -127,18 +196,18 @@ RSpec.describe AreSearch::Reindexer do
                 2
             end
 
-            it "returns failed ids without hiding successful ids" do
+            it "失敗IDを結果Hashへ残す" do
                 first_record = instance_double(
                     "Article",
                     id: 1,
-                    are_search_es_indexable?: true,
-                    are_search_es_data_for_index!: { id: 1, title: "first" },
+                    are_search_indexable?: true,
+                    are_search_index_data_for_index!: { id: 1, title: "first" },
                 )
                 second_record = instance_double(
                     "Article",
                     id: 2,
-                    are_search_es_indexable?: true,
-                    are_search_es_data_for_index!: { id: 2, title: "second" },
+                    are_search_indexable?: true,
+                    are_search_index_data_for_index!: { id: 2, title: "second" },
                 )
 
                 allow(model).to receive(:find_in_batches) do |batch_size:, &block|
@@ -146,9 +215,14 @@ RSpec.describe AreSearch::Reindexer do
                     block.call([first_record, second_record])
                 end
 
-                allow(AreSearch::IndexManager).to receive(:es_reindex) do |_index_name, _index_settings, _index_mappings, &block|
-                    block.call("test_articles__20240101120000")
-                end
+                allow(AreSearch::IndexManager)
+                    .to receive(:reindex) do |_index_name, _index_settings, _index_mappings, _operation, result, &block|
+                        run_index_manager_block(
+                            result,
+                            "test_articles__20240101120000",
+                            &block
+                        )
+                    end
 
                 response = {
                     "errors" => true,
@@ -169,9 +243,22 @@ RSpec.describe AreSearch::Reindexer do
 
                 allow(client).to receive(:bulk).and_return(response)
 
-                result = described_class.reindex_index_target(index_target)
+                result = described_class.reindex_index_target(
+                    index_target,
+                    sync_stage_name,
+                )
 
-                expect(result).to eq(["2"])
+                expect(result).to eq(
+                    result:      :not_success,
+                    message:     "bulk 投入に失敗した ID があるため alias を切り替えませんでした",
+                    failed_ids:  ["2"],
+                    stop_phase:  :index_to_new_index,
+                    done_phases: [
+                        :lock_index,
+                        :create_marker,
+                        :create_new_index,
+                    ],
+                )
             end
         end
 
@@ -180,17 +267,17 @@ RSpec.describe AreSearch::Reindexer do
                 2
             end
 
-            it "does not add non-indexable records to bulk body" do
+            it "index対象外レコードをbulk bodyへ追加しない" do
                 first_record = instance_double(
                     "Article",
                     id: 1,
-                    are_search_es_indexable?: true,
-                    are_search_es_data_for_index!: { id: 1, title: "first" },
+                    are_search_indexable?: true,
+                    are_search_index_data_for_index!: { id: 1, title: "first" },
                 )
                 second_record = instance_double(
                     "Article",
                     id: 2,
-                    are_search_es_indexable?: false,
+                    are_search_indexable?: false,
                 )
 
                 allow(model).to receive(:find_in_batches) do |batch_size:, &block|
@@ -198,11 +285,17 @@ RSpec.describe AreSearch::Reindexer do
                     block.call([first_record, second_record])
                 end
 
-                allow(AreSearch::IndexManager).to receive(:es_reindex) do |_index_name, _index_settings, _index_mappings, &block|
-                    block.call("test_articles__20240101120000")
-                end
+                allow(AreSearch::IndexManager)
+                    .to receive(:reindex) do |_index_name, _index_settings, _index_mappings, _operation, result, &block|
+                        run_index_manager_block(
+                            result,
+                            "test_articles__20240101120000",
+                            &block
+                        )
+                    end
 
-                expect(client).to receive(:bulk)
+                expect(client)
+                    .to receive(:bulk)
                     .with(
                         body: [
                             { index: { _index: "test_articles__20240101120000", _id: "1" } },
@@ -211,9 +304,13 @@ RSpec.describe AreSearch::Reindexer do
                     )
                     .and_return("errors" => false, "items" => [])
 
-                result = described_class.reindex_index_target(index_target)
+                result = described_class.reindex_index_target(
+                    index_target,
+                    sync_stage_name,
+                )
 
-                expect(result).to eq([])
+                expect(result[:result]).to eq(:success)
+                expect(result[:failed_ids]).to eq([])
             end
         end
 
@@ -222,24 +319,24 @@ RSpec.describe AreSearch::Reindexer do
                 3
             end
 
-            it "calls bulk once for each batch" do
+            it "batchごとにbulkを呼ぶ" do
                 first_record = instance_double(
                     "Article",
                     id: 1,
-                    are_search_es_indexable?: true,
-                    are_search_es_data_for_index!: { id: 1, title: "first" },
+                    are_search_indexable?: true,
+                    are_search_index_data_for_index!: { id: 1, title: "first" },
                 )
                 second_record = instance_double(
                     "Article",
                     id: 2,
-                    are_search_es_indexable?: true,
-                    are_search_es_data_for_index!: { id: 2, title: "second" },
+                    are_search_indexable?: true,
+                    are_search_index_data_for_index!: { id: 2, title: "second" },
                 )
                 third_record = instance_double(
                     "Article",
                     id: 3,
-                    are_search_es_indexable?: true,
-                    are_search_es_data_for_index!: { id: 3, title: "third" },
+                    are_search_indexable?: true,
+                    are_search_index_data_for_index!: { id: 3, title: "third" },
                 )
 
                 allow(model).to receive(:find_in_batches) do |batch_size:, &block|
@@ -248,11 +345,17 @@ RSpec.describe AreSearch::Reindexer do
                     block.call([third_record])
                 end
 
-                allow(AreSearch::IndexManager).to receive(:es_reindex) do |_index_name, _index_settings, _index_mappings, &block|
-                    block.call("test_articles__20240101120000")
-                end
+                allow(AreSearch::IndexManager)
+                    .to receive(:reindex) do |_index_name, _index_settings, _index_mappings, _operation, result, &block|
+                        run_index_manager_block(
+                            result,
+                            "test_articles__20240101120000",
+                            &block
+                        )
+                    end
 
-                expect(client).to receive(:bulk)
+                expect(client)
+                    .to receive(:bulk)
                     .with(
                         body: [
                             { index: { _index: "test_articles__20240101120000", _id: "1" } },
@@ -263,7 +366,8 @@ RSpec.describe AreSearch::Reindexer do
                     )
                     .and_return("errors" => false, "items" => [])
 
-                expect(client).to receive(:bulk)
+                expect(client)
+                    .to receive(:bulk)
                     .with(
                         body: [
                             { index: { _index: "test_articles__20240101120000", _id: "3" } },
@@ -272,9 +376,12 @@ RSpec.describe AreSearch::Reindexer do
                     )
                     .and_return("errors" => false, "items" => [])
 
-                result = described_class.reindex_index_target(index_target)
+                result = described_class.reindex_index_target(
+                    index_target,
+                    sync_stage_name,
+                )
 
-                expect(result).to eq([])
+                expect(result[:result]).to eq(:success)
             end
         end
 
@@ -287,8 +394,8 @@ RSpec.describe AreSearch::Reindexer do
                 record = instance_double(
                     "Article",
                     id: 1,
-                    are_search_es_indexable?: true,
-                    are_search_es_data_for_index!: { id: 1, title: "first" },
+                    are_search_indexable?: true,
+                    are_search_index_data_for_index!: { id: 1, title: "first" },
                 )
 
                 allow(model).to receive(:find_in_batches) do |batch_size:, &block|
@@ -296,16 +403,24 @@ RSpec.describe AreSearch::Reindexer do
                     block.call([record])
                 end
 
-                allow(AreSearch::IndexManager).to receive(:es_reindex) do |_index_name, _index_settings, _mappings, &block|
-                    block.call("test_articles__2024_01_01_00_00_00_000000")
-                end
+                allow(AreSearch::IndexManager)
+                    .to receive(:reindex) do |_index_name, _index_settings, _mappings, _operation, result, &block|
+                        run_index_manager_block(
+                            result,
+                            "test_articles__2024_01_01_00_00_00_000000",
+                            &block
+                        )
+                    end
 
                 allow(client)
                     .to receive(:bulk)
                     .and_raise(RuntimeError, "bulk failed")
 
                 expect do
-                    described_class.reindex_index_target(index_target)
+                    described_class.reindex_index_target(
+                        index_target,
+                        sync_stage_name,
+                    )
                 end.to raise_error(RuntimeError, "bulk failed")
             end
         end
@@ -315,16 +430,16 @@ RSpec.describe AreSearch::Reindexer do
                 1
             end
 
-            it "例外を握りつぶさず bulk しない" do
+            it "例外を握りつぶさずbulkしない" do
                 record = instance_double(
                     "Article",
                     id: 1,
-                    are_search_es_indexable?: true,
+                    are_search_indexable?: true,
                 )
 
                 allow(record)
-                    .to receive(:are_search_es_data_for_index!)
-                    .with(index_target)
+                    .to receive(:are_search_index_data_for_index!)
+                    .with(index_target, sync_stage_name)
                     .and_raise(AreSearch::Error, "reserved field")
 
                 allow(model).to receive(:find_in_batches) do |batch_size:, &block|
@@ -332,14 +447,22 @@ RSpec.describe AreSearch::Reindexer do
                     block.call([record])
                 end
 
-                allow(AreSearch::IndexManager).to receive(:es_reindex) do |_index_name, _index_settings, _mappings, &block|
-                    block.call("test_articles__2024_01_01_00_00_00_000000")
-                end
+                allow(AreSearch::IndexManager)
+                    .to receive(:reindex) do |_index_name, _index_settings, _mappings, _operation, result, &block|
+                        run_index_manager_block(
+                            result,
+                            "test_articles__2024_01_01_00_00_00_000000",
+                            &block
+                        )
+                    end
 
                 expect(client).not_to receive(:bulk)
 
                 expect do
-                    described_class.reindex_index_target(index_target)
+                    described_class.reindex_index_target(
+                        index_target,
+                        sync_stage_name,
+                    )
                 end.to raise_error(AreSearch::Error, "reserved field")
             end
         end
@@ -349,19 +472,28 @@ RSpec.describe AreSearch::Reindexer do
                 0
             end
 
-            it "does not create ProgressBar or call bulk and returns an empty failed id list" do
+            it "ProgressBarとbulkを使わず成功結果を返す" do
                 allow(model).to receive(:find_in_batches)
 
-                allow(AreSearch::IndexManager).to receive(:es_reindex) do |_index_name, _index_settings, _index_mappings, &block|
-                    block.call("test_articles__20240101120000")
-                end
+                allow(AreSearch::IndexManager)
+                    .to receive(:reindex) do |_index_name, _index_settings, _index_mappings, _operation, result, &block|
+                        run_index_manager_block(
+                            result,
+                            "test_articles__20240101120000",
+                            &block
+                        )
+                    end
 
                 expect(ProgressBar).not_to receive(:new)
                 expect(client).not_to receive(:bulk)
 
-                result = described_class.reindex_index_target(index_target)
+                result = described_class.reindex_index_target(
+                    index_target,
+                    sync_stage_name,
+                )
 
-                expect(result).to eq([])
+                expect(result[:result]).to eq(:success)
+                expect(result[:failed_ids]).to eq([])
             end
         end
     end

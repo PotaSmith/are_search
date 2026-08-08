@@ -80,7 +80,7 @@ module AreSearch
         #
         # records_with_hit
         #   ActiveRecord のレコードと、対応する Elasticsearch の
-        #   _index, _id, _source、fields、highlight、target_name 等の情報を検索順で返す。
+        #   _index, _id, _source、fields、highlight、index_target_name 等の情報を検索順で返す。
         #   フィールド名は Symbolで、先頭の "_" は削除し index, source, fields, highlightのように変更。
         #   _source、fields、highlightは対象 hit に値が無い場合は空 Hash。
         #
@@ -110,10 +110,10 @@ module AreSearch
             STATUS_INDEX_NOT_FOUND,
         ].freeze
 
-        attr_reader :records,
+        attr_reader :status,
+            :records,
             :records_with_hit,
-            :raw_response,
-            :status
+            :raw_response
 
         # 検索結果として定義された終了状態だけを受け付ける。
         def initialize(
@@ -128,12 +128,12 @@ module AreSearch
                 raise ArgumentError, "未知の検索結果statusです: #{status.inspect}"
             end
 
+            @status = status
             @records = records
             @records_with_hit = records_with_hit
             @aggs = aggs
             @str_key_aggs = str_key_aggs
             @raw_response = raw_response
-            @status = status
         end
 
         # 集計名を指定した場合は表示用キーの簡易結果を返し、省略時は内部キーの全体を返す。

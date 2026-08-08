@@ -22,11 +22,11 @@ RSpec.describe "search option flow" do
             end
 
             # 実際のSearchableモデルと同じ入口からIndexTargetを解決する。
-            def self.are_search_index_target(target_name)
-                AreSearch::IndexTarget.new(self, target_name)
+            def self.are_search_index_target(index_target_name)
+                AreSearch::IndexTarget.new(self, index_target_name)
             end
 
-            def self.are_search_es_mappings
+            def self.are_search_index_mappings
                 {
                     default: {
                         index_settings: {
@@ -75,7 +75,7 @@ RSpec.describe "search option flow" do
             .and_return("test")
 
         allow(AreSearch::IndexManager)
-            .to receive(:es_index_alias_exists?)
+            .to receive(:index_alias_exists?)
             .with("test__articles__default")
             .and_return(true)
     end
@@ -516,7 +516,7 @@ RSpec.describe "search option flow" do
         other_instance = other_model.new
         other_index_target = double(
             "other_index_target",
-            are_search_es_index_name: "test__documents__default",
+            are_search_index_alias_name: "test__documents__default",
         )
 
         allow(other_model)

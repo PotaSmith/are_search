@@ -50,7 +50,7 @@ RSpec.describe AreSearch::Searcher do
                 page: 3,
                 per_page: 10,
             )
-            .and_return(valid_options)
+            .and_return([valid_options, nil])
 
         query_builder = double("query_builder")
         body_builder = double("body_builder")
@@ -86,7 +86,7 @@ RSpec.describe AreSearch::Searcher do
                 body
             end
 
-        expect(AreSearch.es_search_body_policy)
+        expect(AreSearch.search_body_policy)
             .to receive(:valid?)
             .with(body)
             .and_return(false)
@@ -112,7 +112,7 @@ RSpec.describe AreSearch::Searcher do
             .to receive(:validate)
             .and_raise(ArgumentError, "invalid option")
 
-        expect(AreSearch::EsSearchBodyPolicy).not_to receive(:valid?)
+        expect(AreSearch::SearchBodyPolicy).not_to receive(:valid?)
 
         expect do
             described_class.search(

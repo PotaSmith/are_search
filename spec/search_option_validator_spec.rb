@@ -385,7 +385,14 @@ RSpec.describe AreSearch::SearchOptionValidator do
                 ),
             ).to eq(:title)
 
-            ["title", :_title, :title_, :"title.keyword", 1].each do |value|
+            [
+                "title",
+                :_title,
+                :title_,
+                :"title.keyword",
+                :are_search_reserved_ar_instance_key,
+                1,
+            ].each do |value|
                 expect do
                     validate_node(
                         value,

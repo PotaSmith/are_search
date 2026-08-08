@@ -70,7 +70,7 @@ module AreSearch
             def build_response_source(response_opts)
                 source_fields = []
 
-                AreSearch::IndexDefinition::RESERVED_ES_FIELD_NAMES.each do |reserved_field_name|
+                AreSearch::IndexDefinition::RESERVED_INDEX_FIELD_NAMES.each do |reserved_field_name|
                     source_fields << reserved_field_name.to_s
                 end
 

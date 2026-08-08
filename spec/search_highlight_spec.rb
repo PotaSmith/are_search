@@ -22,11 +22,11 @@ RSpec.describe "search highlight" do
             end
 
             # 実際のSearchableモデルと同じ入口からIndexTargetを解決する。
-            def self.are_search_index_target(target_name)
-                AreSearch::IndexTarget.new(self, target_name)
+            def self.are_search_index_target(index_target_name)
+                AreSearch::IndexTarget.new(self, index_target_name)
             end
 
-            def self.are_search_es_mappings
+            def self.are_search_index_mappings
                 {
                     default: {
                         index_settings: {
@@ -64,7 +64,7 @@ RSpec.describe "search highlight" do
                 super
             end
 
-            def self.are_search_es_mappings
+            def self.are_search_index_mappings
                 {
                     default: {
                         index_settings: {
@@ -99,12 +99,12 @@ RSpec.describe "search highlight" do
             .and_return("test")
 
         allow(AreSearch::IndexManager)
-            .to receive(:es_index_alias_exists?)
+            .to receive(:index_alias_exists?)
             .with("test__articles__default")
             .and_return(true)
 
         allow(AreSearch::IndexManager)
-            .to receive(:es_index_alias_exists?)
+            .to receive(:index_alias_exists?)
             .with("test__documents__default")
             .and_return(true)
     end

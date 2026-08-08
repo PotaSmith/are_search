@@ -22,7 +22,7 @@ RSpec.describe AreSearch::SearchParamValidator do
     let(:article_index_target) do
         double(
             "article_index_target",
-            are_search_es_mappings: {
+            are_search_index_mappings: {
                 properties: {
                     title:        { type: "text" },
                     body:         { type: "text" },
@@ -40,13 +40,13 @@ RSpec.describe AreSearch::SearchParamValidator do
         index_target = AreSearch::IndexTarget.allocate
 
         allow(index_target)
-            .to receive(:target_name)
+            .to receive(:index_target_name)
             .and_return(:default)
         allow(index_target)
-            .to receive(:are_search_es_index_name)
+            .to receive(:are_search_index_alias_name)
             .and_return("test__articles__default")
         allow(index_target)
-            .to receive(:are_search_es_mappings)
+            .to receive(:are_search_index_mappings)
             .and_return(
                 properties: {
                     title:  { type: "text" },
@@ -76,7 +76,7 @@ RSpec.describe AreSearch::SearchParamValidator do
     let(:document_index_target) do
         double(
             "document_index_target",
-            are_search_es_mappings: {
+            are_search_index_mappings: {
                 properties: {
                     title:  { type: "text" },
                     status: { type: "keyword" },
@@ -1041,7 +1041,7 @@ RSpec.describe AreSearch::SearchParamValidator do
         it "複数targetで同名フィールドの型が混在する場合はany_valid集合から除外する" do
             mixed_target = double(
                 "mixed_target",
-                are_search_es_mappings: {
+                are_search_index_mappings: {
                     properties: {
                         title:  { type: "keyword" },
                         status: { type: "text" },
@@ -1103,7 +1103,7 @@ RSpec.describe AreSearch::SearcherUtils do
 
             expect(result).to eq(
                 terms: {
-                    AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => [
+                    AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME => [
                         "Article",
                         "Document",
                     ],

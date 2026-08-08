@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module AreSearch
-    class EsSearchBodyPolicy
+    class SearchBodyPolicy
 
         # Elasticsearchへ送信するbodyとfield名の検査契約。
         # 利用するpolicyはこのクラスを継承し、両メソッドを実装する。

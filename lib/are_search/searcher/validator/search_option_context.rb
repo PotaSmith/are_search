@@ -117,7 +117,7 @@ module AreSearch
             properties_list = []
 
             @index_targets.each do |index_target|
-                mappings = index_target.are_search_es_mappings
+                mappings = index_target.are_search_index_mappings
                 properties = mappings[:properties]
                 properties = {} if properties.instance_of?(Hash) == false
 

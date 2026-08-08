@@ -9,88 +9,98 @@ module AreSearch
         # 役割:
         # - 物理インデックス名の生成
         # - alias の作成・切替
-        # - 旧方式 index の削除
+        # - alias 名と同名の物理 index の削除
         # - 古い物理インデックスの clean_up
         # - index 操作用 flock / marker 管理
         #
         # Searchable は参照しない。
-        # モデル依存の bulk 投入処理は Searchable 側に置く。
+        # モデル依存の bulk 投入処理は Reindexer 側に置く。
 
-        # 互換用。実体は DB 上の index marker の存在判定。
-        #
-        # flock の状態は見ない。
-        def es_index_locked?(es_index_name)
-            AreSearch::IndexMarker.marked?(es_index_name)
-        end
-
-        def es_index_alias_exists?(es_index_name)
-            es_get_alias_physical_names(es_index_name).any?
+        def index_alias_exists?(index_alias_name)
+            physical_index_names_by_alias(index_alias_name).any?
         end
 
         # alias の 物理インデックスの一覧。
-        def es_get_alias_physical_names(alias_name)
-            alias_response = AreSearch.client.indices.get_alias(name: alias_name)
-            return [] unless alias_response
-
-            alias_response.keys
-        rescue Elastic::Transport::Transport::Errors::NotFound
-            []
+        def physical_index_names_by_alias(index_alias_name)
+            AreSearch::EsAdapter.indices_get_alias(index_alias_name: index_alias_name).keys
         end
 
-        def es_index_status(es_index_name)
-            current_physical_names = es_get_alias_physical_names(es_index_name)
-            physical_names = get_physical_es_index_names(es_index_name)
-            legacy_index_exists = legacy_index_exists?(es_index_name)
+        def index_status(index_alias_name)
+            current_physical_names = physical_index_names_by_alias(index_alias_name)
+            physical_names = physical_index_names_by_alias_pattern(index_alias_name)
+            alias_named_physical_index_exists = alias_named_physical_index_exists?(index_alias_name)
 
             {
-                alias_name:              es_index_name,
+                index_alias_name:        index_alias_name,
                 alias_exists:            current_physical_names.any?,
                 current_physical_names:  current_physical_names,
                 physical_indexes:        build_physical_index_entries(physical_names, current_physical_names),
                 newest_physical_name:    newest_physical_index_name(physical_names),
-                legacy_index_exists:     legacy_index_exists,
+                alias_named_physical_index_exists: alias_named_physical_index_exists,
                 warnings:                build_index_status_warnings(
                     current_physical_names,
                     physical_names,
-                    legacy_index_exists,
+                    alias_named_physical_index_exists,
                 ),
             }
         end
 
         # alias が指していない古い物理インデックスをすべて削除する。
-        def es_clean_up(es_index_name)
+        def index_clean_up(index_alias_name)
             validate_index_operation_enabled!
 
-            locked_message = "[AreSearch] es_clean_up: 別プロセスが実行中のためスキップしました (#{es_index_name})"
+            result = {
+                result: :not_success,
+                message: '',
+                stop_phase: nil,
+                done_phases: [],
+                delete_index_names: [],
+            }
 
-            with_index_guard(es_index_name, locked_message, operation: "clean_up") do
-                indices   = es_list_indices(es_index_name)
-                to_delete = indices.reject { |entry| entry[:current] }
+            with_index_guard_base(index_alias_name, result, operation: "clean_up") do
 
-                to_delete.each do |entry|
-                    es_delete_index!(entry[:name])
-                    AreSearch.logger.info { "[AreSearch] es_clean_up: deleted #{entry[:name]}" }
+                result[:stop_phase] = :check_alias
+                current_physical_names = physical_index_names_by_alias(index_alias_name)
+
+                if current_physical_names.empty?
+                    result[:message] = "alias が存在しないため clean up を実行できません"
+                    return result
                 end
+                result[:done_phases] << :check_alias
 
-                true
+                result[:stop_phase] = :delete_indexes
+                physical_names = physical_index_names_by_alias_pattern(index_alias_name)
+                to_delete = physical_names.reject { |physical_name| current_physical_names.include?(physical_name) }
+
+                to_delete.each do |physical_name|
+                    delete_physical_index!(physical_name)
+                    AreSearch.logger.info { "[AreSearch] index_clean_up: deleted #{physical_name}" }
+                    result[:delete_index_names] << physical_name
+                end
+                result[:done_phases] << :delete_indexes
+
+                result[:result] = :success
+                result[:stop_phase] = nil
             end
-        rescue AreSearch::IndexLockUnavailable
-            # ロック中はfalseを返す
-            false
+
+            result
         end
 
         # 指定した物理インデックスを削除する。
         # ロックによるガードはなし。
-        def es_delete_index!(physical_es_index_name)
+        def delete_physical_index!(physical_index_name)
             validate_index_operation_enabled!
 
-            AreSearch.client.indices.delete(index: physical_es_index_name)
+            AreSearch::EsAdapter.delete_physical_index(
+                physical_index_name: physical_index_name,
+            )
         end
 
         # 利用側の処理を index 単位の flock と marker でガードする。
-        # reindex / clean_up と同じ排他制御を使用し、block の戻り値をそのまま返す。
-        # 別処理が flock を取得済み、または marker が存在する場合は false を返す。
-        def es_with_index_guard(es_index_name, operation:, &block)
+        # reindex / clean_up と同じ排他制御を使用し、処理結果を result に設定する。
+        # 別処理が flock を取得済み、または marker が存在する場合は block を実行せず、
+        # result に未実行理由を設定する。alias が存在しない場合は ArgumentError を送出する。
+        def with_index_guard(index_alias_name, result, operation:, &block)
             validate_index_operation_enabled!
 
             if operation.to_s.empty?
@@ -98,23 +108,21 @@ module AreSearch
             end
 
             if block.nil?
-                raise ArgumentError, "es_with_index_guard には block が必要です"
+                raise ArgumentError, "with_index_guard には block が必要です"
+            end
+
+            # 利用側の指定誤りで、存在しない alias の guard を開始しない。
+            if index_alias_exists?(index_alias_name) == false
+                raise ArgumentError, "indexが存在しません #{index_alias_name}"
             end
 
             operation_name = operation.to_s
-            locked_message = "[AreSearch] es_with_index_guard: 別プロセスが実行中のためスキップしました " \
-                "(#{es_index_name}, operation=#{operation_name})"
+            with_index_guard_base(index_alias_name, result, operation: operation_name) do
+                block.call
 
-            result = nil
-
-            with_index_guard(es_index_name, locked_message, operation: operation_name) do
-                result = block.call
+                result[:result] = :success
+                result[:stop_phase] = nil
             end
-
-            result
-        rescue AreSearch::IndexLockUnavailable
-            # ロック中はfalseを返す
-            false
         end
 
         # index 操作の flock と marker を管理する。
@@ -130,33 +138,61 @@ module AreSearch
         #
         # 正常・例外のどちらでも marker 削除を試みる。
         # marker 削除に到達できない場合、または marker 削除自体が失敗した場合は marker が残る。
-        def es_reindex(es_index_name, index_settings, mappings_for_index, &block)
+        #
+        # {
+        #     result: :not_success,
+        #     message: e.message,
+        #     failed_ids: [],
+        #     stop_phase: :lock_index,
+        #     done_phases: [],
+        # }
+        #
+        def reindex(index_alias_name, index_settings, mappings_for_index, operation, result, &block)
             validate_index_operation_enabled!
 
-            locked_message = "[AreSearch] es_reindex: 別プロセスが実行中のためスキップしました (#{es_index_name})"
+            with_index_guard_base(index_alias_name, result, operation: operation) do
+                result[:stop_phase] = :create_new_index
+                physical_index_name = gen_physical_index_name(index_alias_name)
+                create_physical_index!(physical_index_name, index_settings, mappings_for_index)
+                result[:done_phases] << :create_new_index
 
-            with_index_guard(es_index_name, locked_message, operation: "reindex") do
-                physical_es_index_name = gen_physical_es_index_name(es_index_name)
+                result[:stop_phase] = :index_to_new_index
+                # blockの中では phase は触らない 結果をboolで返すだけ
+                if block.call(physical_index_name) == false
+                    result[:message] = 'bulk 投入に失敗した ID があるため alias を切り替えませんでした'
+                    return
+                end
+                result[:done_phases] << :index_to_new_index
 
-                create_physical_index!(physical_es_index_name, index_settings, mappings_for_index)
-
-                failed_ids = block.call(physical_es_index_name)
-
-                if failed_ids.empty?
-                    # 旧方式（alias 名と同名の実体 index）が残っている場合、
+                begin
+                    result[:stop_phase] = :delete_alias_duplicate_index
+                    # alias 名と同名の物理 index が存在する場合、
                     # alias を作れないため bulk 投入成功後、alias 切り替え前に削除する。
-                    delete_legacy_index_if_exists!(es_index_name)
-
-                    switch_alias!(es_index_name, physical_es_index_name)
-                else
-                    report_reindex_failed_ids(es_index_name, physical_es_index_name, failed_ids)
+                    delete_alias_named_physical_index_if_exists!(index_alias_name)
+                    result[:done_phases] << :delete_alias_duplicate_index
+                rescue
+                    result[:message] = "alias名と重複する物理インデックスの削除に失敗しました。#{index_alias_name}"
+                    return
                 end
 
-                failed_ids
+                result[:stop_phase] = :switch_alias
+                # 現行物理インデックスの一覧を取得
+                old_physical_names = physical_index_names_by_alias(index_alias_name)
+
+                # 切り替え
+                switch_alias_result = AreSearch::EsAdapter.update_alias(
+                    old_physical_index_names: old_physical_names,
+                    new_physical_index_name:  physical_index_name,
+                )
+                if switch_alias_result != AreSearch::EsAdapter.success
+                    result[:message] = 'インデックスの切り替えに失敗しました。'
+                    return
+                end
+                result[:done_phases] << :switch_alias
+
+                result[:result] = :success
+                result[:stop_phase] = nil
             end
-        rescue AreSearch::IndexLockUnavailable
-            # ロック中はfalseを返す
-            false
         end
 
         def validate_index_operation_enabled!
@@ -170,19 +206,13 @@ module AreSearch
         private
 
         # 物理インデックス名: {alias名}__{マイクロ秒精度タイムスタンプ}
-        def gen_physical_es_index_name(es_index_name)
-            timestamp = Time.now.strftime("%Y_%m_%d_%H_%M_%S_%6N")
+        def gen_physical_index_name(index_alias_name)
+            timestamp = Time.zone.now.strftime("%Y_%m_%d_%H_%M_%S_%6N")
 
             [
-                es_index_name,
+                index_alias_name,
                 timestamp,
-            ].join(AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER)
-        end
-
-        def get_raw_es_index_names(index_pattern)
-            AreSearch.client.indices.get(index: index_pattern).keys
-        rescue Elastic::Transport::Transport::Errors::NotFound
-            []
+            ].join(AreSearch::IndexDefinition::INDEX_NAME_DELIMITER)
         end
 
         # 指定 alias 名から生成された timestamp 付き物理 index 名だけを返す。
@@ -190,17 +220,20 @@ module AreSearch
         # foo__timestamp       → foo      → 残す
         # foo__bar__timestamp  → foo__bar → 除外
         # foo__backup          → nil      → 除外
-        def get_physical_es_index_names(es_index_name)
+        def physical_index_names_by_alias_pattern(index_alias_name)
             # 指定 alias 名から始まる index を広めに取得する。
-            raw_index_names = get_raw_es_index_names("#{es_index_name}#{AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER}*")
+            response = AreSearch::EsAdapter.physical_indices_for_alias(
+                index_alias_name: index_alias_name,
+            )
+            raw_index_names = response.keys
 
-            raw_index_names.reject do |index_name|
+            raw_index_names.reject do |raw_index_name|
                 # timestamp 付き物理 index 名なら、生成元の alias 名を復元する。
                 # timestamp 形式でなければ nil を返す。
-                alias_name = AreSearch::IndexDefinition.es_alias_name_from_index_name(index_name)
+                raw_index_alias_name = AreSearch::IndexDefinition.index_alias_name_from_physical_index_name(raw_index_name)
 
                 # 復元できない index と、別 alias から生成された物理 index を除外する。
-                alias_name != es_index_name
+                raw_index_alias_name != index_alias_name
             end
         end
 
@@ -221,15 +254,15 @@ module AreSearch
             physical_names.sort.last
         end
 
-        def legacy_index_exists?(index_name)
-            response = AreSearch.client.indices.get(index: index_name)
+        def alias_named_physical_index_exists?(index_alias_name)
+            response = AreSearch::EsAdapter.alias_named_physical_index(
+                index_alias_name: index_alias_name,
+            )
 
-            response.keys.include?(index_name)
-        rescue Elastic::Transport::Transport::Errors::NotFound
-            false
+            response.keys.include?(index_alias_name)
         end
 
-        def build_index_status_warnings(current_physical_names, physical_names, legacy_index_exists)
+        def build_index_status_warnings(current_physical_names, physical_names, alias_named_physical_index_exists)
             warnings = []
             newest_physical_name = newest_physical_index_name(physical_names)
 
@@ -237,12 +270,12 @@ module AreSearch
                 warnings << "alias missing"
             end
 
-            if physical_names.empty? && legacy_index_exists == false
+            if physical_names.empty? && alias_named_physical_index_exists == false
                 warnings << "physical index missing"
             end
 
-            if legacy_index_exists
-                warnings << "legacy index exists"
+            if alias_named_physical_index_exists
+                warnings << "physical index with alias name exists"
             end
 
             if newest_physical_name && current_physical_names.any?
@@ -254,38 +287,23 @@ module AreSearch
             warnings
         end
 
-        # alias に紐づく物理インデックスの一覧。currentでは無いものを含む
-        #
-        # @return [Array<{ name: String, current: Boolean }>]
-        def es_list_indices(es_index_name)
-            alias_name        = es_index_name
-            current_physicals = es_get_alias_physical_names(alias_name)
+        def delete_alias_named_physical_index_if_exists!(index_alias_name)
+            return if AreSearch::EsAdapter.indices_exists_alias(index_alias_name: index_alias_name)
+            return unless AreSearch::EsAdapter.alias_named_physical_index_exists?(
+                index_alias_name: index_alias_name,
+            )
 
-            physical_names = get_physical_es_index_names(alias_name)
-
-            physical_names.map do |name|
-                {
-                    name:    name,
-                    current: current_physicals.include?(name),
-                }
-            end
-        end
-
-        def delete_legacy_index_if_exists!(alias_name)
-            return if AreSearch.client.indices.exists_alias(name: alias_name)
-            return unless AreSearch.client.indices.exists(index: alias_name)
-
-            AreSearch.client.indices.delete(index: alias_name)
-        rescue Elastic::Transport::Transport::Errors::NotFound
-            # exists 後に消えたなら無視
+            AreSearch::EsAdapter.delete_alias_named_physical_index(
+                index_alias_name: index_alias_name,
+            )
         rescue StandardError => e
-            AreSearch.logger.error { "[AreSearch] legacy index delete failed: alias_name=#{alias_name} error=#{e.message}" }
+            AreSearch.logger.error { "[AreSearch] physical index with alias name delete failed: index_alias_name=#{index_alias_name} error=#{e.message}" }
             raise
         end
 
-        def create_physical_index!(physical_es_index_name, index_settings, mappings_for_index)
-            AreSearch.client.indices.create(
-                index: physical_es_index_name,
+        def create_physical_index!(physical_index_name, index_settings, mappings_for_index)
+            AreSearch::EsAdapter.indices_create(
+                physical_index_name: physical_index_name,
                 body: {
                     settings: AreSearch.analyzer_settings.merge(index: index_settings),
                     mappings: mappings_for_index,
@@ -293,51 +311,30 @@ module AreSearch
             )
         end
 
-        def switch_alias!(alias_name, new_physical_es_index_name)
-            old_physical_names = es_get_alias_physical_names(alias_name)
-
-            actions = old_physical_names.map do |old_physical_name|
-                { remove: { index: old_physical_name, alias: alias_name } }
-            end
-
-            actions << { add: { index: new_physical_es_index_name, alias: alias_name } }
-
-            AreSearch.client.indices.update_aliases(body: { actions: actions })
-        end
-
-        def report_reindex_failed_ids(es_index_name, physical_es_index_name, failed_ids)
-            message = "[AreSearch] es_reindex: bulk 投入に失敗した ID があるため alias を切り替えませんでした "
-            message += "alias=#{es_index_name} "
-            message += "physical_index=#{physical_es_index_name} "
-            message += "failed_ids=#{failed_ids.inspect}"
-
-            AreSearch.logger.error { message }
-            puts message
-        end
-
-        def with_index_guard(es_index_name, locked_message, operation:, &block)
-            lock_path = AreSearch.index_lock_file_path(es_index_name)
+        def with_index_guard_base(index_alias_name, result, operation:, &block)
+            lock_path = AreSearch.index_lock_file_path(index_alias_name)
 
             FileUtils.mkdir_p(File.dirname(lock_path))
 
+            result[:stop_phase] = :lock_index
             File.open(lock_path, File::RDWR | File::CREAT) do |lock_file|
                 locked = lock_file.flock(File::LOCK_EX | File::LOCK_NB)
 
                 unless locked
-                    AreSearch.logger.warn { locked_message }
-                    raise AreSearch::IndexLockUnavailable, locked_message
+                    result[:message] = "別プロセスが実行中のためスキップしました"
+                    return
                 end
+                result[:done_phases] << :lock_index
 
                 begin
-                    return AreSearch::IndexMarker.with_index_operation_marker!(
-                        es_index_name,
-                        operation: operation,
-                    ) do
+                    result[:stop_phase] = :create_marker
+                    return AreSearch::IndexMarker.with_index_operation_marker!(index_alias_name, operation: operation) do
+                        result[:done_phases] << :create_marker
                         block.call
                     end
                 rescue AreSearch::IndexMarkerUnavailable
-                    AreSearch.logger.warn { locked_message }
-                    raise AreSearch::IndexLockUnavailable, locked_message
+                    result[:message] = "マーカーが作成できませんでした"
+                    return
                 end
             end
         end

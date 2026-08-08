@@ -22,16 +22,17 @@ RSpec.describe "query builder fields" do
     let(:article_index_target) do
         double(
             "article_index_target",
-            model_class:                  article_model,
-            target_name:                  :default,
-            are_search_es_index_name:     "test__articles__default",
-            are_search_es_mappings:       {
+            model_class:                       article_model,
+            index_target_name:                       :default,
+            are_search_index_alias_name:          "test__articles__default",
+            are_search_index_alias_exists?: true,
+            are_search_index_mappings:            {
                 properties: {
                     title: { type: "text" },
                     body:  { type: "text" },
                 },
             },
-            are_search_es_index_settings: { max_result_window: 2_000 },
+            are_search_index_settings: { max_result_window: 2_000 },
         )
     end
 

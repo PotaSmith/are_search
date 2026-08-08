@@ -19,7 +19,7 @@ RSpec.describe "search response" do
                 super
             end
 
-            def self.are_search_es_mappings
+            def self.are_search_index_mappings
                 {
                     default: {
                         index_settings: {
@@ -51,7 +51,7 @@ RSpec.describe "search response" do
             .and_return("test")
 
         allow(AreSearch::IndexManager)
-            .to receive(:es_index_alias_exists?)
+            .to receive(:index_alias_exists?)
             .with("test__articles__default")
             .and_return(true)
     end
@@ -69,8 +69,8 @@ RSpec.describe "search response" do
         )
 
         expect(body[:_source]).to eq([
-            "are_search_es_ar_model_class_name",
-            "are_search_es_ar_instance_key",
+            "are_search_reserved_ar_model_class_name",
+            "are_search_reserved_ar_instance_key",
         ])
     end
 
@@ -93,8 +93,8 @@ RSpec.describe "search response" do
         )
 
         expect(body[:_source]).to eq([
-            "are_search_es_ar_model_class_name",
-            "are_search_es_ar_instance_key",
+            "are_search_reserved_ar_model_class_name",
+            "are_search_reserved_ar_instance_key",
             "title",
             "payload.display.*",
         ])
@@ -135,7 +135,7 @@ RSpec.describe "search response" do
             ],
             response: {
                 source: [
-                    "are_search_es_ar_instance_key",
+                    "are_search_reserved_ar_instance_key",
                     "title",
                     "title",
                 ],
@@ -144,8 +144,8 @@ RSpec.describe "search response" do
         )
 
         expect(body[:_source]).to eq([
-            "are_search_es_ar_model_class_name",
-            "are_search_es_ar_instance_key",
+            "are_search_reserved_ar_model_class_name",
+            "are_search_reserved_ar_instance_key",
             "title",
         ])
     end
@@ -179,7 +179,7 @@ RSpec.describe "search response" do
     end
 
     it "単一targetのショートハンドでもresponse.sourceを使用できる" do
-        body = article_index_target.are_search_es_search(
+        body = article_index_target.are_search_search(
             "Rails",
             fields: [:title],
             response: {
@@ -189,8 +189,8 @@ RSpec.describe "search response" do
         )
 
         expect(body[:_source]).to eq([
-            "are_search_es_ar_model_class_name",
-            "are_search_es_ar_instance_key",
+            "are_search_reserved_ar_model_class_name",
+            "are_search_reserved_ar_instance_key",
             "title",
         ])
     end

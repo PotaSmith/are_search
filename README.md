@@ -55,7 +55,7 @@ The first switch should be the application-side search entry point, not the alia
 Add this to your Gemfile.
 
 ```ruby
-gem "are_search", git: "https://github.com/PotaSmith/are_search.git", tag: "v0.7.0"
+gem "are_search", git: "https://github.com/PotaSmith/are_search.git", tag: "v0.8.0"
 ```
 
 To use the latest development version directly, specify `branch: "main"`.
@@ -88,7 +88,6 @@ The main generated files are as follows.
 ```text
 config/initializers/are_search.rb
 db/migrate/xxxxxxxxxxxxxx_create_are_search_tables.rb
-lib/tasks/are_search_retry_alert.rake
 ```
 
 ## Usage
@@ -99,7 +98,7 @@ Include `AreSearch::Searchable` in your model.
 class Article < ApplicationRecord
     include AreSearch::Searchable
 
-    def self.are_search_es_mappings
+    def self.are_search_index_mappings
         {
             default: {
                 index_settings: {
@@ -115,9 +114,15 @@ class Article < ApplicationRecord
         }
     end
 
-    def are_search_es_data(target_name)
-        case target_name
-        when :default
+    def self.are_search_all_sync_stage_names
+        {
+            default: ["default"],
+        }
+    end
+
+    def are_search_index_data(index_target_name, sync_stage_name)
+        case [index_target_name, sync_stage_name]
+        when [:default, "default"]
             {
                 id:     id,
                 title:  title,
@@ -131,13 +136,15 @@ class Article < ApplicationRecord
 end
 ```
 
+An IndexTarget represents the destination Elasticsearch index, while a sync stage represents a path for generating the complete document written to that same IndexTarget.
+
 Before the initial reindex, set `AreSearch.index_operation_enabled = true` in `config/initializers/are_search.rb` for the environment that performs index operations.
 Then specify the index target and run the initial reindex.
 
 ```ruby
 article_index = Article.are_search_index_target(:default)
 
-article_index.are_search_es_reindex
+article_index.are_search_reindex(stage_position: :first)
 ```
 
 
@@ -147,7 +154,7 @@ Run a search.
 ```ruby
 article_index = Article.are_search_index_target(:default)
 
-result = article_index.are_search_es_search(
+result = article_index.are_search_search(
     "search query",
     fields: [:title, :body],
 )
@@ -183,10 +190,12 @@ result = AreSearch::Searcher.search(
 See the following files for detailed usage.
 
 ```text
-docs/guide_setup.txt       Setup and initial configuration
-docs/guide_usage.txt       Search options and search result handling
-docs/guide_operations.txt  Reindexing, synchronization, cleanup, and operations
-docs/guide_reference.txt   Settings, internal behavior, IndexTarget, and synchronization mechanism
+docs/guide_setup.txt                     Setup and initial configuration
+docs/guide_index_targets_and_stages.txt  IndexTarget, sync stages, and synchronization targets
+docs/guide_usage.txt                     Search options and search result handling
+docs/guide_operations.txt                Reindexing, synchronization, cleanup, and operations
+docs/guide_bulk_indexer.txt              BulkIndexer operations for large datasets
+docs/guide_reference.txt                 Settings, internal behavior, and low-level APIs
 ```
 
 ## Development

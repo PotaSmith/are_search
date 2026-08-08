@@ -1,29 +1,34 @@
 # frozen_string_literal: true
 
+require "elasticsearch"
+
 require "fileutils"
 require "securerandom"
 
 require_relative "are_search/errors"
 require_relative "are_search/version"
+require_relative "are_search/es_adapter"
 
 require_relative "are_search/index_definition"
 require_relative "are_search/index_marker"
 require_relative "are_search/index_manager"
 require_relative "are_search/index_target"
 require_relative "are_search/reindexer"
+require_relative "are_search/bulk_indexer"
 
-require_relative "are_search/es_data_validator"
+require_relative "are_search/index_data_validator"
+require_relative "are_search/searchable_validator"
 require_relative "are_search/database_specific"
 require_relative "are_search/postgresql_database_specific"
 require_relative "are_search/searchable"
 require_relative "are_search/sync_request"
-require_relative "are_search/record_sync"
+require_relative "are_search/sync_request_runner"
 require_relative "are_search/sync_job"
 
 require_relative "are_search/searcher/search_result"
 require_relative "are_search/searcher/searcher_utils"
-require_relative "are_search/searcher/es_search_body_policy"
-require_relative "are_search/searcher/script_deny_es_search_body_policy"
+require_relative "are_search/searcher/search_body_policy"
+require_relative "are_search/searcher/script_deny_search_body_policy"
 
 require_relative "are_search/searcher/validator/search_option_context"
 require_relative "are_search/searcher/validator/search_option_definition"
@@ -86,13 +91,13 @@ module AreSearch
     private_constant :SEARCH_FAILURE_MODES
 
     @analyzer_settings = DEFAULT_ANALYZER_SETTINGS
-    @es_search_body_policy = AreSearch::ScriptDenyEsSearchBodyPolicy
+    @search_body_policy = AreSearch::ScriptDenySearchBodyPolicy
     @search_failure_mode = :empty_result
     @database_specific = AreSearch::PostgreSQLDatabaseSpecific
     @client_block = nil
     @index_prefix = nil
     @sync_request_delay = 120
-    @max_retry_count = 100
+    @max_sync_try_count = 100
     @lock_dir = nil
     @logger = nil
     @after_commit_mode = :direct
@@ -101,9 +106,7 @@ module AreSearch
     @batch_size = 500
 
     @sync_request_process_hang_wait = 1800
-    @max_force_attempt_count = 5
-
-    @validate_es_data  = true
+    @max_force_try_count = 5
 
 
     def self.analyzer_settings
@@ -114,25 +117,25 @@ module AreSearch
         @analyzer_settings = value
     end
 
-    def self.es_search_body_policy
-        @es_search_body_policy
+    def self.search_body_policy
+        @search_body_policy
     end
 
     # Elasticsearchへ送信するbodyとfield名を検査するpolicyを設定する。
-    # EsSearchBodyPolicy自体ではなく、その継承クラスだけを受け付ける。
-    def self.es_search_body_policy=(policy_class)
+    # SearchBodyPolicy自体ではなく、その継承クラスだけを受け付ける。
+    def self.search_body_policy=(policy_class)
         valid_policy_class = policy_class.instance_of?(Class)
 
         if valid_policy_class
-            valid_policy_class = policy_class < AreSearch::EsSearchBodyPolicy
+            valid_policy_class = policy_class < AreSearch::SearchBodyPolicy
         end
 
         unless valid_policy_class
             raise ArgumentError,
-                "es_search_body_policy は AreSearch::EsSearchBodyPolicy の継承クラスを指定してください"
+                "search_body_policy は AreSearch::SearchBodyPolicy の継承クラスを指定してください"
         end
 
-        @es_search_body_policy = policy_class
+        @search_body_policy = policy_class
     end
 
     # 検索を実行できない場合に、空結果を返すか例外を送出するかを返す。
@@ -179,12 +182,12 @@ module AreSearch
         @sync_request_delay = value
     end
 
-    def self.max_retry_count
-        @max_retry_count
+    def self.max_sync_try_count
+        @max_sync_try_count
     end
 
-    def self.max_retry_count=(value)
-        @max_retry_count = value
+    def self.max_sync_try_count=(value)
+        @max_sync_try_count = value
     end
 
     def self.logger
@@ -251,28 +254,20 @@ module AreSearch
         @sync_request_process_hang_wait = value
     end
 
-    def self.max_force_attempt_count
-        @max_force_attempt_count
+    def self.max_force_try_count
+        @max_force_try_count
     end
 
-    def self.max_force_attempt_count=(value)
-        @max_force_attempt_count = value
-    end
-
-    def self.validate_es_data
-        @validate_es_data
-    end
-
-    def self.validate_es_data=(value)
-        @validate_es_data = value
+    def self.max_force_try_count=(value)
+        @max_force_try_count = value
     end
 
     # ロックファイル類のベースディレクトリ。
     # 配下に sync_locks/ と index_locks/ をgem側の規約で作る。
-    # 未設定の場合は Rails.root/tmp/are_search を使う。
+    # 未設定の場合は Rails.root/tmp/are_search/locks を使う。
     # Rails.root に依存するため即値ではなく参照時に遅延評価する。
     def self.lock_dir
-        @lock_dir || Rails.root.join("tmp", "are_search").to_s
+        @lock_dir || Rails.root.join("tmp", "are_search", "locks").to_s
     end
 
     def self.lock_dir=(value)
@@ -280,40 +275,28 @@ module AreSearch
     end
 
     # run_sync_requests rake タスクの多重起動を防ぐためのロックファイルパス。
-    # lock_dir/sync_locks/sync.lock
+    # lock_dir/sync/sync.lock
     def self.sync_lock_file_path
-        File.join(lock_dir, "sync_locks", "sync.lock")
+        File.join(lock_dir, "sync", "sync.lock")
     end
 
-    # index作成中、reindex、 clean_up、の多重起動防止の flock ファイルパス（モデル単位）。
-    # lock_dir/index_locks/{es_index_name}.lock
-    def self.index_lock_file_path(es_index_name)
-        File.join(lock_dir, "index_locks", "#{es_index_name}.lock")
-    end
+    # index作成中、reindex、clean_up の多重起動防止用 flock ファイルパス（IndexTarget単位）。
+    # lock_dir/index/{index_alias_name}.lock
+    def self.index_lock_file_path(index_alias_name)
+        AreSearch::IndexDefinition.valid_index_alias_name!(index_alias_name)
 
+        File.join(lock_dir, "index", "#{index_alias_name}.lock")
+    end
 
     # Elasticsearch index 名の先頭要素を設定する。
-    # 空文字列は AreSearch::IndexDefinition::EMPTY_ES_INDEX_PREFIX へ置き換える。
-    # 値を指定する場合は小文字英字で始まり、小文字英字とアンダーバーだけを許可する。
+    # 値を指定する場合は利用側定義名の共通形式で検査する。
     def self.setup(index_prefix:, &block)
         raise ArgumentError, "setup にはクライアント生成のブロックが必要です" unless block
         raise ArgumentError, "setup にはindex_prefixが必要です" unless index_prefix
 
-        index_prefix_string = index_prefix.to_s
+        AreSearch::IndexDefinition.valid_index_prefix!(index_prefix)
 
-        if index_prefix_string.empty? == false
-            unless AreSearch::IndexDefinition.valid_es_index_name_element?(index_prefix_string)
-                raise ArgumentError,
-                    "index_prefix は小文字の英字で始まり、小文字の英字とアンダーバーだけを使用してください: #{index_prefix_string.inspect}"
-            end
-        end
-
-        if index_prefix_string.include?(AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER)
-            raise ArgumentError,
-                "index_prefix に #{AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER.inspect} は使用できません"
-        end
-
-        @index_prefix = index_prefix_string
+        @index_prefix = index_prefix
         @client_block = block
     end
 
@@ -335,7 +318,7 @@ module AreSearch
             end
         end
     rescue StandardError => e
-        AreSearch.logger.debug do
+        AreSearch.logger.error do
             "[AreSearch] elasticsearch client config inspect failed: #{e.class}: #{e.message}"
         end
     end
@@ -344,8 +327,8 @@ module AreSearch
     def self.client
         raise NotConfiguredError, "AreSearch.setup が呼ばれていません" unless @client_block
 
-        cached_client = Thread.current.thread_variable_get(:are_search_es_client)
-        cached_pid = Thread.current.thread_variable_get(:are_search_es_client_pid)
+        cached_client = Thread.current.thread_variable_get(:are_search_client)
+        cached_pid = Thread.current.thread_variable_get(:are_search_client_pid)
 
         if cached_client != nil && cached_pid == Process.pid
             return cached_client
@@ -354,21 +337,16 @@ module AreSearch
         new_client = @client_block.call
         log_client_config(new_client)
 
-        Thread.current.thread_variable_set(:are_search_es_client, new_client)
-        Thread.current.thread_variable_set(:are_search_es_client_pid, Process.pid)
+        Thread.current.thread_variable_set(:are_search_client, new_client)
+        Thread.current.thread_variable_set(:are_search_client_pid, Process.pid)
 
         new_client
     end
 
-    # 設定済みの index_prefix を index 名へ使用できる文字列として返す。
-    # 空文字列が設定されている場合も先頭要素を省略せず、代理値を返す。
     def self.index_prefix
         raise NotConfiguredError, "AreSearch.setup が呼ばれていません" unless @index_prefix
 
-        index_prefix_string = @index_prefix.to_s
-        return AreSearch::IndexDefinition::EMPTY_ES_INDEX_PREFIX if index_prefix_string.empty?
-
-        index_prefix_string
+        @index_prefix
     end
 
     # aggs の Array 簡易形式で使用する bucket 数を返す。
@@ -388,21 +366,25 @@ module AreSearch
 
     # Elasticsearch index 名の要素を、AreSearch の区切り文字で連結する。
     # ワイルドカードを含む検索パターンにも使用するため、要素の妥当性は検査しない。
-    def self.join_es_index_name(*elements)
-        elements.join(AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER)
+    def self.join_index_name(*elements)
+        elements.join(AreSearch::IndexDefinition::INDEX_NAME_DELIMITER)
     end
 
     # 指定した物理 index を削除する。
     # lock や marker は取得せず、IndexManager の低レベル削除処理へ委譲する。
-    def self.delete_physical_index!(physical_es_index_name)
-        AreSearch::IndexManager.es_delete_index!(physical_es_index_name)
+    def self.delete_physical_index!(physical_index_name)
+        AreSearch::IndexDefinition.valid_physical_index_name!(
+            physical_index_name,
+        )
+
+        AreSearch::IndexManager.delete_physical_index!(physical_index_name)
     end
 
-    def self.mark_index!(es_index_name)
-        AreSearch::IndexMarker.create_manual!(es_index_name)
+    def self.mark_index!(index_alias_name)
+        AreSearch::IndexMarker.create_manual!(index_alias_name)
     end
 
-    def self.unmark_index!(es_index_name)
-        AreSearch::IndexMarker.delete_manual!(es_index_name)
+    def self.unmark_index!(index_alias_name)
+        AreSearch::IndexMarker.delete_manual!(index_alias_name)
     end
 end

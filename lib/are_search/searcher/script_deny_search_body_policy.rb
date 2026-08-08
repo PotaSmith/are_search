@@ -3,7 +3,7 @@
 require "json"
 
 module AreSearch
-    class ScriptDenyEsSearchBodyPolicy < EsSearchBodyPolicy
+    class ScriptDenySearchBodyPolicy < SearchBodyPolicy
 
         # Elasticsearchへ送信するbodyとfield名からscript系キーを拒否する標準policy。
 

@@ -55,7 +55,7 @@ tokenizer / analyzer / mappings を変える場合は、新しい IndexTarget �
 Gemfile に追加します。
 
 ```ruby
-gem "are_search", git: "https://github.com/PotaSmith/are_search.git", tag: "v0.7.0"
+gem "are_search", git: "https://github.com/PotaSmith/are_search.git", tag: "v0.8.0"
 ```
 
 開発中の最新版を直接使う場合は `branch: "main"` を指定できます。
@@ -88,7 +88,6 @@ rails db:migrate
 ```text
 config/initializers/are_search.rb
 db/migrate/xxxxxxxxxxxxxx_create_are_search_tables.rb
-lib/tasks/are_search_retry_alert.rake
 ```
 
 ## Usage
@@ -99,7 +98,7 @@ lib/tasks/are_search_retry_alert.rake
 class Article < ApplicationRecord
     include AreSearch::Searchable
 
-    def self.are_search_es_mappings
+    def self.are_search_index_mappings
         {
             default: {
                 index_settings: {
@@ -115,9 +114,15 @@ class Article < ApplicationRecord
         }
     end
 
-    def are_search_es_data(target_name)
-        case target_name
-        when :default
+    def self.are_search_all_sync_stage_names
+        {
+            default: ["default"],
+        }
+    end
+
+    def are_search_index_data(index_target_name, sync_stage_name)
+        case [index_target_name, sync_stage_name]
+        when [:default, "default"]
             {
                 id:     id,
                 title:  title,
@@ -131,13 +136,15 @@ class Article < ApplicationRecord
 end
 ```
 
+IndexTarget は同期先の Elasticsearch index を表し、sync stage は同じ IndexTarget へ投入する完成ドキュメントの生成経路を表します。
+
 初回 reindex の前に、index 操作を実行する環境では `config/initializers/are_search.rb` で `AreSearch.index_operation_enabled = true` を設定します。
 そのうえで、index target を指定して初回 reindex を実行します。
 
 ```ruby
 article_index = Article.are_search_index_target(:default)
 
-article_index.are_search_es_reindex
+article_index.are_search_reindex(stage_position: :first)
 ```
 
 
@@ -147,7 +154,7 @@ article_index.are_search_es_reindex
 ```ruby
 article_index = Article.are_search_index_target(:default)
 
-result = article_index.are_search_es_search(
+result = article_index.are_search_search(
     "検索ワード",
     fields: [:title, :body],
 )
@@ -183,10 +190,12 @@ result = AreSearch::Searcher.search(
 詳しい使い方は以下を参照してください。
 
 ```text
-docs/guide_setup.txt       セットアップ、初回導入
-docs/guide_usage.txt       検索オプション、検索結果の扱い
-docs/guide_operations.txt  reindex、同期、clean up、運用
-docs/guide_reference.txt   設定、内部動作、IndexTarget、同期の仕組み
+docs/guide_setup.txt                     セットアップ、初回導入
+docs/guide_index_targets_and_stages.txt  IndexTarget、sync stage、同期対象
+docs/guide_usage.txt                     検索オプション、検索結果の扱い
+docs/guide_operations.txt                reindex、同期、clean up、運用
+docs/guide_bulk_indexer.txt              大規模データのBulkIndexer運用
+docs/guide_reference.txt                 設定、内部動作、低レベルAPI
 ```
 
 ## Development

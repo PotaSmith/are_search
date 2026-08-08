@@ -5,7 +5,7 @@ require "tmpdir"
 require "fileutils"
 
 RSpec.describe AreSearch::IndexManager do
-    let(:es_index_name) { "test_articles" }
+    let(:index_alias_name) { "test__articles__default" }
     let(:mappings) do
         {
             properties: {
@@ -31,10 +31,7 @@ RSpec.describe AreSearch::IndexManager do
         end
     end
 
-
     def alias_response_for(*physical_names)
-        # Elasticsearch indices.get_alias は、alias が指す物理 index 名を
-        # response の key として返す。
         response = {}
 
         physical_names.each do |physical_name|
@@ -44,9 +41,9 @@ RSpec.describe AreSearch::IndexManager do
         response
     end
 
-    def create_index_marker(es_index_name, operation: "reindex", message: nil)
+    def create_index_marker(index_alias_name, operation: "reindex", message: nil)
         AreSearch::IndexMarker.create!(
-            es_index_name: es_index_name,
+            index_alias_name: index_alias_name,
             operation:     operation,
             owner_token:   SecureRandom.uuid,
             owner_host:    "test-host",
@@ -54,6 +51,25 @@ RSpec.describe AreSearch::IndexManager do
             started_at:    Time.zone.now,
             message:       message,
         )
+    end
+
+    def build_reindex_result
+        {
+            result: :not_success,
+            message: '',
+            failed_ids: [],
+            stop_phase: nil,
+            done_phases: [],
+        }
+    end
+
+    def build_guard_result
+        {
+            result: :not_success,
+            message: '',
+            stop_phase: nil,
+            done_phases: [],
+        }
     end
 
     before do
@@ -65,7 +81,7 @@ RSpec.describe AreSearch::IndexManager do
             .and_return(analysis: {})
         allow(indices)
             .to receive(:exists_alias)
-            .with(name: es_index_name)
+            .with(name: index_alias_name)
             .and_return(false)
 
         allow(logger).to receive(:warn)
@@ -74,55 +90,51 @@ RSpec.describe AreSearch::IndexManager do
         allow(Rails).to receive(:logger).and_return(logger)
     end
 
-
-    describe ".es_index_locked?" do
-        it "互換用に IndexMarker.marked? の結果を返す" do
-            expect(AreSearch::IndexMarker)
-                .to receive(:marked?)
-                .with(es_index_name)
-                .and_return(true)
-
-            expect(described_class.es_index_locked?(es_index_name)).to eq(true)
-        end
-    end
-
-    describe ".es_get_alias_physical_names" do
+    describe ".physical_index_names_by_alias" do
         it "alias が指している物理 index 名を返す" do
             allow(indices)
                 .to receive(:get_alias)
-                .with(name: es_index_name)
-                .and_return(alias_response_for("test_articles__2024_01_01_00_00_00_000000"))
+                .with(name: index_alias_name)
+                .and_return(
+                    alias_response_for(
+                        "test__articles__default__2024_01_01_00_00_00_000000",
+                    ),
+                )
 
-            result = described_class.es_get_alias_physical_names(es_index_name)
+            result = described_class.physical_index_names_by_alias(index_alias_name)
 
-            expect(result).to eq(["test_articles__2024_01_01_00_00_00_000000"])
+            expect(result).to eq([
+                "test__articles__default__2024_01_01_00_00_00_000000",
+            ])
         end
 
         it "alias が無ければ空配列を返す" do
             allow(indices)
                 .to receive(:get_alias)
-                .with(name: es_index_name)
+                .with(name: index_alias_name)
                 .and_raise(Elastic::Transport::Transport::Errors::NotFound)
 
-            result = described_class.es_get_alias_physical_names(es_index_name)
+            result = described_class.physical_index_names_by_alias(index_alias_name)
 
             expect(result).to eq([])
         end
     end
 
-    describe ".es_index_status" do
+    describe ".index_status" do
         it "別 target の物理 index を状態確認から除外する" do
-            current_physical_name = "test_articles__2026_07_14_00_00_00_000000"
-            other_target_physical_name = "test_articles__archive__2026_07_15_00_00_00_000000"
+            current_physical_name =
+                "test__articles__default__2026_07_14_00_00_00_000000"
+            other_target_physical_name =
+                "test__articles__archive__2026_07_15_00_00_00_000000"
 
             allow(indices)
                 .to receive(:get_alias)
-                .with(name: es_index_name)
+                .with(name: index_alias_name)
                 .and_return(alias_response_for(current_physical_name))
 
             allow(indices)
                 .to receive(:get)
-                .with(index: "#{es_index_name}__*")
+                .with(index: "#{index_alias_name}__*")
                 .and_return(
                     {
                         current_physical_name      => {},
@@ -132,10 +144,10 @@ RSpec.describe AreSearch::IndexManager do
 
             allow(indices)
                 .to receive(:get)
-                .with(index: es_index_name)
+                .with(index: index_alias_name)
                 .and_raise(Elastic::Transport::Transport::Errors::NotFound)
 
-            status = described_class.es_index_status(es_index_name)
+            status = described_class.index_status(index_alias_name)
 
             expect(status[:physical_indexes]).to eq([
                 {
@@ -148,18 +160,23 @@ RSpec.describe AreSearch::IndexManager do
         end
     end
 
-    describe ".es_reindex" do
-
+    describe ".reindex" do
         it "index 操作が許可されていない場合は IndexOperationViolation を出す" do
             AreSearch.index_operation_enabled = false
+            result = build_reindex_result
 
-            expect(indices).not_to receive(:exists)
             expect(indices).not_to receive(:create)
             expect(indices).not_to receive(:update_aliases)
 
             expect do
-                described_class.es_reindex(es_index_name, index_settings, mappings) do
-                    []
+                described_class.reindex(
+                    index_alias_name,
+                    index_settings,
+                    mappings,
+                    "reindex",
+                    result,
+                ) do
+                    true
                 end
             end.to raise_error(
                 AreSearch::IndexOperationViolation,
@@ -167,14 +184,15 @@ RSpec.describe AreSearch::IndexManager do
             )
         end
 
-        it "bulk 投入成功時は alias を新しい物理 index に切り替える" do
+        it "bulk 投入成功時は alias を切り替えて成功結果を設定する" do
+            result = build_reindex_result
             created_index = nil
             block_index = nil
             alias_actions = nil
 
             allow(indices)
                 .to receive(:exists)
-                .with(index: es_index_name)
+                .with(index: index_alias_name)
                 .and_return(false)
 
             allow(indices)
@@ -191,39 +209,72 @@ RSpec.describe AreSearch::IndexManager do
 
             allow(indices)
                 .to receive(:get_alias)
-                .with(name: es_index_name)
-                .and_return(alias_response_for("test_articles__2023_12_01_00_00_00_000000"))
+                .with(name: index_alias_name)
+                .and_return(
+                    alias_response_for(
+                        "test__articles__default__2023_12_01_00_00_00_000000",
+                    ),
+                )
 
             expect(indices)
                 .to receive(:update_aliases) do |args|
                     alias_actions = args[:body][:actions]
+
+                    {
+                        "acknowledged" => true,
+                        "errors"       => false,
+                    }
                 end
 
-            result = described_class.es_reindex(es_index_name, index_settings, mappings) do |physical_index|
+            described_class.reindex(
+                index_alias_name,
+                index_settings,
+                mappings,
+                "reindex",
+                result,
+            ) do |physical_index|
                 block_index = physical_index
-                []
+                true
             end
 
-            expect(result).to eq([])
             expect(block_index).to eq(created_index)
             expect(created_index).to match(
-                /\Atest_articles__\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2}_\d{6}\z/,
+                /\Atest__articles__default__\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2}_\d{6}\z/,
             )
             expect(alias_actions).to eq([
-                { remove: { index: "test_articles__2023_12_01_00_00_00_000000", alias: es_index_name } },
-                { add: { index: created_index, alias: es_index_name } },
+                {
+                    remove: {
+                        index: "test__articles__default__2023_12_01_00_00_00_000000",
+                        alias: index_alias_name,
+                    },
+                },
+                {
+                    add: {
+                        index: created_index,
+                        alias: index_alias_name,
+                    },
+                },
             ])
-            expect(AreSearch::IndexMarker.find_by(es_index_name: es_index_name)).to eq(nil)
+            expect(result).to eq(
+                result:      :success,
+                message:     '',
+                failed_ids:  [],
+                stop_phase:  nil,
+                done_phases: [
+                    :lock_index,
+                    :create_marker,
+                    :create_new_index,
+                    :index_to_new_index,
+                    :delete_alias_duplicate_index,
+                    :switch_alias,
+                ],
+            )
+            expect(AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)).to eq(nil)
         end
 
-        it "bulk 投入に失敗 ID があれば alias を切り替えず標準出力にも出す" do
+        it "bulk 投入に失敗した場合は alias を切り替えず停止段階を残す" do
+            result = build_reindex_result
             created_index = nil
-            result = nil
-
-            allow(indices)
-                .to receive(:exists)
-                .with(index: es_index_name)
-                .and_return(false)
 
             allow(indices)
                 .to receive(:create) do |args|
@@ -231,28 +282,40 @@ RSpec.describe AreSearch::IndexManager do
                 end
 
             expect(indices).not_to receive(:update_aliases)
-            expect(logger).to receive(:error) do |&block|
-                expect(block.call).to include("alias を切り替えませんでした")
-                expect(block.call).to include("failed_ids=[\"1\", \"2\"]")
+
+            described_class.reindex(
+                index_alias_name,
+                index_settings,
+                mappings,
+                "reindex",
+                result,
+            ) do |physical_index|
+                expect(physical_index).to eq(created_index)
+                result[:failed_ids] = ["1", "2"]
+                false
             end
 
-            expect do
-                result = described_class.es_reindex(es_index_name, index_settings, mappings) do |physical_index|
-                    expect(physical_index).to eq(created_index)
-                    ["1", "2"]
-                end
-            end.to output(/alias を切り替えませんでした.*failed_ids=\["1", "2"\]/).to_stdout
-
-            expect(result).to eq(["1", "2"])
-            expect(AreSearch::IndexMarker.find_by(es_index_name: es_index_name)).to eq(nil)
+            expect(result).to eq(
+                result:      :not_success,
+                message:     "bulk 投入に失敗した ID があるため alias を切り替えませんでした",
+                failed_ids:  ["1", "2"],
+                stop_phase:  :index_to_new_index,
+                done_phases: [
+                    :lock_index,
+                    :create_marker,
+                    :create_new_index,
+                ],
+            )
+            expect(AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)).to eq(nil)
         end
 
-        it "旧方式の同名実体 index があれば bulk 投入成功後、alias 切り替え前に削除する" do
+        it "alias 名と同名の物理 index があれば切り替え前に削除する" do
+            result = build_reindex_result
             deleted_indices = []
 
             allow(indices)
                 .to receive(:exists)
-                .with(index: es_index_name)
+                .with(index: index_alias_name)
                 .and_return(true)
 
             allow(indices)
@@ -261,101 +324,168 @@ RSpec.describe AreSearch::IndexManager do
                 end
 
             allow(indices).to receive(:create)
-
             allow(indices)
                 .to receive(:get_alias)
-                .with(name: es_index_name)
+                .with(name: index_alias_name)
                 .and_raise(Elastic::Transport::Transport::Errors::NotFound)
+            allow(indices)
+                .to receive(:update_aliases)
+                .and_return(
+                    "acknowledged" => true,
+                    "errors"       => false,
+                )
 
-            allow(indices).to receive(:update_aliases)
-
-            result = described_class.es_reindex(es_index_name, index_settings, mappings) do
-                []
+            described_class.reindex(
+                index_alias_name,
+                index_settings,
+                mappings,
+                "reindex",
+                result,
+            ) do
+                true
             end
 
-            expect(result).to eq([])
-            expect(deleted_indices).to eq([es_index_name])
+            expect(result[:result]).to eq(:success)
+            expect(deleted_indices).to eq([index_alias_name])
         end
 
-        it "旧方式の同名実体 index の削除に失敗した場合は marker を削除して例外を再送出する" do
+        it "alias 名と同名の物理 index の削除失敗を結果へ残す" do
+            result = build_reindex_result
+
             allow(indices)
                 .to receive(:exists)
-                .with(index: es_index_name)
+                .with(index: index_alias_name)
                 .and_return(true)
 
             allow(indices)
                 .to receive(:delete)
-                .with(index: es_index_name)
+                .with(index: index_alias_name)
                 .and_raise(RuntimeError, "delete failed")
 
             allow(indices).to receive(:create)
-
             expect(indices).not_to receive(:update_aliases)
 
-            expect do
-                described_class.es_reindex(es_index_name, index_settings, mappings) do
-                    []
-                end
-            end.to raise_error(RuntimeError, "delete failed")
+            described_class.reindex(
+                index_alias_name,
+                index_settings,
+                mappings,
+                "reindex",
+                result,
+            ) do
+                true
+            end
 
-            marker = AreSearch::IndexMarker.find_by(es_index_name: es_index_name)
+            expect(result[:result]).to eq(:not_success)
+            expect(result[:message]).to eq(
+                "alias名と重複する物理インデックスの削除に失敗しました。#{index_alias_name}",
+            )
+            expect(result[:stop_phase]).to eq(:delete_alias_duplicate_index)
+            expect(result[:done_phases]).to eq([
+                :lock_index,
+                :create_marker,
+                :create_new_index,
+                :index_to_new_index,
+            ])
+            expect(AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)).to eq(nil)
+        end
 
-            expect(marker).to eq(nil)
+        it "alias 更新APIがaction失敗を返した場合は結果へ残す" do
+            result = build_reindex_result
+
+            allow(indices)
+                .to receive(:exists)
+                .with(index: index_alias_name)
+                .and_return(false)
+            allow(indices).to receive(:create)
+            allow(indices)
+                .to receive(:get_alias)
+                .with(name: index_alias_name)
+                .and_raise(Elastic::Transport::Transport::Errors::NotFound)
+            allow(indices)
+                .to receive(:update_aliases)
+                .and_return(
+                    "acknowledged" => true,
+                    "errors"       => true,
+                    "action_results" => [],
+                )
+
+            described_class.reindex(
+                index_alias_name,
+                index_settings,
+                mappings,
+                "reindex",
+                result,
+            ) do
+                true
+            end
+
+            expect(result[:result]).to eq(:not_success)
+            expect(result[:message]).to eq("インデックスの切り替えに失敗しました。")
+            expect(result[:stop_phase]).to eq(:switch_alias)
+            expect(result[:done_phases]).to eq([
+                :lock_index,
+                :create_marker,
+                :create_new_index,
+                :index_to_new_index,
+                :delete_alias_duplicate_index,
+            ])
+            expect(AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)).to eq(nil)
         end
 
         it "処理中に例外が出た場合も marker を削除して例外を再送出する" do
-            allow(indices)
-                .to receive(:exists)
-                .with(index: es_index_name)
-                .and_return(false)
+            result = build_reindex_result
 
             allow(indices).to receive(:create)
             expect(indices).not_to receive(:update_aliases)
 
             expect do
-                described_class.es_reindex(es_index_name, index_settings, mappings) do
+                described_class.reindex(
+                    index_alias_name,
+                    index_settings,
+                    mappings,
+                    "reindex",
+                    result,
+                ) do
                     raise "bulk failed"
                 end
             end.to raise_error(RuntimeError, "bulk failed")
 
-            marker = AreSearch::IndexMarker.find_by(es_index_name: es_index_name)
-
-            expect(marker).to eq(nil)
+            expect(AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)).to eq(nil)
         end
 
-        it "alias 切り替えで例外が出た場合も marker を削除して例外を再送出する" do
+        it "alias 更新APIで例外が出た場合も marker を削除して再送出する" do
+            result = build_reindex_result
+
             allow(indices)
                 .to receive(:exists)
-                .with(index: es_index_name)
+                .with(index: index_alias_name)
                 .and_return(false)
-
             allow(indices).to receive(:create)
-
             allow(indices)
                 .to receive(:get_alias)
-                .with(name: es_index_name)
+                .with(name: index_alias_name)
                 .and_raise(Elastic::Transport::Transport::Errors::NotFound)
-
             allow(indices)
                 .to receive(:update_aliases)
                 .and_raise(RuntimeError, "alias failed")
 
             expect do
-                described_class.es_reindex(es_index_name, index_settings, mappings) do
-                    []
+                described_class.reindex(
+                    index_alias_name,
+                    index_settings,
+                    mappings,
+                    "reindex",
+                    result,
+                ) do
+                    true
                 end
             end.to raise_error(RuntimeError, "alias failed")
 
-            marker = AreSearch::IndexMarker.find_by(es_index_name: es_index_name)
-
-            expect(marker).to eq(nil)
+            expect(AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)).to eq(nil)
         end
 
-        it "処理中の例外後に marker 削除も失敗した場合は削除失敗例外を出し元例外を cause に残す" do
-            allow(indices)
-                .to receive(:exists)
-                .with(index: es_index_name)
-                .and_return(false)
+        it "処理中の例外後に marker 削除も失敗した場合は削除失敗例外を出す" do
+            result = build_reindex_result
 
             allow(indices).to receive(:create)
             expect(indices).not_to receive(:update_aliases)
@@ -375,7 +505,13 @@ RSpec.describe AreSearch::IndexManager do
             raised_error = nil
 
             begin
-                described_class.es_reindex(es_index_name, index_settings, mappings) do
+                described_class.reindex(
+                    index_alias_name,
+                    index_settings,
+                    mappings,
+                    "reindex",
+                    result,
+                ) do
                     raise "bulk failed"
                 end
             rescue RuntimeError => e
@@ -386,24 +522,64 @@ RSpec.describe AreSearch::IndexManager do
             expect(raised_error.cause.message).to eq("bulk failed")
         end
 
-        it "marker が残っている場合は false を返す" do
-            create_index_marker(es_index_name)
+        it "marker が残っている場合は未実行結果を設定する" do
+            result = build_reindex_result
+            create_index_marker(index_alias_name)
 
-            expect(indices).not_to receive(:exists)
             expect(indices).not_to receive(:create)
             expect(indices).not_to receive(:update_aliases)
 
-            result = described_class.es_reindex(es_index_name, index_settings, mappings) do
-                []
+            described_class.reindex(
+                index_alias_name,
+                index_settings,
+                mappings,
+                "reindex",
+                result,
+            ) do
+                true
             end
 
-            expect(result).to eq(false)
-            expect(AreSearch::IndexMarker.marked?(es_index_name)).to eq(true)
+            expect(result).to eq(
+                result:      :not_success,
+                message:     "マーカーが作成できませんでした",
+                failed_ids:  [],
+                stop_phase:  :create_marker,
+                done_phases: [:lock_index],
+            )
+            expect(AreSearch::IndexMarker.marked?(index_alias_name)).to eq(true)
+        end
+
+        it "flock を取得できない場合は未実行結果を設定する" do
+            result = build_reindex_result
+            lock_path = AreSearch.index_lock_file_path(index_alias_name)
+            FileUtils.mkdir_p(File.dirname(lock_path))
+
+            File.open(lock_path, File::RDWR | File::CREAT) do |lock_file|
+                locked = lock_file.flock(File::LOCK_EX | File::LOCK_NB)
+                expect(locked).to eq(0)
+
+                described_class.reindex(
+                    index_alias_name,
+                    index_settings,
+                    mappings,
+                    "reindex",
+                    result,
+                ) do
+                    true
+                end
+            end
+
+            expect(result).to eq(
+                result:      :not_success,
+                message:     "別プロセスが実行中のためスキップしました",
+                failed_ids:  [],
+                stop_phase:  :lock_index,
+                done_phases: [],
+            )
         end
     end
 
-    describe ".es_clean_up" do
-
+    describe ".index_clean_up" do
         it "index 操作が許可されていない場合は IndexOperationViolation を出す" do
             AreSearch.index_operation_enabled = false
 
@@ -412,29 +588,35 @@ RSpec.describe AreSearch::IndexManager do
             expect(indices).not_to receive(:delete)
 
             expect do
-                described_class.es_clean_up(es_index_name)
+                described_class.index_clean_up(index_alias_name)
             end.to raise_error(
                 AreSearch::IndexOperationViolation,
                 /index 操作が許可されていません/,
             )
         end
 
-        it "alias が指していない物理 index だけ削除する" do
+        it "alias が指していない物理 index だけ削除して成功結果を返す" do
+            current_physical_name =
+                "test__articles__default__2024_01_02_00_00_00_000000"
+            old_physical_names = [
+                "test__articles__default__2024_01_01_00_00_00_000000",
+                "test__articles__default__2024_01_03_00_00_00_000000",
+            ]
             deleted_indices = []
 
             allow(indices)
                 .to receive(:get_alias)
-                .with(name: es_index_name)
-                .and_return(alias_response_for("test_articles__2024_01_02_00_00_00_000000"))
+                .with(name: index_alias_name)
+                .and_return(alias_response_for(current_physical_name))
 
             allow(indices)
                 .to receive(:get)
-                .with(index: "#{es_index_name}__*")
+                .with(index: "#{index_alias_name}__*")
                 .and_return(
                     {
-                        "test_articles__2024_01_01_00_00_00_000000" => {},
-                        "test_articles__2024_01_02_00_00_00_000000" => {},
-                        "test_articles__2024_01_03_00_00_00_000000" => {},
+                        old_physical_names[0] => {},
+                        current_physical_name => {},
+                        old_physical_names[1] => {},
                     },
                 )
 
@@ -443,34 +625,69 @@ RSpec.describe AreSearch::IndexManager do
                     deleted_indices << args[:index]
                 end
 
-            result = described_class.es_clean_up(es_index_name)
+            result = described_class.index_clean_up(index_alias_name)
 
-            expect(result).to eq(true)
-            expect(deleted_indices).to eq([
-                "test_articles__2024_01_01_00_00_00_000000",
-                "test_articles__2024_01_03_00_00_00_000000",
-            ])
-            expect(AreSearch::IndexMarker.find_by(es_index_name: es_index_name)).to eq(nil)
+            expect(result).to eq(
+                result:             :success,
+                message:            '',
+                stop_phase:         nil,
+                done_phases:        [
+                    :lock_index,
+                    :create_marker,
+                    :check_alias,
+                    :delete_indexes,
+                ],
+                delete_index_names: old_physical_names,
+            )
+            expect(deleted_indices).to eq(old_physical_names)
+            expect(AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)).to eq(nil)
         end
 
-        it "別 target の物理 index は削除しない" do
-            current_physical_name = "test_articles__2026_07_14_00_00_00_000000"
-            old_physical_name = "test_articles__2026_07_13_00_00_00_000000"
-            other_target_physical_name = "test_articles__archive__2026_07_12_00_00_00_000000"
-            arbitrary_suffix_index_name = "test_articles_backup"
+        it "alias が存在しない場合は確認段階で停止する" do
+            allow(indices)
+                .to receive(:get_alias)
+                .with(name: index_alias_name)
+                .and_raise(Elastic::Transport::Transport::Errors::NotFound)
+
+            expect(indices).not_to receive(:get)
+            expect(indices).not_to receive(:delete)
+
+            result = described_class.index_clean_up(index_alias_name)
+
+            expect(result).to eq(
+                result:             :not_success,
+                message:            "alias が存在しないため clean up を実行できません",
+                stop_phase:         :check_alias,
+                done_phases:        [
+                    :lock_index,
+                    :create_marker,
+                ],
+                delete_index_names: [],
+            )
+            expect(AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)).to eq(nil)
+        end
+
+        it "別 target とtimestamp形式ではない index は削除しない" do
+            current_physical_name =
+                "test__articles__default__2026_07_14_00_00_00_000000"
+            old_physical_name =
+                "test__articles__default__2026_07_13_00_00_00_000000"
+            other_target_physical_name =
+                "test__articles__archive__2026_07_12_00_00_00_000000"
+            arbitrary_suffix_index_name = "test__articles__default__backup"
             deleted_indices = []
 
             allow(indices)
                 .to receive(:get_alias)
-                .with(name: es_index_name)
+                .with(name: index_alias_name)
                 .and_return(alias_response_for(current_physical_name))
 
             allow(indices)
                 .to receive(:get)
-                .with(index: "#{es_index_name}__*")
+                .with(index: "#{index_alias_name}__*")
                 .and_return(
                     {
-                        current_physical_name      => {},
+                        current_physical_name       => {},
                         old_physical_name           => {},
                         other_target_physical_name  => {},
                         arbitrary_suffix_index_name => {},
@@ -482,108 +699,172 @@ RSpec.describe AreSearch::IndexManager do
                     deleted_indices << args[:index]
                 end
 
-            result = described_class.es_clean_up(es_index_name)
+            result = described_class.index_clean_up(index_alias_name)
 
-            expect(result).to eq(true)
+            expect(result[:result]).to eq(:success)
+            expect(result[:delete_index_names]).to eq([old_physical_name])
             expect(deleted_indices).to eq([old_physical_name])
         end
 
         it "削除中に例外が出た場合も marker を削除して例外を再送出する" do
             allow(indices)
                 .to receive(:get_alias)
-                .with(name: es_index_name)
-                .and_return(alias_response_for("test_articles__2024_01_02_00_00_00_000000"))
+                .with(name: index_alias_name)
+                .and_return(
+                    alias_response_for(
+                        "test__articles__default__2024_01_02_00_00_00_000000",
+                    ),
+                )
 
             allow(indices)
                 .to receive(:get)
-                .with(index: "#{es_index_name}__*")
+                .with(index: "#{index_alias_name}__*")
                 .and_return(
                     {
-                        "test_articles__2024_01_01_00_00_00_000000" => {},
-                        "test_articles__2024_01_02_00_00_00_000000" => {},
+                        "test__articles__default__2024_01_01_00_00_00_000000" => {},
+                        "test__articles__default__2024_01_02_00_00_00_000000" => {},
                     },
                 )
 
             allow(indices)
                 .to receive(:delete)
-                .with(index: "test_articles__2024_01_01_00_00_00_000000")
+                .with(
+                    index: "test__articles__default__2024_01_01_00_00_00_000000",
+                )
                 .and_raise(RuntimeError, "delete failed")
 
             expect do
-                described_class.es_clean_up(es_index_name)
+                described_class.index_clean_up(index_alias_name)
             end.to raise_error(RuntimeError, "delete failed")
 
-            marker = AreSearch::IndexMarker.find_by(es_index_name: es_index_name)
-
-            expect(marker).to eq(nil)
+            expect(AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)).to eq(nil)
         end
 
-        it "marker が残っている場合は false を返す" do
-            create_index_marker(es_index_name, operation: "clean_up")
+        it "marker が残っている場合は未実行結果を返す" do
+            create_index_marker(index_alias_name, operation: "clean_up")
 
             expect(indices).not_to receive(:get_alias)
             expect(indices).not_to receive(:get)
             expect(indices).not_to receive(:delete)
 
-            result = described_class.es_clean_up(es_index_name)
+            result = described_class.index_clean_up(index_alias_name)
 
-            expect(result).to eq(false)
-            expect(AreSearch::IndexMarker.marked?(es_index_name)).to eq(true)
+            expect(result).to eq(
+                result:             :not_success,
+                message:            "マーカーが作成できませんでした",
+                stop_phase:         :create_marker,
+                done_phases:        [:lock_index],
+                delete_index_names: [],
+            )
+            expect(AreSearch::IndexMarker.marked?(index_alias_name)).to eq(true)
         end
     end
 
-    describe ".es_with_index_guard" do
-        it "flock と marker の内側で block を実行し戻り値を返す" do
+    describe ".with_index_guard" do
+        before do
+            allow(indices)
+                .to receive(:get_alias)
+                .with(name: index_alias_name)
+                .and_return(
+                    alias_response_for(
+                        "test__articles__default__2026_08_04_00_00_00_000000",
+                    ),
+                )
+        end
+
+        it "flock と marker の内側で block を実行して成功結果を設定する" do
+            result = build_guard_result
             marker_in_block = nil
 
-            result = described_class.es_with_index_guard(
-                es_index_name,
+            described_class.with_index_guard(
+                index_alias_name,
+                result,
                 operation: "pdf_extract",
             ) do
                 marker_in_block = AreSearch::IndexMarker.find_by(
-                    es_index_name: es_index_name,
+                    index_alias_name: index_alias_name,
                 )
 
-                "done"
+                "block result"
             end
 
-            expect(result).to eq("done")
+            expect(result).to eq(
+                result:      :success,
+                message:     '',
+                stop_phase:  nil,
+                done_phases: [:lock_index, :create_marker],
+            )
             expect(marker_in_block).not_to eq(nil)
             expect(marker_in_block.operation).to eq("pdf_extract")
-            expect(AreSearch::IndexMarker.marked?(es_index_name)).to eq(false)
+            expect(AreSearch::IndexMarker.marked?(index_alias_name)).to eq(false)
         end
 
         it "block で例外が出た場合も marker を削除して例外を再送出する" do
+            result = build_guard_result
+
             expect do
-                described_class.es_with_index_guard(
-                    es_index_name,
+                described_class.with_index_guard(
+                    index_alias_name,
+                    result,
                     operation: "pdf_extract",
                 ) do
                     raise RuntimeError, "extract failed"
                 end
             end.to raise_error(RuntimeError, "extract failed")
 
-            expect(AreSearch::IndexMarker.marked?(es_index_name)).to eq(false)
+            expect(AreSearch::IndexMarker.marked?(index_alias_name)).to eq(false)
         end
 
-        it "marker が残っている場合は block を実行せず false を返す" do
-            create_index_marker(es_index_name, operation: "reindex")
+        it "alias が存在しなければ marker を作成せず ArgumentError を出す" do
+            result = build_guard_result
+
+            allow(indices)
+                .to receive(:get_alias)
+                .with(name: index_alias_name)
+                .and_raise(Elastic::Transport::Transport::Errors::NotFound)
+
+            expect do
+                described_class.with_index_guard(
+                    index_alias_name,
+                    result,
+                    operation: "pdf_extract",
+                ) do
+                    raise "not reached"
+                end
+            end.to raise_error(
+                ArgumentError,
+                "indexが存在しません #{index_alias_name}",
+            )
+
+            expect(AreSearch::IndexMarker.marked?(index_alias_name)).to eq(false)
+        end
+
+        it "marker が残っている場合は block を実行せず未実行結果を設定する" do
+            result = build_guard_result
+            create_index_marker(index_alias_name, operation: "reindex")
             block_called = false
 
-            result = described_class.es_with_index_guard(
-                es_index_name,
+            described_class.with_index_guard(
+                index_alias_name,
+                result,
                 operation: "pdf_extract",
             ) do
                 block_called = true
             end
 
-            expect(result).to eq(false)
+            expect(result).to eq(
+                result:      :not_success,
+                message:     "マーカーが作成できませんでした",
+                stop_phase:  :create_marker,
+                done_phases: [:lock_index],
+            )
             expect(block_called).to eq(false)
-            expect(AreSearch::IndexMarker.marked?(es_index_name)).to eq(true)
+            expect(AreSearch::IndexMarker.marked?(index_alias_name)).to eq(true)
         end
 
-        it "flock を別プロセス相当の処理が取得済みなら block を実行せず false を返す" do
-            lock_path = AreSearch.index_lock_file_path(es_index_name)
+        it "flock を取得できなければ block を実行せず未実行結果を設定する" do
+            result = build_guard_result
+            lock_path = AreSearch.index_lock_file_path(index_alias_name)
             FileUtils.mkdir_p(File.dirname(lock_path))
             block_called = false
 
@@ -591,26 +872,33 @@ RSpec.describe AreSearch::IndexManager do
                 locked = lock_file.flock(File::LOCK_EX | File::LOCK_NB)
                 expect(locked).to eq(0)
 
-                result = described_class.es_with_index_guard(
-                    es_index_name,
+                described_class.with_index_guard(
+                    index_alias_name,
+                    result,
                     operation: "pdf_extract",
                 ) do
                     block_called = true
                 end
-
-                expect(result).to eq(false)
             end
 
+            expect(result).to eq(
+                result:      :not_success,
+                message:     "別プロセスが実行中のためスキップしました",
+                stop_phase:  :lock_index,
+                done_phases: [],
+            )
             expect(block_called).to eq(false)
-            expect(AreSearch::IndexMarker.marked?(es_index_name)).to eq(false)
+            expect(AreSearch::IndexMarker.marked?(index_alias_name)).to eq(false)
         end
 
         it "index 操作が許可されていない場合は IndexOperationViolation を出す" do
+            result = build_guard_result
             AreSearch.index_operation_enabled = false
 
             expect do
-                described_class.es_with_index_guard(
-                    es_index_name,
+                described_class.with_index_guard(
+                    index_alias_name,
+                    result,
                     operation: "pdf_extract",
                 ) do
                     "not reached"
@@ -622,9 +910,12 @@ RSpec.describe AreSearch::IndexManager do
         end
 
         it "operation が空なら ArgumentError を出す" do
+            result = build_guard_result
+
             expect do
-                described_class.es_with_index_guard(
-                    es_index_name,
+                described_class.with_index_guard(
+                    index_alias_name,
+                    result,
                     operation: nil,
                 ) do
                     "not reached"
@@ -633,22 +924,29 @@ RSpec.describe AreSearch::IndexManager do
         end
 
         it "block が無ければ ArgumentError を出す" do
+            result = build_guard_result
+
             expect do
-                described_class.es_with_index_guard(
-                    es_index_name,
+                described_class.with_index_guard(
+                    index_alias_name,
+                    result,
                     operation: "pdf_extract",
                 )
-            end.to raise_error(ArgumentError, "es_with_index_guard には block が必要です")
+            end.to raise_error(ArgumentError, "with_index_guard には block が必要です")
         end
     end
 
-    describe ".es_delete_index!" do
+    describe ".delete_physical_index!" do
         it "指定された物理 index を削除する" do
             expect(indices)
                 .to receive(:delete)
-                .with(index: "test_articles__2024_01_01_00_00_00_000000")
+                .with(
+                    index: "test__articles__default__2024_01_01_00_00_00_000000",
+                )
 
-            described_class.es_delete_index!("test_articles__2024_01_01_00_00_00_000000")
+            described_class.delete_physical_index!(
+                "test__articles__default__2024_01_01_00_00_00_000000",
+            )
         end
     end
 end

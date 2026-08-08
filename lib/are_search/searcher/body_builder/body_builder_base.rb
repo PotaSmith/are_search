@@ -57,7 +57,7 @@ module AreSearch
 
             # モデルごとの最小の max_result_window を計算
             def resolve_model_max_result_window(index_target)
-                model_index_settings = index_target.are_search_es_index_settings
+                model_index_settings = index_target.are_search_index_settings
 
                 model_index_settings[:max_result_window]
             end

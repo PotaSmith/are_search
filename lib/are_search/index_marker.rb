@@ -8,7 +8,7 @@ module AreSearch
 
         # Elasticsearch index操作中であることをDB上に残すmarker。
         #
-        # 1つのes_index_nameにつき、最大1行だけ存在する。
+        # 1つの index_alias_name につき、最大1行だけ存在する。
         #
         # markerが存在する間は、通常同期、reindex、clean upなど、
         # 同じindexを書き換える処理を開始しない。
@@ -45,14 +45,14 @@ module AreSearch
         # id
         #     IndexMarker行の主キー。
         #
-        # es_index_name
+        # index_alias_name
         #     操作対象のElasticsearch alias名。
         #     unique indexにより、同じindexにはmarkerを1件だけ作成できる。
         #
         # operation
         #     実行中または残留している操作名。
         #     reindex、clean_up、manualのほか、
-        #     are_search_es_with_index_guardへ渡した操作名を保持する。
+        #     are_search_with_index_guardへ渡した操作名を保持する。
         #
         # owner_token
         #     markerを作成した処理の所有者識別値。
@@ -85,22 +85,19 @@ module AreSearch
 
         MANUAL_OPERATION = "manual"
 
-        def self.marked?(es_index_name)
-            AreSearch::IndexMarker.exists?(es_index_name: es_index_name)
+        def self.marked?(index_alias_name)
+            AreSearch::IndexMarker.exists?(index_alias_name: index_alias_name)
         end
 
         # IndexManager から呼ばれる内部用の marker lifecycle API。
         # public class method だが、利用側アプリから直接呼ぶ想定ではない。
         # public に見えるため、このメソッド自身でも index_operation_enabled を確認する。
-        def self.with_index_operation_marker!(es_index_name, operation:)
+        def self.with_index_operation_marker!(index_alias_name, operation:)
             AreSearch::IndexManager.validate_index_operation_enabled!
 
-            raise AreSearch::IndexMarkerUnavailable if marked?(es_index_name)
+            raise AreSearch::IndexMarkerUnavailable if marked?(index_alias_name)
 
-            marker = create_for_index_operation!(
-                es_index_name,
-                operation: operation,
-            )
+            marker = create_for_index_operation!(index_alias_name, operation: operation)
 
             begin
                 return yield
@@ -109,47 +106,47 @@ module AreSearch
             end
         end
 
-        def self.create_manual!(es_index_name)
+        def self.create_manual!(index_alias_name)
             AreSearch::IndexManager.validate_index_operation_enabled!
 
-            return nil if marked?(es_index_name)
+            return nil if marked?(index_alias_name)
 
-            create_for_index_operation!(
-                es_index_name,
-                operation: MANUAL_OPERATION,
-            )
+            # 手動指定の誤りで、存在しない alias の marker を作成しない。
+            return nil if AreSearch::IndexManager.index_alias_exists?(index_alias_name) == false
+
+            create_for_index_operation!(index_alias_name, operation: MANUAL_OPERATION)
         rescue AreSearch::IndexMarkerUnavailable
             nil
         end
 
-        def self.delete_manual!(es_index_name)
+        def self.delete_manual!(index_alias_name)
             AreSearch::IndexManager.validate_index_operation_enabled!
 
             AreSearch::IndexMarker.where(
-                es_index_name: es_index_name,
-                operation:     MANUAL_OPERATION,
+                index_alias_name: index_alias_name,
+                operation:        MANUAL_OPERATION,
             ).delete_all
         end
 
-        def self.delete_force!(es_index_name)
+        def self.delete_force!(index_alias_name)
             AreSearch::IndexManager.validate_index_operation_enabled!
 
             AreSearch::IndexMarker.where(
-                es_index_name: es_index_name,
+                index_alias_name: index_alias_name,
             ).delete_all
         end
 
-        def self.create_for_index_operation!(es_index_name, operation:)
+        def self.create_for_index_operation!(index_alias_name, operation:)
             AreSearch::IndexMarker.create!(
-                es_index_name: es_index_name,
-                operation:     operation,
-                owner_token:   SecureRandom.uuid,
-                owner_host:    current_host_name,
-                owner_pid:     Process.pid,
-                started_at:    Time.zone.now,
+                index_alias_name: index_alias_name,
+                operation:        operation,
+                owner_token:      SecureRandom.uuid,
+                owner_host:       current_host_name,
+                owner_pid:        Process.pid,
+                started_at:       Time.zone.now,
             )
         rescue ActiveRecord::RecordNotUnique
-            raise AreSearch::IndexMarkerUnavailable, "index marker already exists: #{es_index_name}"
+            raise AreSearch::IndexMarkerUnavailable, "index marker already exists: #{index_alias_name}"
         end
         private_class_method :create_for_index_operation!
 

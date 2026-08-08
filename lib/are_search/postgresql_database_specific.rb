@@ -6,7 +6,7 @@ module AreSearch
         # AreSearch が使用するPostgreSQL固有処理。
 
         REQUEST_SEQUENCE_SQL =
-            "SELECT nextval('are_search_sync_requests_request_sequence'::regclass)"
+            "SELECT nextval('are_search_sequences_for_sync_requests_id_seq'::regclass)"
 
         # PostgreSQL sequence から次の同期要求世代番号を取得する。
         def self.next_request_sequence
@@ -20,22 +20,22 @@ module AreSearch
             ar_model_class_name:,
             index_target_name:,
             ar_instance_key:,
-            es_index_name:,
+            index_alias_name:,
+            sync_stage_name:,
             request_sequence:,
             request_sequence_at:
         )
             AreSearch::SyncRequest.upsert(
                 {
                     ar_model_class_name: ar_model_class_name,
-                    index_target_name:   index_target_name,
                     ar_instance_key:     ar_instance_key,
-                    es_index_name:       es_index_name,
+                    index_alias_name:    index_alias_name,
+                    sync_stage_name:     sync_stage_name,
+                    index_target_name:   index_target_name,
                     request_sequence:    request_sequence,
                     request_sequence_at: request_sequence_at,
-                    retry_count:         0,
-                    last_error:          nil,
                 },
-                unique_by: [:es_index_name, :ar_model_class_name, :ar_instance_key],
+                unique_by: [:index_alias_name, :ar_model_class_name, :ar_instance_key, :sync_stage_name],
             )
         end
     end

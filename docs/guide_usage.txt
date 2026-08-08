@@ -3,7 +3,8 @@ AreSearch 使い方ガイド
 ================================================================
 
 このファイルは、検索方法と SearchResult の扱いを説明する。
-導入手順は guide_setup.txt、管理操作は guide_operations.txt を参照する。
+導入手順は guide_setup.txt、IndexTargetとsync stageは guide_index_targets_and_stages.txt、
+管理操作は guide_operations.txt を参照する。
 
 
 # 1. 検索入口
@@ -29,9 +30,9 @@ AreSearch::Searcher.search に index target の Array と検索オプション�
 ## 1-1. 単一 target のショートハンド
 ----------------------------------------------------------------
 
-IndexTarget#are_search_es_search は、単一 target 検索用のショートハンド。
+IndexTarget#are_search_search は、単一 target 検索用のショートハンド。
 
-    result = article_index.are_search_es_search(
+    result = article_index.are_search_search(
         "検索ワード",
         fields: [:title, :body],
     )
@@ -519,7 +520,7 @@ terms は Array、range は1件以上の Hash で指定する。terms には空�
 
 単一 target のショートハンドでは relation を使用できる。
 
-    result = article_index.are_search_es_search(
+    result = article_index.are_search_search(
         "Rails",
         fields: [:title, :body],
         relation: Article
@@ -719,7 +720,7 @@ raw_body 検索では、page、per_page、build_model_bool を反映した body 
 status は SearchResult の定数で判定する。
 
     if result.status == AreSearch::SearchResult::STATUS_PARAMS_INVALID
-        # 外部入力値が不正、または EsSearchBodyPolicy に拒否された場合の処理
+        # 外部入力値が不正、または SearchBodyPolicy に拒否された場合の処理
     end
 
 戻り値。
@@ -731,7 +732,7 @@ status は SearchResult の定数で判定する。
 
     AreSearch::SearchResult::STATUS_PARAMS_INVALID
         値は :params_invalid。
-        外部入力として使用する値が制約に合わない、または EsSearchBodyPolicy が検索bodyを拒否したため、
+        外部入力として使用する値が制約に合わない、または SearchBodyPolicy が検索bodyを拒否したため、
         検索を実行せず空結果を返した。
 
     AreSearch::SearchResult::STATUS_INDEX_NOT_FOUND
@@ -757,7 +758,7 @@ ActiveRecord のレコードと、対応する Elasticsearch hit の情報を検
         puts record.title
         puts hit[:index]
         puts hit[:id]
-        puts hit[:target_name]
+        puts hit[:index_target_name]
         puts hit[:source][:title]
         puts hit[:fields][:runtime_status]
 
@@ -789,14 +790,14 @@ hit は次のキーを持つ。
         Elasticsearch が返した highlight。
         フィールド名は Symbol。対象 hit に値が無い場合は空 Hash。
 
-    :target_name
-        レコードを復元した IndexTarget の target_name。
+    :index_target_name
+        レコードを復元した IndexTarget の index_target_name。
 
 1件でも _source が無い場合、ActiveRecord への復元は行わず、records と records_with_hit は空になる。
 Elasticsearch のレスポンスは raw_response に残り、総件数は records.es_total_count で確認できる。
 
 
-## 11-5. raw_response
+## 11-4. raw_response
 ----------------------------------------------------------------
 
 Elasticsearch の生レスポンスを返す。

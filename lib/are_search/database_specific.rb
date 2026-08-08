@@ -16,7 +16,8 @@ module AreSearch
             ar_model_class_name:,
             index_target_name:,
             ar_instance_key:,
-            es_index_name:,
+            index_alias_name:,
+            sync_stage_name:,
             request_sequence:,
             request_sequence_at:
         )

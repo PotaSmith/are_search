@@ -53,9 +53,9 @@ RSpec.describe AreSearch do
         end
     end
 
-    describe ".join_es_index_name" do
+    describe ".join_index_name" do
         it "index 名の要素を AreSearch の区切り文字で連結する" do
-            result = described_class.join_es_index_name(
+            result = described_class.join_index_name(
                 "test",
                 "articles",
                 "*",
@@ -66,17 +66,28 @@ RSpec.describe AreSearch do
     end
 
     describe ".delete_physical_index!" do
+        it "物理 index 名でなければ拒否する" do
+            expect(AreSearch::IndexManager)
+                .not_to receive(:delete_physical_index!)
+
+            expect do
+                described_class.delete_physical_index!(
+                    "test__articles__default",
+                )
+            end.to raise_error(ArgumentError, "不正な物理 index 名です")
+        end
+
         it "物理 index の削除を IndexManager へ委譲する" do
-            physical_es_index_name =
+            physical_index_name =
                 "test__articles__default__2026_07_04_10_00_00_000000"
 
             expect(AreSearch::IndexManager)
-                .to receive(:es_delete_index!)
-                .with(physical_es_index_name)
+                .to receive(:delete_physical_index!)
+                .with(physical_index_name)
                 .and_return(:deleted)
 
             result = described_class.delete_physical_index!(
-                physical_es_index_name,
+                physical_index_name,
             )
 
             expect(result).to eq(:deleted)

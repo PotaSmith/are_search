@@ -77,11 +77,11 @@ module AreSearch
             # 指定されたindex targetと同じElasticsearch indexを指すか確認する。
             def validate_mlt_index_target_options!(instance_options, index_target_options)
                 instance_index_target = instance_options.class.are_search_index_target(
-                    index_target_options.target_name,
+                    index_target_options.index_target_name,
                 )
 
                 if instance_index_target.nil? ||
-                        instance_index_target.are_search_es_index_name != index_target_options.are_search_es_index_name
+                        instance_index_target.are_search_index_alias_name != index_target_options.are_search_index_alias_name
                     raise ArgumentError,
                         "instance から取得した index_target と指定された index_target が一致していません"
                 end
@@ -103,7 +103,7 @@ module AreSearch
             # MLTの基準targetにあるtextまたはkeyword型フィールドだけを作る。
             def build_mlt_valid_fields(index_target)
                 valid_fields = []
-                properties = index_target.are_search_es_mappings[:properties]
+                properties = index_target.are_search_index_mappings[:properties]
 
                 properties.each do |field_name, field_options|
                     next if field_options.instance_of?(Hash) == false

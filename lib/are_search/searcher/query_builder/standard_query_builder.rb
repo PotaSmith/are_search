@@ -111,7 +111,7 @@ module AreSearch
                 {
                     combined_fields: {
                         query:    query_string,
-                        fields:   build_es_search_fields(fields_opts),
+                        fields:   build_search_fields(fields_opts),
                         operator: "and",
                     },
                 }
@@ -123,7 +123,7 @@ module AreSearch
                 {
                     simple_query_string: {
                         query:            query_string,
-                        fields:           build_es_search_fields(fields_opts),
+                        fields:           build_search_fields(fields_opts),
                         default_operator: "and",
                         flags:            SIMPLE_QUERY_STRING_FLAGS,
                     },
@@ -132,18 +132,18 @@ module AreSearch
 
             # SearchOptionValidatorで共通形式へ正規化済みのfieldsを、
             # Elasticsearchの全文検索用文字列配列へ変換する。
-            def build_es_search_fields(fields_opts)
+            def build_search_fields(fields_opts)
                 es_fields = []
 
                 if fields_opts.instance_of?(Array)
                     fields_opts.each do |field|
-                        es_fields << build_es_search_field(field, nil)
+                        es_fields << build_search_field(field, nil)
                     end
 
                     return es_fields
                 elsif fields_opts.instance_of?(Hash)
                     fields_opts.each do |field, boost|
-                        es_fields << build_es_search_field(field, boost)
+                        es_fields << build_search_field(field, boost)
                     end
                 else
                     raise ArgumentError, "定義とデータが一致していません: #{fields_opts.inspect}"
@@ -153,7 +153,7 @@ module AreSearch
             end
 
             # フィールド名と任意のboostからElasticsearchのfields要素を作る。
-            def build_es_search_field(field, boost)
+            def build_search_field(field, boost)
                 return field.to_s if boost.nil?
 
                 "#{field}^#{boost}"

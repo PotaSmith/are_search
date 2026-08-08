@@ -4,6 +4,20 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-08
+
+- このバージョンは、reindex、DB、jobの作り直しが必要だが、バージョンが1.0.0以下なので移行手順は用意しない
+- 命名の大幅な整理
+- 大規模データを既存aliasへ容量・件数上限付きで投入する `BulkIndexer` を追加。checkpointによる中断再開、失敗IDのrecover、永続ディレクトリへの結果記録、実行用Ruby/shellサンプルgeneratorを追加
+- 新しいIndexTargetをBulkIndexerで構築するため、Elasticsearch上に空の物理indexを作成してaliasを接続する `IndexTarget#are_search_create_index` を追加。既存aliasとSearchable継承子クラスからの実行を拒否
+- BulkIndexer実行時に対象IndexTargetのalias存在を確認し、未作成indexへのbulk投入を開始しないよう変更
+
+- `index_prefix`、`are_search_ar_table_name`、`index_target_name`、mappingsのフィールド名、`sync_stage_name` の名前検査を共通化し、小文字英数字の単語を単一のアンダーバーで区切る形式へ変更。`index_prefix` の空文字列指定を廃止し、`are_search_index_mappings` 内の全Hash keyをSymbol必須として検査するよう整理
+- sync request を `IndexTarget × sync_stage_name` 単位へ変更し、全stageを定義する `are_search_all_sync_stage_names`、保存時に要求を作る `are_search_sync_stage_names_on_enqueue`、commit後に開始する `are_search_sync_stage_names_on_after_commit` を追加。`are_search_index_data` は `index_target_name` と `sync_stage_name` を受け取るよう変更
+- reindex は `are_search_all_sync_stage_names` の先頭または末尾を `stage_position: :first` / `:last` で明示して実行し、`run_sync_requests` は処理対象のstage名を引数で指定するよう変更
+- reindex、clean up、index guard の戻り値を、成否・失敗理由・停止段階・完了段階を持つHashへ統一。alias更新APIがaction失敗を返した場合は例外にせず失敗結果として返すよう変更
+- Searchable を継承した子クラスからのreindexを拒否し、独立した継承系統の上位モデル間で同じElasticsearch aliasが重複する場合は全reindexを開始しないよう変更
+- 同期試行回数の命名を整理し、`max_retry_count` を `max_sync_try_count`、`force_attempt_count` を `force_try_count`、`force_attempted_at` を `last_force_try_at`、`max_force_attempt_count` を `max_force_try_count` へ変更
 - `request_sequence_provider` と `RequestSequenceProvider` を、DB固有処理の差し替え口となる `database_specific` と `DatabaseSpecific` へ変更し、同期要求の採番とupsertを `PostgreSQLDatabaseSpecific` へ統合
 - 検索時の `runtime_mappings` を追加。検索実行時は `enable_runtime_mappings: true` 指定時以外は例外
 - `response.fields` を追加し、Elasticsearchの `fields` へString配列を渡せるよう変更。検索結果の `records_with_hit` に `fields` を追加
@@ -16,9 +30,9 @@
 ## [0.7.0] - 2026-07-31
 
 - 標準検索オプションのフィールド判定を `properties` 直下に限定し、`runtime` は正式な対応対象外とした
-- `SearchResult#highlights`、`SearchResult#hit_source`、`records_with_target_names` を廃止し、各レコードと対応する `_index`、`_id`、`_source`、highlight、target_name を検索順で返す `records_with_hit` へ統合
+- `SearchResult#highlights`、`SearchResult#hit_source`、`records_with_index_target_names` を廃止し、各レコードと対応する `_index`、`_id`、`_source`、highlight、index_target_name を検索順で返す `records_with_hit` へ統合
 - `SearchResult#aggs` を、集計名指定時は表示用キー、省略時は内部キーの簡易集計結果を返すメソッドへ変更。`key` がある bucket は `[key, doc_count]`、ない bucket は `doc_count` として返す
-- `Searcher.search` の標準検索オプションを `queries` に統一し、トップレベルの `query_string`、`fields`、`query_type` を廃止。`IndexTarget#are_search_es_search` の引数は維持し、内部で1件の `queries` へ変換するよう変更
+- `Searcher.search` の標準検索オプションを `queries` に統一し、トップレベルの `query_string`、`fields`、`query_type` を廃止。`IndexTarget#are_search_search` の引数は維持し、内部で1件の `queries` へ変換するよう変更
 - `AreSearch.multi_search` と `AreSearch.more_like_this` を削除し、複数 target 検索と More Like This 検索の入口を `Searcher.search` へ統一
 
 ## [0.6.0] - 2026-07-29
@@ -43,13 +57,13 @@
 
 ## [0.4.0] - 2026-07-18
 
-- Elasticsearch index 名を `{index_prefix}__{are_search_ar_table_name}__{target_name}` 形式へ変更し、物理 index の timestamp 前も `__` へ統一。index 名の各要素を小文字英字で始まり、小文字英字とアンダーバーだけを使用する形式に限定。※reindexが必要
+- Elasticsearch index 名を `{index_prefix}__{are_search_ar_table_name}__{index_target_name}` 形式へ変更し、物理 index の timestamp 前も `__` へ統一。index 名の各要素を小文字英字で始まり、小文字英字とアンダーバーだけを使用する形式に限定。※reindexが必要
 - `sort` の Array 形式を廃止し、複数条件は記述順を優先順位とする Hash 形式へ統一
 - `aggs` をフィールド名をキーとする Hash 形式へ変更し、各フィールドの `size` を必須化。`AreSearch.default_aggs_size` を削除
-- index target単位で flock と marker を取得して処理する `are_search_es_with_index_guard` を追加
+- index target単位で flock と marker を取得して処理する `are_search_with_index_guard` を追加
 - Searchable の継承系統と同一 index 名の所有関係を検査し、STIの検索結果復元を調整
 - highlight オプションを整理し、フィールド別設定、`pre_tags`、`post_tags`、`encoder` をそのまま Elasticsearch へ渡すよう変更
-- Elasticsearchへ送信するbodyとmappingフィールド名を検査する `EsSearchBodyPolicy` を追加。標準の `ScriptDenyEsSearchBodyPolicy` はscript系キーを拒否し、利用側でpolicyを差し替え可能
+- Elasticsearchへ送信するbodyとmappingフィールド名を検査する `SearchBodyPolicy` を追加。標準の `ScriptDenySearchBodyPolicy` はscript系キーを拒否し、利用側でpolicyを差し替え可能
 - Elasticsearch clientのスレッドキャッシュにPIDを保持し、fork後は親プロセスから継承したclientを再生成
 - sync request、index marker、状態確認、reindex、clean up 周辺の排他・復旧処理とテストを整理
 

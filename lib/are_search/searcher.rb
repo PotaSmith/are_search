@@ -72,13 +72,13 @@ module AreSearch
             body_for_policy.delete(:runtime_mappings)
             body_for_policy.delete("runtime_mappings")
 
-            if AreSearch.es_search_body_policy.valid?(body_for_policy) == false
+            if AreSearch.search_body_policy.valid?(body_for_policy) == false
                 return search_failure_result(
                     page,
                     per_page,
                     status: SearchResult::STATUS_PARAMS_INVALID,
                     error_class: AreSearch::InvalidSearchBody,
-                    error_message: "検索bodyがes_search_body_policyに拒否されました",
+                    error_message: "検索bodyがsearch_body_policyに拒否されました",
                 )
             end
 
@@ -93,9 +93,9 @@ module AreSearch
                 )
             end
 
-            search_index = index_targets.map(&:are_search_es_index_name).join(",")
+            index = index_targets.map(&:are_search_index_alias_name).join(",")
             # 検索
-            response = AreSearch.client.search(index: search_index, body: body)
+            response = AreSearch::EsAdapter.no_validation_search(index: index, body: body)
 
             build_result(
                 response,
@@ -117,13 +117,13 @@ module AreSearch
 
         def check_index_exists?(index_targets)
             index_targets.all? do |index_target|
-                AreSearch::IndexManager.es_index_alias_exists?(index_target.are_search_es_index_name)
+                index_target.are_search_index_alias_exists?
             end
         end
 
         def index_marked?(index_targets)
             index_targets.any? do |index_target|
-                AreSearch::IndexMarker.marked?(index_target.are_search_es_index_name)
+                index_target.are_search_index_marked?
             end
         end
 
@@ -139,7 +139,7 @@ module AreSearch
             end
 
             index_targets_for_exists_check = index_targets + additional_index_targets
-            index_targets_for_exists_check.uniq { |index_target| index_target.are_search_es_index_name }
+            index_targets_for_exists_check.uniq { |index_target| index_target.are_search_index_alias_name }
         end
 
         # index_targets から重複しないモデル一覧を作る
@@ -168,7 +168,7 @@ module AreSearch
             index_targets.each do |index_target|
                 index_targets.each do |other_index_target|
                     next if index_target == other_index_target
-                    next unless index_target.are_search_es_index_name.to_s == other_index_target.are_search_es_index_name.to_s
+                    next unless index_target.are_search_index_alias_name.to_s == other_index_target.are_search_index_alias_name.to_s
 
                     model = index_target.model_class
                     other_model = other_index_target.model_class
@@ -176,7 +176,7 @@ module AreSearch
 
                     raise ArgumentError,
                         "同じ Elasticsearch index に親子関係のあるモデルを同時指定できません: " \
-                        "#{index_target.are_search_es_index_name}: #{other_model.name}, #{model.name}"
+                        "#{index_target.are_search_index_alias_name}: #{other_model.name}, #{model.name}"
                 end
             end
         end
@@ -202,15 +202,15 @@ module AreSearch
             SearchResult.new(paginated, [], {}, {}, status: status)
         end
 
-        # index_targets から { es_index_name => [index_target] } の逆引きマップを組み立てる。
+        # index_targets から { index_alias_name => [index_target] } の逆引きマップを組み立てる。
         # 同じ alias に複数 target がある場合も、候補を指定順で保持する。
         def build_index_to_index_targets(index_targets)
             result = {}
 
             index_targets.each do |index_target|
-                alias_name = index_target.are_search_es_index_name.to_s
-                result[alias_name] ||= []
-                result[alias_name] << index_target
+                index_alias_name = index_target.are_search_index_alias_name.to_s
+                result[index_alias_name] ||= []
+                result[index_alias_name] << index_target
             end
 
             result
@@ -406,7 +406,7 @@ module AreSearch
                         highlight: highlight,
                         source: source,
                         fields: fields,
-                        target_name: index_target.target_name,
+                        index_target_name: index_target.index_target_name,
                     }
                     records          << record
                     records_with_hit << [record, hit_info]
@@ -422,7 +422,7 @@ module AreSearch
         # hit に保存された Searchable 継承系統へ検索対象モデルが含まれるか判定する。
         def hit_matches_index_target?(hit, index_target)
             model_class_names =
-                hit["_source"][AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s]
+                hit["_source"][AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s]
 
             if model_class_names.instance_of?(Array)
                 return model_class_names.include?(index_target.model_class.name)
@@ -434,12 +434,12 @@ module AreSearch
         # index_to_index_targets は alias 名をキーにした index target 候補配列の map。
         def index_targets_for_hit_index(index_to_index_targets, hit_index)
             # Elasticsearch の hit に含まれる物理 index 名から alias 名を復元する。
-            alias_name = AreSearch::IndexDefinition.es_alias_name_from_index_name(hit_index)
+            index_alias_name = AreSearch::IndexDefinition.index_alias_name_from_physical_index_name(hit_index)
 
             # AreSearch の物理 index 命名形式でなければ対応する target はない。
-            return nil if alias_name.nil?
+            return nil if index_alias_name.nil?
 
-            index_to_index_targets[alias_name]
+            index_to_index_targets[index_alias_name]
         end
 
         def build_display_total_count(es_total_count, hits, records)

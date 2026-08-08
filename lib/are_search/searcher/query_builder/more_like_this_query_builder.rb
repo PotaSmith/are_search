@@ -63,7 +63,7 @@ module AreSearch
                     fields: mlt_opts[:fields].map(&:to_s),
                     like: [
                         {
-                            _index: index_target.are_search_es_index_name,
+                            _index: index_target.are_search_index_alias_name,
                             _id:    instance.id.to_s,
                         },
                     ],

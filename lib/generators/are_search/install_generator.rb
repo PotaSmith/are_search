@@ -17,10 +17,6 @@ module AreSearch
                 migration_template "create_are_search_tables.rb", "db/migrate/create_are_search_tables.rb"
             end
 
-            def copy_rake_task
-                copy_file "are_search_retry_alert.rake", "lib/tasks/are_search_retry_alert.rake"
-            end
-
             def self.next_migration_number(dirname)
                 next_migration_number = current_migration_number(dirname) + 1
                 ActiveRecord::Migration.next_migration_number(next_migration_number)

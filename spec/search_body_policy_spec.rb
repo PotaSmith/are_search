@@ -2,7 +2,7 @@
 
 require "spec_helper"
 
-RSpec.describe AreSearch::EsSearchBodyPolicy do
+RSpec.describe AreSearch::SearchBodyPolicy do
     describe ".valid?" do
         it "継承クラスが実装しなければ例外にする" do
             policy_class = Class.new(described_class)
@@ -30,7 +30,7 @@ RSpec.describe AreSearch::EsSearchBodyPolicy do
     end
 end
 
-RSpec.describe AreSearch::ScriptDenyEsSearchBodyPolicy do
+RSpec.describe AreSearch::ScriptDenySearchBodyPolicy do
     describe ".invalid_key?" do
         it "script に完全一致するキーを拒否する" do
             expect(described_class.invalid_key?(:script)).to eq(true)

@@ -3,46 +3,21 @@
 module AreSearch
     class IndexTarget
 
-        attr_reader :model_class, :target_name
+        attr_reader :model_class, :index_target_name
 
-        # モデルと target_name を保持し、index 名に使用できない値を拒否する。
-        def initialize(model_class, target_name = :default)
-            raise ArgumentError, "model_class が必要です" if model_class.nil?
-            raise ArgumentError, "target name が必要です" if target_name.nil?
-
-            ar_table_name = model_class.are_search_ar_table_name
-            unless AreSearch::IndexDefinition.valid_es_index_name_element?(ar_table_name)
-                raise ArgumentError,
-                    "are_search_ar_table_name は小文字の英字で始まり、小文字の英字とアンダーバーだけを使用した String を返してください: #{ar_table_name.inspect}"
-            end
-
-            if ar_table_name.include?(AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER)
-                raise ArgumentError,
-                    "are_search_ar_table_name に #{AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER.inspect} は使用できません"
-            end
-
-            target_name_string = target_name.to_s
-            unless AreSearch::IndexDefinition.valid_es_index_name_element?(target_name_string)
-                raise ArgumentError,
-                    "target name は小文字の英字で始まり、小文字の英字とアンダーバーだけを使用してください: #{target_name.inspect}"
-            end
-
-            if target_name_string.include?(AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER)
-                raise ArgumentError,
-                    "target name に #{AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER.inspect} は使用できません"
-            end
-
+        # SearchableValidator で検査済みのモデルと index_target_name を保持する。
+        def initialize(model_class, index_target_name = :default)
             @model_class = model_class
-            @target_name = target_name.to_sym
-            @ar_table_name = ar_table_name
+            @index_target_name = index_target_name
+            @ar_table_name = model_class.are_search_ar_table_name
         end
 
-        # 同じモデルと target_name を持つ IndexTarget を同一targetとして扱う。
+        # 同じモデルと index_target_name を持つ IndexTarget を同一targetとして扱う。
         def ==(other)
             return false unless other.instance_of?(self.class)
             return false unless model_class == other.model_class
 
-            target_name == other.target_name
+            index_target_name == other.index_target_name
         end
 
         # HashのkeyとArray#uniqでも同じ同一target判定を使用する。
@@ -54,44 +29,39 @@ module AreSearch
         def hash
             [
                 model_class,
-                target_name,
+                index_target_name,
             ].hash
         end
 
-        # alias名: {prefix}__{are_search_ar_table_name}__{target_name}
+        # alias名: {prefix}__{are_search_ar_table_name}__{index_target_name}
         # 検索・index・delete・sync 等、既存の呼び出し元はこの名前を参照する。
         # prefix は config/initializers/are_search.rb で設定。
-        def are_search_es_index_name
+        def are_search_index_alias_name
             [
                 AreSearch.index_prefix,
                 @ar_table_name,
-                target_name,
-            ].join(AreSearch::IndexDefinition::ES_INDEX_NAME_DELIMITER)
+                index_target_name,
+            ].join(AreSearch::IndexDefinition::INDEX_NAME_DELIMITER)
         end
 
         # index作成時の index settings
-        def are_search_es_index_settings
+        def are_search_index_settings
             target_mappings[:index_settings]
         end
 
-        # ユーザが定義した are_search_es_mappings
-        def are_search_es_mappings
+        # ユーザが定義した are_search_index_mappings
+        def are_search_index_mappings
             mappings = {}
 
             target_mappings.each do |key, value|
                 next if key == :index_settings
 
                 if key == :properties
-                    if value.instance_of?(Hash)
-                        new_properties = {}
-                        value.each do |property_key, property_value|
-                            new_properties[property_key] = property_value
-                        end
-                        mappings[key] = new_properties
-                    else
-                        # 事前チェックがあるから本来到達しないはず
-                        raise ArgumentError, "properties が hashではありません。"
+                    new_properties = {}
+                    value.each do |property_key, property_value|
+                        new_properties[property_key] = property_value
                     end
+                    mappings[key] = new_properties
                 else
                     mappings[key] = value
                 end
@@ -102,56 +72,86 @@ module AreSearch
 
         # Elasticsearch に渡す mappings を作る。
         # 予約フィールドを properties と _source.includes に追加する。
-        def are_search_es_mappings_for_index
-            mappings = are_search_es_mappings
-
-            return mappings unless mappings.key?(:properties)
+        def are_search_index_mappings_for_index
+            mappings = are_search_index_mappings
 
             add_reserved_source_includes!(mappings)
 
-            mappings[:properties][AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME] = AreSearch::IndexDefinition::RESERVED_ES_FIELD_NAME_SETTING
-            mappings[:properties][AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME] = AreSearch::IndexDefinition::RESERVED_ES_FIELD_NAME_SETTING
+            mappings[:properties][AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME] = AreSearch::IndexDefinition::RESERVED_INDEX_FIELD_NAME_SETTING
+            mappings[:properties][AreSearch::IndexDefinition::RESERVED_AR_INSTANCE_KEY_FIELD_NAME] = AreSearch::IndexDefinition::RESERVED_INDEX_FIELD_NAME_SETTING
 
             mappings
         end
 
         # 初期index作成中、reindex 処理中、または異常終了の痕跡があるかを返す。
-        def are_search_es_index_marked?
-            AreSearch::IndexMarker.marked?(are_search_es_index_name)
+        def are_search_index_marked?
+            AreSearch::IndexMarker.marked?(are_search_index_alias_name)
+        end
+
+        # 対象の Elasticsearch alias が存在するかを返す。
+        def are_search_index_alias_exists?
+            AreSearch::IndexManager.index_alias_exists?(are_search_index_alias_name)
         end
 
         # alias が指していない古い物理インデックスをすべて削除する（currentのみ残す）。
-        def are_search_es_clean_up
-            AreSearch::IndexManager.es_clean_up(are_search_es_index_name)
+        def are_search_clean_up
+            AreSearch::IndexManager.index_clean_up(are_search_index_alias_name)
         end
 
         # 利用側の処理を、この index target の flock と marker でガードする。
-        # block 内から are_search_es_sync! などの低レベル操作を実行する用途を想定する。
-        def are_search_es_with_index_guard(operation:, &block)
-            AreSearch::IndexManager.es_with_index_guard(
-                are_search_es_index_name,
+        # block 内から are_search_index_or_delete! などの低レベル操作を実行する用途を想定する。
+        def are_search_with_index_guard(operation:, &block)
+            result = {
+                result: :not_success,
+                message: '',
+                stop_phase: nil,
+                done_phases: [],
+            }
+
+            AreSearch::IndexManager.with_index_guard(
+                are_search_index_alias_name,
+                result,
                 operation: operation,
                 &block
             )
+
+            result
         end
 
-        # 全件をElasticsearchに投入する（移行時・スキーマ変更時に実行する）。
-        #
-        # flock と IndexMarker の管理は IndexManager.es_reindex に委ね、
-        # その内側で create とバッチ投入を実行する。
-        #
-        # es_reindex は別プロセスが実行中で flock を取得できなかった場合に false を返す。
-        #
-        # es_reindex の内側（flock 取得済み・IndexMarker 作成済み）で
-        # 新しい physical index を作成し、その physical index へ bulk 投入する。
-        # block が正常終了し、返された失敗 ID 配列が空の場合のみ、
-        # IndexManager 側で alias の切り替えを試みる。
-        #
-        # @return [Array<String>, false]
-        #   Array<String> : インデックス失敗した ID の配列。空なら全件成功。
-        #   false         : 別プロセスが reindex 実行中で、今回は未実行。
-        def are_search_es_reindex
-            AreSearch::Reindexer.reindex_index_target(self)
+        # Elasticsearch上に存在しないIndexTargetの空indexを作成する。
+        # 既存indexの置き換えには使用せず、aliasが存在する場合は拒否する。
+        def are_search_create_index
+            if are_search_index_alias_exists?
+                raise AreSearch::Error,
+                    "index は既に存在します: #{are_search_index_alias_name}"
+            end
+
+            # 同じ alias を共有する上位モデルの全レコードを欠落させないため、
+            # Searchable を継承した子クラスからの reindex を拒否する。
+            if model_class.superclass&.include?(AreSearch::Searchable)
+                raise AreSearch::Error,
+                    "Searchable を継承した子クラスから create_index は実行できません: #{model_class.name}"
+            end
+
+            result = {
+                result:      :not_success,
+                message:     '',
+                failed_ids:  [],
+                stop_phase:  nil,
+                done_phases: [],
+            }
+
+            AreSearch::IndexManager.reindex(
+                are_search_index_alias_name,
+                are_search_index_settings,
+                are_search_index_mappings_for_index,
+                "create_index",
+                result,
+            ) do
+                true
+            end
+
+            result
         end
 
         # 単一の index target を Searcher で検索する。
@@ -160,7 +160,7 @@ module AreSearch
         #
         # @return [SearchResult]
         #
-        def are_search_es_search(query, **options)
+        def are_search_search(query, **options)
             unsupported_options = []
             [:model_relations, :queries].each do |option_name|
                 if options.key?(option_name)
@@ -169,7 +169,7 @@ module AreSearch
             end
             if unsupported_options.any?
                 raise ArgumentError,
-                    "are_search_es_search に未知のオプションが指定されています: #{unsupported_options.inspect}"
+                    "are_search_search に未知のオプションが指定されています: #{unsupported_options.inspect}"
             end
 
             model = model_class
@@ -189,11 +189,7 @@ module AreSearch
                 }
             end
 
-            AreSearch::Searcher.search(
-                index_targets,
-                queries: [query_options],
-                **options,
-            )
+            AreSearch::Searcher.search(index_targets, queries: [query_options], **options)
         end
 
         # 指定した ar_instance_key のドキュメントをElasticsearchから強制的にdeleteする。
@@ -203,14 +199,16 @@ module AreSearch
         # Elasticsearchクライアントの例外はそのまま伝播させる。
         #
         # @param ar_instance_key [Object] 削除対象のid
-        # @return [Object] Elasticsearchクライアントの戻り値
-        def are_search_es_delete!(ar_instance_key)
-            AreSearch.client.delete(
-                index: are_search_es_index_name,
-                id:    ar_instance_key.to_s,
+        # @return [nil] delete成功時と対象不存在時は nil
+        def are_search_delete!(ar_instance_key)
+            result = AreSearch::EsAdapter.delete(
+                index_alias_name: are_search_index_alias_name,
+                id:               ar_instance_key.to_s,
             )
-        rescue Elastic::Transport::Transport::Errors::NotFound
-            # すでに存在しない場合は無視
+
+            if result == AreSearch::EsAdapter.not_success
+                raise AreSearch::Error, "Elasticsearch document delete failed"
+            end
         end
 
         # sync_request 1件分の同期を実行する
@@ -218,25 +216,32 @@ module AreSearch
         # 先頭で reindex 中かを確認し、reindex 中であれば同期をスキップする。
         # スキップ時は外から見ると成功扱い（例外を出さず正常 return）。
         # SyncRequest は消えず、last_error に reindex 中である旨を記録する。
-        # retry_count は増やさない。
+        # *_try_count は増やさない。
         #
         # reindex 中でない場合は DBから ar_instance_key で再取得し、
         # 存在すればindex、存在しなければdeleteする。
-        # 成功時はsync_requestを削除し、失敗時はretry_count・last_errorを更新する。
+        # 成功時はsync_requestを削除し、失敗時は last_errorを更新する。
         #
-        # reraise: true の場合、失敗時にretry_count・last_errorを更新した上で
+        # reraise: true の場合、失敗時に last_error を更新した上で
         # 例外を呼び出し元へ再送出する。SyncJob から retry_on を効かせるために使う。
         # reraise: false（デフォルト）の場合は例外を握りつぶす。rake タスクの
         # run_sync_requests は1件の失敗で全体を止めないため、こちらを使う。
         #
-        def are_search_es_sync(ar_instance_key, reraise: false)
-            AreSearch::RecordSync.sync(model_class.name, target_name, ar_instance_key, are_search_es_index_name, SecureRandom.uuid, reraise: reraise)
+        def are_search_sync(ar_instance_key, sync_stage_name, reraise: false)
+            AreSearch::SyncRequest.are_search_find_and_try_sync(
+                model_class.name,
+                ar_instance_key,
+                are_search_index_alias_name,
+                sync_stage_name,
+                SecureRandom.uuid,
+                reraise: reraise,
+            )
         end
 
         private
 
         # 利用側の _source 設定をコピーし、予約フィールドを includes に追加する。
-        # 元の are_search_es_mappings 定義は変更しない。
+        # 元の are_search_index_mappings 定義は変更しない。
         def add_reserved_source_includes!(mappings)
             source_settings = {}
 
@@ -255,7 +260,7 @@ module AreSearch
                 source_includes << configured_includes
             end
 
-            AreSearch::IndexDefinition::RESERVED_ES_FIELD_NAMES.each do |reserved_field_name|
+            AreSearch::IndexDefinition::RESERVED_INDEX_FIELD_NAMES.each do |reserved_field_name|
                 next if source_includes_field?(source_includes, reserved_field_name)
 
                 source_includes << reserved_field_name
@@ -275,8 +280,7 @@ module AreSearch
         end
 
         def target_mappings
-            model_class.are_search_es_mappings[target_name]
+            model_class.are_search_index_mappings[index_target_name]
         end
     end
 end
-

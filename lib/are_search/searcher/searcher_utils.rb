@@ -25,7 +25,7 @@ module AreSearch
 
             {
                 terms: {
-                    AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => model_class_names,
+                    AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME => model_class_names,
                 },
             }
         end

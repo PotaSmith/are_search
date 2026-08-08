@@ -441,10 +441,9 @@ module AreSearch
                         "#{path} は symで指定してください: #{value.inspect}"
                 end
 
-                if value.match?(/\A[a-z]([a-z0-9_]*[a-z0-9])?\z/) == false
+                if AreSearch::IndexDefinition.valid_index_field_name?(value) == false
                     raise ArgumentError,
-                        "#{path} は小文字英字で始まり、小文字英数字とアンダーバーを使用し、" \
-                        "小文字英数字で終わる Symbol で指定してください: #{value.inspect}"
+                        "#{path} は有効な名前で指定してください: #{value.inspect}"
                 end
 
                 value

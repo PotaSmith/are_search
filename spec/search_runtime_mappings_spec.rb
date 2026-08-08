@@ -19,7 +19,7 @@ RSpec.describe "search runtime mappings" do
                 super
             end
 
-            def self.are_search_es_mappings
+            def self.are_search_index_mappings
                 {
                     default: {
                         index_settings: {
@@ -57,7 +57,7 @@ RSpec.describe "search runtime mappings" do
             .and_return("test")
 
         allow(AreSearch::IndexManager)
-            .to receive(:es_index_alias_exists?)
+            .to receive(:index_alias_exists?)
             .with("test__articles__default")
             .and_return(true)
     end
@@ -368,7 +368,7 @@ RSpec.describe "search runtime mappings" do
             },
         }
 
-        expect(AreSearch.es_search_body_policy)
+        expect(AreSearch.search_body_policy)
             .to receive(:valid?) do |body_for_policy|
                 expect(body_for_policy).not_to have_key(:runtime_mappings)
 
@@ -411,7 +411,7 @@ RSpec.describe "search runtime mappings" do
             },
         }
 
-        expect(AreSearch.es_search_body_policy)
+        expect(AreSearch.search_body_policy)
             .to receive(:valid?) do |body_for_policy|
                 expect(body_for_policy).not_to have_key("runtime_mappings")
                 expect(body_for_policy["query"]).to eq(

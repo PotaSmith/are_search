@@ -29,7 +29,7 @@ RSpec.describe "search paging" do
                 "articles"
             end
 
-            def self.are_search_es_mappings
+            def self.are_search_index_mappings
                 {
                     default: {
                         index_settings: {
@@ -49,8 +49,8 @@ RSpec.describe "search paging" do
             end
 
             # 実際のSearchableモデルと同じ入口からIndexTargetを解決する。
-            def self.are_search_index_target(target_name)
-                AreSearch::IndexTarget.new(self, target_name)
+            def self.are_search_index_target(index_target_name)
+                AreSearch::IndexTarget.new(self, index_target_name)
             end
 
             def initialize(id = 1)
@@ -77,21 +77,23 @@ RSpec.describe "search paging" do
     let(:article_index_target) do
         double(
             "article_index_target",
-            model_class:                  article_model,
-            target_name:                  :default,
-            are_search_es_index_name:     "test__articles__default",
-            are_search_es_mappings:       article_mappings,
-            are_search_es_index_settings: article_index_settings,
+            model_class:                       article_model,
+            index_target_name:                       :default,
+            are_search_index_alias_name:          "test__articles__default",
+            are_search_index_alias_exists?: true,
+            are_search_index_mappings:            article_mappings,
+            are_search_index_settings: article_index_settings,
         )
     end
     let(:document_index_target) do
         double(
             "document_index_target",
-            model_class:                  document_model,
-            target_name:                  :default,
-            are_search_es_index_name:     "test__documents__default",
-            are_search_es_mappings:       document_mappings,
-            are_search_es_index_settings: document_index_settings,
+            model_class:                       document_model,
+            index_target_name:                       :default,
+            are_search_index_alias_name:          "test__documents__default",
+            are_search_index_alias_exists?: true,
+            are_search_index_mappings:            document_mappings,
+            are_search_index_settings: document_index_settings,
         )
     end
     let(:article_index_settings) do
@@ -103,12 +105,12 @@ RSpec.describe "search paging" do
 
     before do
         allow(AreSearch::IndexManager)
-            .to receive(:es_index_alias_exists?)
+            .to receive(:index_alias_exists?)
             .with("test__articles__default")
             .and_return(true)
 
         allow(AreSearch::IndexManager)
-            .to receive(:es_index_alias_exists?)
+            .to receive(:index_alias_exists?)
             .with("test__documents__default")
             .and_return(true)
     end
@@ -223,16 +225,16 @@ RSpec.describe "search paging" do
                         "_index"  => "test__articles__default__2026_07_03_03_10_00_123456",
                         "_id"     => "1",
                         "_source" => {
-                            AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
-                            AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s     => "1",
+                            AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
+                            AreSearch::IndexDefinition::RESERVED_AR_INSTANCE_KEY_FIELD_NAME.to_s     => "1",
                         },
                     },
                     {
                         "_index"  => "test__articles__default__2026_07_03_03_10_00_123456",
                         "_id"     => "2",
                         "_source" => {
-                            AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
-                            AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s     => "2",
+                            AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
+                            AreSearch::IndexDefinition::RESERVED_AR_INSTANCE_KEY_FIELD_NAME.to_s     => "2",
                         },
                     },
                 ],
@@ -270,12 +272,12 @@ RSpec.describe "search paging" do
                     index: "test__articles__default__2026_07_03_03_10_00_123456",
                     id: "1",
                     source: {
-                        AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => ["Article"],
-                        AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME => "1",
+                        AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME => ["Article"],
+                        AreSearch::IndexDefinition::RESERVED_AR_INSTANCE_KEY_FIELD_NAME => "1",
                     },
                     highlight: {},
                     fields: {},
-                    target_name: :default,
+                    index_target_name: :default,
                 },
             ],
         ])
@@ -325,7 +327,7 @@ RSpec.describe "search paging" do
                         "_index" => "test__articles__default__2026_07_03_03_10_00_123456",
                         "_id" => "1",
                         "_source" => {
-                            AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
+                            AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
                         },
                     },
                     {
@@ -704,7 +706,7 @@ RSpec.describe "search paging" do
                 expect(args[:body].dig(:query, :bool, :filter)).to eq([
                     {
                         terms: {
-                            AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME =>
+                            AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME =>
                                 ["Article"],
                         },
                     },
@@ -766,7 +768,7 @@ RSpec.describe "search paging" do
                     },
                     {
                         terms: {
-                            AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME =>
+                            AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME =>
                                 ["Article", "Document"],
                         },
                     },
@@ -817,7 +819,7 @@ RSpec.describe "search paging" do
                     },
                     {
                         terms: {
-                            AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME =>
+                            AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME =>
                                 ["Article"],
                         },
                     },

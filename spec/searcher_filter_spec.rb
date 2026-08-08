@@ -10,10 +10,11 @@ RSpec.describe AreSearch::Searcher, "filters" do
     let(:index_target) do
         double(
             "index_target",
-            model_class:                  model_class,
-            target_name:                  :default,
-            are_search_es_index_name:     "test__sync_requests__default",
-            are_search_es_mappings:       {
+            model_class:                       model_class,
+            index_target_name:                       :default,
+            are_search_index_alias_name:          "test__sync_requests__default",
+            are_search_index_alias_exists?: true,
+            are_search_index_mappings:            {
                 properties: {
                     search_text:         { type: "text" },
                     ar_model_class_name: { type: "keyword" },
@@ -22,7 +23,7 @@ RSpec.describe AreSearch::Searcher, "filters" do
                     score:               { type: "float" },
                 },
             },
-            are_search_es_index_settings: {
+            are_search_index_settings: {
                 max_result_window: 2_000,
             },
         )
@@ -36,11 +37,6 @@ RSpec.describe AreSearch::Searcher, "filters" do
         allow(model_class)
             .to receive(:include?)
             .with(AreSearch::Searchable)
-            .and_return(true)
-
-        allow(AreSearch::IndexManager)
-            .to receive(:es_index_alias_exists?)
-            .with("test__sync_requests__default")
             .and_return(true)
 
         allow(AreSearch)
@@ -412,7 +408,8 @@ RSpec.describe AreSearch::Searcher, "filters" do
             ar_model_class_name: "Article",
             index_target_name:   "default",
             ar_instance_key:     "1",
-            es_index_name:       "test__articles__default",
+            index_alias_name:       "test__articles__default",
+            sync_stage_name:          "default",
             request_sequence:    1,
             request_sequence_at: Time.zone.now,
             last_error:          nil,
@@ -421,7 +418,8 @@ RSpec.describe AreSearch::Searcher, "filters" do
             ar_model_class_name: "Article",
             index_target_name:   "default",
             ar_instance_key:     "2",
-            es_index_name:       "test__articles__default",
+            index_alias_name:       "test__articles__default",
+            sync_stage_name:          "default",
             request_sequence:    2,
             request_sequence_at: Time.zone.now,
             last_error:          "blocked",
@@ -434,8 +432,8 @@ RSpec.describe AreSearch::Searcher, "filters" do
                 "_index" => "test__sync_requests__default__2026_07_03_03_10_00_123456",
                 "_id" => record.id.to_s,
                 "_source" => {
-                    AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => model_class.name,
-                    AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME.to_s => record.id.to_s,
+                    AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => model_class.name,
+                    AreSearch::IndexDefinition::RESERVED_AR_INSTANCE_KEY_FIELD_NAME.to_s => record.id.to_s,
                 },
             }
         end

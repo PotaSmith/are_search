@@ -3,25 +3,25 @@
 require "spec_helper"
 require_relative "../lib/are_search/rake_utils"
 
-RSpec.describe AreSearch::RakeUtils do
-    describe ".searchable_index_target_for_reindex" do
+RSpec.describe AreSearch::RakeUtils::ReindexAllForEsVersionUp do
+    describe ".searchable_index_targets_for_reindex" do
         let(:application) { double("application", eager_load!: true) }
         let(:upper_target) do
             double(
                 "upper_target",
-                are_search_es_index_name: "test__articles__default",
+                are_search_index_alias_name: "test__articles__default",
             )
         end
         let(:lower_target) do
             double(
                 "lower_target",
-                are_search_es_index_name: "test__articles__default",
+                are_search_index_alias_name: "test__articles__default",
             )
         end
         let(:other_target) do
             double(
                 "other_target",
-                are_search_es_index_name: "test__documents__default",
+                are_search_index_alias_name: "test__documents__default",
             )
         end
         let(:upper_model) do
@@ -81,27 +81,43 @@ RSpec.describe AreSearch::RakeUtils do
             expect(lower_model)
                 .not_to receive(:are_search_index_targets)
 
-            result = described_class.searchable_index_target_for_reindex
+            result = described_class.searchable_index_targets_for_reindex
 
             expect(result).to eq([
                 other_target,
                 upper_target,
             ])
         end
-    end
 
-    describe ".validate_searchable_index_name_ownership" do
+        it "独立した上位モデルのindex名が重複していれば拒否する" do
+            allow(other_model)
+                .to receive(:are_search_index_targets)
+                .and_return([upper_target])
+
+            expect do
+                described_class.searchable_index_targets_for_reindex
+            end.to raise_error(
+                AreSearch::Error,
+                "[AreSearch] reindex 対象の index が複数の上位モデルで重複しています: " \
+                    "test__articles__default",
+            )
+        end
+    end
+end
+
+RSpec.describe AreSearch::RakeUtils::CheckAllModels do
+    describe ".validate_searchable_index_alias_name_ownership" do
         let(:application) { double("application", eager_load!: true) }
         let(:shared_target) do
             double(
                 "shared_target",
-                are_search_es_index_name: "test__articles__default",
+                are_search_index_alias_name: "test__articles__default",
             )
         end
         let(:other_target) do
             double(
                 "other_target",
-                are_search_es_index_name: "test__documents__default",
+                are_search_index_alias_name: "test__documents__default",
             )
         end
         let(:article_model) do
@@ -196,7 +212,7 @@ RSpec.describe AreSearch::RakeUtils do
         it "同じ Searchable 祖先を持つ複数階層と兄弟モデルの同名 index を許可する" do
             errors = []
 
-            result = described_class.validate_searchable_index_name_ownership(
+            result = described_class.validate_searchable_index_alias_name_ownership(
                 errors,
             )
 
@@ -211,7 +227,7 @@ RSpec.describe AreSearch::RakeUtils do
 
             errors = []
 
-            result = described_class.validate_searchable_index_name_ownership(
+            result = described_class.validate_searchable_index_alias_name_ownership(
                 errors,
             )
 
@@ -230,7 +246,7 @@ RSpec.describe AreSearch::RakeUtils do
 
                 include AreSearch::Searchable
 
-                def self.are_search_es_mappings
+                def self.are_search_index_mappings
                     {
                         default: {
                             index_settings: {
@@ -243,7 +259,13 @@ RSpec.describe AreSearch::RakeUtils do
                     }
                 end
 
-                def are_search_es_data(_target_name)
+                def self.are_search_all_sync_stage_names
+                    {
+                        default: ["default"],
+                    }
+                end
+
+                def are_search_index_data(_index_target_name, _sync_stage_name)
                     {
                         title: "hello",
                     }
@@ -251,12 +273,12 @@ RSpec.describe AreSearch::RakeUtils do
             end
         end
 
-        it "STI 子クラスが are_search_es_mappings を定義していればエラーにする" do
+        it "STI 子クラスが are_search_index_mappings を定義していればエラーにする" do
             parent_model = build_model_check_parent_class
             child_model = Class.new(parent_model) do
                 self.abstract_class = true
 
-                def self.are_search_es_mappings
+                def self.are_search_index_mappings
                     {
                         default: {
                             index_settings: {
@@ -275,15 +297,10 @@ RSpec.describe AreSearch::RakeUtils do
 
             errors = []
 
-            expect do
-                described_class.model_check(child_model, errors)
-            end.to output(
-                "are_search_es_data method_defined : true\n" \
-                "are_search_es_mappings respond_to : true\n",
-            ).to_stdout
+            described_class.model_check(child_model, errors)
 
             expect(errors).to eq([
-                "ModelCheckChild: are_search_es_mappings は Searchable を include した上位クラスで定義してください。",
+                "ModelCheckChild: are_search_index_mappings は Searchable を include した上位クラスで定義してください。",
             ])
         end
 
@@ -302,19 +319,14 @@ RSpec.describe AreSearch::RakeUtils do
 
             errors = []
 
-            expect do
-                described_class.model_check(child_model, errors)
-            end.to output(
-                "are_search_es_data method_defined : true\n" \
-                "are_search_es_mappings respond_to : true\n",
-            ).to_stdout
+            described_class.model_check(child_model, errors)
 
             expect(errors).to eq([
                 "ModelCheckChild: are_search_ar_table_name は Searchable を include した上位クラスで定義してください。",
             ])
         end
 
-        it "STI 子クラスが親の are_search_es_mappings を継承しているだけならエラーにしない" do
+        it "STI 子クラスが親の are_search_index_mappings を継承しているだけならエラーにしない" do
             parent_model = build_model_check_parent_class
             child_model = Class.new(parent_model) do
                 self.abstract_class = true
@@ -325,12 +337,7 @@ RSpec.describe AreSearch::RakeUtils do
 
             errors = []
 
-            expect do
-                described_class.model_check(child_model, errors)
-            end.to output(
-                "are_search_es_data method_defined : true\n" \
-                "are_search_es_mappings respond_to : true\n",
-            ).to_stdout
+            described_class.model_check(child_model, errors)
 
             expect(errors).to eq([])
         end

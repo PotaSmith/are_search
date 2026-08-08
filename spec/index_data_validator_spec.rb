@@ -1,31 +1,31 @@
 # frozen_string_literal: true
 
-RSpec.describe AreSearch::EsDataValidator do
-    describe ".reserved_data_field_names" do
+RSpec.describe AreSearch::IndexDataValidator do
+    describe ".find_reserved_index_field_names" do
         it "予約フィールドを Symbol key で検出する" do
             data = {
                 title: "hello",
-                are_search_es_ar_model_class_name: "Article",
+                are_search_reserved_ar_model_class_name: "Article",
             }
 
-            result = described_class.reserved_data_field_names(data)
+            result = described_class.find_reserved_index_field_names(data)
 
-            expect(result).to eq([:are_search_es_ar_model_class_name])
+            expect(result).to eq([:are_search_reserved_ar_model_class_name])
         end
 
         it "予約フィールドを String key でも検出する" do
             data = {
                 "title" => "hello",
-                "are_search_es_ar_instance_key" => "123",
+                "are_search_reserved_ar_instance_key" => "123",
             }
 
-            result = described_class.reserved_data_field_names(data)
+            result = described_class.find_reserved_index_field_names(data)
 
-            expect(result).to eq([:are_search_es_ar_instance_key])
+            expect(result).to eq([:are_search_reserved_ar_instance_key])
         end
 
         it "Hash 以外なら空配列を返す" do
-            result = described_class.reserved_data_field_names(nil)
+            result = described_class.find_reserved_index_field_names(nil)
 
             expect(result).to eq([])
         end
@@ -52,7 +52,7 @@ RSpec.describe AreSearch::EsDataValidator do
                 count:        10,
                 price:        12.5,
                 published:    true,
-                published_at: Time.now,
+                published_at: Time.zone.now,
             }
 
             violations = described_class.validate(mappings, data)
@@ -60,57 +60,6 @@ RSpec.describe AreSearch::EsDataValidator do
             expect(violations).to eq([])
         end
 
-
-        it "detects string properties key in mappings" do
-            string_key_mappings = {
-                "properties" => {
-                    title: { type: "text" },
-                },
-            }
-            data = {
-                title: "title",
-            }
-
-            violations = described_class.validate(string_key_mappings, data)
-
-            expect(violations).to eq([
-                'mappings の key は Symbol で指定してください: "properties"',
-            ])
-        end
-
-        it "detects string field keys in mappings" do
-            string_key_mappings = {
-                properties: {
-                    "title" => { type: "text" },
-                },
-            }
-            data = {
-                title: "title",
-            }
-
-            violations = described_class.validate(string_key_mappings, data)
-
-            expect(violations).to eq([
-                'mappings.properties の key は Symbol で指定してください: "title"',
-            ])
-        end
-
-        it "detects string type keys in mappings" do
-            string_key_mappings = {
-                properties: {
-                    title: { "type" => "text" },
-                },
-            }
-            data = {
-                title: "title",
-            }
-
-            violations = described_class.validate(string_key_mappings, data)
-
-            expect(violations).to eq([
-                'mappings.properties.title の key は Symbol で指定してください: "type"',
-            ])
-        end
 
         it "detects string data keys" do
             data = {
@@ -148,7 +97,7 @@ RSpec.describe AreSearch::EsDataValidator do
                 count:        10,
                 price:        12.5,
                 published:    true,
-                published_at: Time.now,
+                published_at: Time.zone.now,
                 extra:        "extra",
             }
 
@@ -193,7 +142,7 @@ RSpec.describe AreSearch::EsDataValidator do
                 count:        [1, 2],
                 price:        [1, 2.5],
                 published:    [true, false],
-                published_at: [Time.now, Date.today],
+                published_at: [Time.zone.now, Date.today],
             }
 
             violations = described_class.validate(mappings, data)
@@ -208,7 +157,7 @@ RSpec.describe AreSearch::EsDataValidator do
                 count:        [1, 2.5],
                 price:        [1.0, "2.5"],
                 published:    [true, "false"],
-                published_at: [Time.now, :today],
+                published_at: [Time.zone.now, :today],
             }
 
             violations = described_class.validate(mappings, data)
@@ -228,7 +177,7 @@ RSpec.describe AreSearch::EsDataValidator do
                 count:        10,
                 price:        12.5,
                 published:    true,
-                published_at: Time.now,
+                published_at: Time.zone.now,
             }
 
             violations = described_class.validate(mappings, data)
@@ -244,7 +193,7 @@ RSpec.describe AreSearch::EsDataValidator do
                 count:        10.5,
                 price:        12.5,
                 published:    true,
-                published_at: Time.now,
+                published_at: Time.zone.now,
             }
 
             violations = described_class.validate(mappings, data)
@@ -259,7 +208,7 @@ RSpec.describe AreSearch::EsDataValidator do
                 count:        10,
                 price:        "12.5",
                 published:    true,
-                published_at: Time.now,
+                published_at: Time.zone.now,
             }
 
             violations = described_class.validate(mappings, data)
@@ -274,7 +223,7 @@ RSpec.describe AreSearch::EsDataValidator do
                 count:        10,
                 price:        12.5,
                 published:    "true",
-                published_at: Time.now,
+                published_at: Time.zone.now,
             }
 
             violations = described_class.validate(mappings, data)
@@ -312,14 +261,5 @@ RSpec.describe AreSearch::EsDataValidator do
             expect(violations).to eq([])
         end
 
-        it "handles mappings without properties" do
-            data = {
-                title: "title",
-            }
-
-            violations = described_class.validate({}, data)
-
-            expect(violations).to eq(["mappings に定義の無いキーが data に含まれています: title"])
-        end
     end
 end

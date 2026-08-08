@@ -4,6 +4,7 @@ module AreSearch
     class Railtie < Rails::Railtie
         generators do
             require "generators/are_search/install_generator"
+            require "generators/are_search/sample_generator"
         end
         rake_tasks do
             load File.expand_path("../tasks/are_search.rake", __dir__)

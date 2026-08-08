@@ -45,7 +45,8 @@ ActiveRecord::Schema.define do
         t.string   :ar_model_class_name, null: false
         t.string   :index_target_name,   null: false
         t.string   :ar_instance_key,     null: false
-        t.string   :es_index_name,       null: false
+        t.string   :index_alias_name,       null: false
+        t.string   :sync_stage_name,          null: false
 
         t.bigint   :request_sequence,    null: false
         t.datetime :request_sequence_at, null: false
@@ -53,24 +54,32 @@ ActiveRecord::Schema.define do
         t.string   :processing_token
         t.datetime :processing_at
 
-        t.boolean  :force_attempted,     null: false, default: false
-        t.datetime :force_attempted_at
-        t.integer  :force_attempt_count, null: false, default: 0
+        t.integer  :sync_try_count,   null: false, default: 0
+        t.datetime :last_sync_try_at
 
-        t.integer  :retry_count,         null: false, default: 0
+        t.integer  :callback_try_count,  null: false, default: 0
+        t.datetime :last_callback_try_at
+
+        t.datetime :last_completed_at
+
+        t.boolean  :force_attempted,     null: false, default: false
+        t.datetime :last_force_try_at
+        t.integer  :force_try_count, null: false, default: 0
+
         t.text     :last_error
+        t.datetime :last_error_at
 
         t.timestamps
     end
 
     add_index :are_search_sync_requests,
-        [:es_index_name, :ar_model_class_name, :ar_instance_key],
+        [:index_alias_name, :ar_model_class_name, :ar_instance_key, :sync_stage_name],
         unique: true,
         name:   "idx_are_search_sync_requests_unique"
 
 
     create_table :are_search_index_markers, id: :integer, force: true do |t|
-        t.string   :es_index_name, null: false
+        t.string   :index_alias_name, null: false
         t.string   :operation,     null: false
         t.string   :owner_token,   null: false
         t.string   :owner_host
@@ -82,7 +91,7 @@ ActiveRecord::Schema.define do
     end
 
     add_index :are_search_index_markers,
-        :es_index_name,
+        :index_alias_name,
         unique: true,
         name:   "idx_are_search_index_markers_unique"
 end

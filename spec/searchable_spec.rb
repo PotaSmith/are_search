@@ -64,7 +64,7 @@ RSpec.describe AreSearch::Searchable do
                 Struct.new(:human).new("Article")
             end
 
-            def self.are_search_es_mappings
+            def self.are_search_index_mappings
                 {
                     default: {
                         index_settings: {
@@ -77,7 +77,13 @@ RSpec.describe AreSearch::Searchable do
                 }
             end
 
-            def are_search_es_data(_target_name)
+            def self.are_search_all_sync_stage_names
+                {
+                    default: ["default"],
+                }
+            end
+
+            def are_search_index_data(_index_target_name, _sync_stage_name)
                 { title: "hello" }
             end
 
@@ -86,15 +92,15 @@ RSpec.describe AreSearch::Searchable do
     end
 
     describe "include" do
-        it "validation と sync 用 callback を登録する" do
+        it "sync 用 callback だけを登録する" do
             model_class = build_searchable_class
 
             model_class.include(described_class)
 
-            expect(model_class.validations).to eq([:are_search_es_data_validate])
-            expect(model_class.save_callbacks).to eq([:are_search_enqueue_es_sync_request])
-            expect(model_class.touch_callbacks).to eq([:are_search_enqueue_es_sync_request])
-            expect(model_class.destroy_callbacks).to eq([:are_search_enqueue_es_sync_request])
+            expect(model_class.validations).to eq([])
+            expect(model_class.save_callbacks).to eq([:are_search_enqueue_sync_request])
+            expect(model_class.touch_callbacks).to eq([:are_search_enqueue_sync_request])
+            expect(model_class.destroy_callbacks).to eq([:are_search_enqueue_sync_request])
             expect(model_class.commit_callbacks).to eq([:are_search_after_commit])
         end
     end
@@ -119,24 +125,25 @@ RSpec.describe AreSearch::Searchable do
         end
     end
 
-    describe ".are_search_ar_table_name_errors" do
-        it "index 名の区切り文字が含まれていればエラーを追加する" do
+    describe ".are_search_sync_stage_names_on_enqueue" do
+        it "既定では全stageを返す" do
             model_class = build_searchable_class
             model_class.include(described_class)
-            stub_const("DelimiterArticle", model_class)
 
-            model_class.define_singleton_method(:are_search_ar_table_name) do
-                "search__articles"
-            end
+            expect(model_class.are_search_sync_stage_names_on_enqueue).to eq(
+                default: ["default"],
+            )
+        end
+    end
 
-            errors = []
+    describe ".are_search_sync_stage_names_on_after_commit" do
+        it "既定では全stageを返す" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
 
-            result = model_class.are_search_ar_table_name_errors(errors)
-
-            expect(result).to equal(errors)
-            expect(errors).to eq([
-                'DelimiterArticle.are_search_ar_table_name に "__" は使用できません: "search__articles"',
-            ])
+            expect(model_class.are_search_sync_stage_names_on_after_commit).to eq(
+                default: ["default"],
+            )
         end
     end
 
@@ -153,11 +160,24 @@ RSpec.describe AreSearch::Searchable do
                 model_class.are_search_index_targets
             end.to raise_error(
                 ArgumentError,
-                /are_search_ar_table_name は小文字の英字で始まり、小文字の英字とアンダーバーだけを使用した String/,
+                /are_search_ar_table_name は String で、小文字英字で始まり、小文字英数字の単語を単一のアンダーバーで区切ってください/,
             )
         end
 
-        it "mappings の target_name ごとに IndexTarget を返す" do
+        it "are_search_ar_table_name に予約名を指定できない" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            model_class.define_singleton_method(:are_search_ar_table_name) do
+                "are_search_reserved_ar_model_class_name"
+            end
+
+            expect do
+                model_class.are_search_index_targets
+            end.to raise_error(ArgumentError, /are_search_ar_table_name/)
+        end
+
+        it "mappings の index_target_name ごとに IndexTarget を返す" do
             model_class = build_searchable_class
             model_class.include(described_class)
 
@@ -169,18 +189,18 @@ RSpec.describe AreSearch::Searchable do
 
             expect(targets.size).to eq(1)
             expect(targets.first.model_class).to equal(model_class)
-            expect(targets.first.target_name).to eq(:default)
-            expect(targets.first.are_search_es_index_name).to eq("test__articles__default")
+            expect(targets.first.index_target_name).to eq(:default)
+            expect(targets.first.are_search_index_alias_name).to eq("test__articles__default")
         end
 
-        it "target_name が小文字の英字とアンダーバーだけでなければエラーにする" do
+        it "index_target_name に共通の名前規則を適用する" do
             model_class = build_searchable_class
             model_class.include(described_class)
 
             allow(model_class)
-                .to receive(:are_search_es_mappings)
+                .to receive(:are_search_index_mappings)
                 .and_return(
-                    :"Events-daily2" => {
+                    :"events-daily" => {
                         index_settings: {
                             max_result_window: 2_000,
                         },
@@ -194,18 +214,18 @@ RSpec.describe AreSearch::Searchable do
                 model_class.are_search_index_targets
             end.to raise_error(
                 ArgumentError,
-                /target_name は小文字の英字で始まり、小文字の英字とアンダーバーだけを使用してください/,
+                /index_target_name は、小文字英字で始まり、小文字英数字の単語を単一のアンダーバーで区切ってください/,
             )
         end
 
-        it "target_name に index 名の区切り文字が含まれていればエラーにする" do
+        it "index_target_name に予約名を指定できない" do
             model_class = build_searchable_class
             model_class.include(described_class)
 
             allow(model_class)
-                .to receive(:are_search_es_mappings)
+                .to receive(:are_search_index_mappings)
                 .and_return(
-                    :"events__daily" => {
+                    are_search_reserved_ar_instance_key: {
                         index_settings: {
                             max_result_window: 2_000,
                         },
@@ -217,47 +237,7 @@ RSpec.describe AreSearch::Searchable do
 
             expect do
                 model_class.are_search_index_targets
-            end.to raise_error(ArgumentError, /target_name.*"__" は使用できません/)
-        end
-
-        it "properties がトップレベルにあればエラーにする" do
-            model_class = build_searchable_class
-            model_class.include(described_class)
-
-            allow(model_class)
-                .to receive(:are_search_es_mappings)
-                .and_return(
-                    properties: {
-                        title: { type: "text" },
-                    },
-                )
-
-            expect do
-                model_class.are_search_index_targets
-            end.to raise_error(
-                ArgumentError,
-                /トップレベルに properties は指定できません/,
-            )
-        end
-
-        it "index_settings がトップレベルにあればエラーにする" do
-            model_class = build_searchable_class
-            model_class.include(described_class)
-
-            allow(model_class)
-                .to receive(:are_search_es_mappings)
-                .and_return(
-                    index_settings: {
-                        max_result_window: 2_000,
-                    },
-                )
-
-            expect do
-                model_class.are_search_index_targets
-            end.to raise_error(
-                ArgumentError,
-                /トップレベルに index_settings は指定できません/,
-            )
+            end.to raise_error(ArgumentError, /index_target_name/)
         end
 
         it "target に properties が無ければエラーにする" do
@@ -265,7 +245,7 @@ RSpec.describe AreSearch::Searchable do
             model_class.include(described_class)
 
             allow(model_class)
-                .to receive(:are_search_es_mappings)
+                .to receive(:are_search_index_mappings)
                 .and_return(
                     default: {
                         index_settings: {
@@ -285,7 +265,7 @@ RSpec.describe AreSearch::Searchable do
             model_class.include(described_class)
 
             allow(model_class)
-                .to receive(:are_search_es_mappings)
+                .to receive(:are_search_index_mappings)
                 .and_return(
                     default: {
                         properties: {
@@ -304,7 +284,7 @@ RSpec.describe AreSearch::Searchable do
             model_class.include(described_class)
 
             allow(model_class)
-                .to receive(:are_search_es_mappings)
+                .to receive(:are_search_index_mappings)
                 .and_return(
                     default: {
                         index_settings: {
@@ -325,7 +305,7 @@ RSpec.describe AreSearch::Searchable do
             model_class.include(described_class)
 
             allow(model_class)
-                .to receive(:are_search_es_mappings)
+                .to receive(:are_search_index_mappings)
                 .and_return(
                     default: {
                         index_settings: "invalid",
@@ -345,7 +325,7 @@ RSpec.describe AreSearch::Searchable do
             model_class.include(described_class)
 
             allow(model_class)
-                .to receive(:are_search_es_mappings)
+                .to receive(:are_search_index_mappings)
                 .and_return(
                     default: {
                         index_settings: {
@@ -367,7 +347,7 @@ RSpec.describe AreSearch::Searchable do
             model_class.include(described_class)
 
             allow(model_class)
-                .to receive(:are_search_es_mappings)
+                .to receive(:are_search_index_mappings)
                 .and_return(
                     default: {
                         index_settings: {
@@ -395,7 +375,7 @@ RSpec.describe AreSearch::Searchable do
             model_class.include(described_class)
 
             allow(model_class)
-                .to receive(:are_search_es_mappings)
+                .to receive(:are_search_index_mappings)
                 .and_return(
                     default: {
                         index_settings: {
@@ -418,7 +398,7 @@ RSpec.describe AreSearch::Searchable do
             model_class.include(described_class)
 
             allow(model_class)
-                .to receive(:are_search_es_mappings)
+                .to receive(:are_search_index_mappings)
                 .and_return(
                     default: {
                         "index_settings" => {
@@ -432,13 +412,37 @@ RSpec.describe AreSearch::Searchable do
 
             expect do
                 model_class.are_search_index_targets
-            end.to raise_error(ArgumentError, /key は Symbol/)
+            end.to raise_error(ArgumentError, /Symbol ではない key/)
+        end
+
+        it "properties の field_name に共通の名前規則を適用する" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            allow(model_class)
+                .to receive(:are_search_index_mappings)
+                .and_return(
+                    default: {
+                        index_settings: {
+                            max_result_window: 2_000,
+                        },
+                        properties: {
+                            :"title-value" => { type: "keyword" },
+                        },
+                    },
+                )
+
+            expect do
+                model_class.are_search_index_targets
+            end.to raise_error(
+                ArgumentError,
+                /field_name は、小文字英字で始まり、小文字英数字の単語を単一のアンダーバーで区切ってください/,
+            )
         end
 
         it "properties の許可されていないフィールド名は検索body policyで拒否する" do
             script_field_names = [
                 :script,
-                :_script,
                 :script_score,
                 :map_script,
             ]
@@ -448,7 +452,7 @@ RSpec.describe AreSearch::Searchable do
                 model_class.include(described_class)
 
                 allow(model_class)
-                    .to receive(:are_search_es_mappings)
+                    .to receive(:are_search_index_mappings)
                     .and_return(
                         default: {
                             index_settings: {
@@ -474,7 +478,7 @@ RSpec.describe AreSearch::Searchable do
             model_class.include(described_class)
 
             allow(model_class)
-                .to receive(:are_search_es_mappings)
+                .to receive(:are_search_index_mappings)
                 .and_return(
                     default: {
                         index_settings: {
@@ -496,7 +500,7 @@ RSpec.describe AreSearch::Searchable do
             model_class.include(described_class)
 
             allow(model_class)
-                .to receive(:are_search_es_mappings)
+                .to receive(:are_search_index_mappings)
                 .and_return(
                     default: {
                         index_settings: {
@@ -504,7 +508,7 @@ RSpec.describe AreSearch::Searchable do
                         },
                         properties: {
                             title: { type: "text" },
-                            are_search_es_ar_model_class_name: { type: "keyword" },
+                            are_search_reserved_ar_model_class_name: { type: "keyword" },
                         },
                     },
                 )
@@ -513,23 +517,23 @@ RSpec.describe AreSearch::Searchable do
                 model_class.are_search_index_targets
             end.to raise_error(
                 ArgumentError,
-                /properties.*予約フィールドは指定できません: are_search_es_ar_model_class_name/,
+                /field_name/,
             )
         end
     end
 
     describe ".are_search_index_target" do
-        it "指定した target_name の IndexTarget を返す" do
+        it "指定した index_target_name の IndexTarget を返す" do
             model_class = build_searchable_class
             model_class.include(described_class)
 
             index_target = model_class.are_search_index_target("default")
 
-            expect(index_target.target_name).to eq(:default)
+            expect(index_target.index_target_name).to eq(:default)
             expect(index_target.model_class).to equal(model_class)
         end
 
-        it "存在しない target_name なら nil を返す" do
+        it "存在しない index_target_name なら nil を返す" do
             model_class = build_searchable_class
             model_class.include(described_class)
 
@@ -537,49 +541,147 @@ RSpec.describe AreSearch::Searchable do
         end
     end
 
-    describe "#are_search_es_data_validate" do
-        it "validate_es_data が false なら検証しない" do
+    describe "sync stage settings" do
+        it "allの各targetにはstageを1件以上指定する" do
             model_class = build_searchable_class
             model_class.include(described_class)
 
-            allow(AreSearch)
-                .to receive(:validate_es_data)
-                .and_return(false)
+            allow(model_class)
+                .to receive(:are_search_all_sync_stage_names)
+                .and_return(default: [])
 
-            record = model_class.new
-
-            expect(record)
-                .not_to receive(:are_search_es_data)
-
-            expect(AreSearch::EsDataValidator)
-                .not_to receive(:validate)
-
-            record.are_search_es_data_validate
+            expect do
+                model_class.are_search_index_targets
+            end.to raise_error(
+                ArgumentError,
+                /are_search_all_sync_stage_names\[:default\] は sync_stage_name を1件以上指定してください/,
+            )
         end
 
-        it "validate_es_data が true で data に予約フィールドがあれば validation error を追加する" do
+        it "allの同じtarget内でsync_stage_nameを重複できない" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            allow(model_class)
+                .to receive(:are_search_all_sync_stage_names)
+                .and_return(default: ["default", "default"])
+
+            expect do
+                model_class.are_search_index_targets
+            end.to raise_error(
+                ArgumentError,
+                /are_search_all_sync_stage_names\[:default\] の sync_stage_name は重複できません/,
+            )
+        end
+
+        it "sync_stage_name に共通の名前規則を適用する" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            allow(model_class)
+                .to receive(:are_search_all_sync_stage_names)
+                .and_return(default: ["default-stage"])
+
+            expect do
+                model_class.are_search_index_targets
+            end.to raise_error(
+                ArgumentError,
+                /sync_stage_name は、小文字英字で始まり、小文字英数字の単語を単一のアンダーバーで区切ってください/,
+            )
+        end
+
+        it "sync_stage_name に予約名を指定できない" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            allow(model_class)
+                .to receive(:are_search_all_sync_stage_names)
+                .and_return(default: ["are_search_reserved_ar_instance_key"])
+
+            expect do
+                model_class.are_search_index_targets
+            end.to raise_error(ArgumentError, /sync_stage_name/)
+        end
+
+        it "allにはmappingsの全targetが必要" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            allow(model_class)
+                .to receive(:are_search_index_mappings)
+                .and_return(
+                    default: {
+                        index_settings: { max_result_window: 2_000 },
+                        properties: { title: { type: "text" } },
+                    },
+                    archive: {
+                        index_settings: { max_result_window: 2_000 },
+                        properties: { title: { type: "text" } },
+                    },
+                )
+
+            expect do
+                model_class.are_search_index_targets
+            end.to raise_error(
+                ArgumentError,
+                /are_search_all_sync_stage_names は are_search_index_mappings の全targetを定義してください/,
+            )
+        end
+
+        it "enqueueはallに存在するstageだけを許可する" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            allow(model_class)
+                .to receive(:are_search_sync_stage_names_on_enqueue)
+                .and_return(default: ["unknown"])
+
+            expect do
+                model_class.are_search_index_targets
+            end.to raise_error(
+                ArgumentError,
+                /are_search_sync_stage_names_on_enqueue は are_search_all_sync_stage_names の部分集合にしてください/,
+            )
+        end
+
+        it "after_commitはenqueueに存在するstageだけを許可する" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+
+            allow(model_class)
+                .to receive(:are_search_sync_stage_names_on_enqueue)
+                .and_return(default: [])
+
+            expect do
+                model_class.are_search_index_targets
+            end.to raise_error(
+                ArgumentError,
+                /are_search_sync_stage_names_on_after_commit は are_search_sync_stage_names_on_enqueue の部分集合にしてください/,
+            )
+        end
+    end
+
+    describe "#are_search_index_data_validate" do
+
+        it "data に予約フィールドがあれば validation error を追加する" do
             model_class = build_searchable_class
             model_class.include(described_class)
             record = model_class.new
             errors = double("errors")
 
-            allow(AreSearch)
-                .to receive(:validate_es_data)
-                .and_return(true)
-
             allow(record)
-                .to receive(:are_search_es_data)
-                .with(:default)
+                .to receive(:are_search_index_data)
+                .with(:default, "default")
                 .and_return(
                     title: "hello",
-                    are_search_es_ar_instance_key: "123",
+                    are_search_reserved_ar_instance_key: "123",
                 )
 
             allow(record)
                 .to receive(:errors)
                 .and_return(errors)
 
-            allow(AreSearch::EsDataValidator)
+            allow(AreSearch::IndexDataValidator)
                 .to receive(:validate)
                 .and_return([])
 
@@ -592,10 +694,10 @@ RSpec.describe AreSearch::Searchable do
                 .to receive(:add)
                 .with(:base, "[Article] 検索データが不正です")
 
-            record.are_search_es_data_validate
+            record.are_search_index_data_validate
         end
 
-        it "target ごとの mappings と data を EsDataValidator に渡す" do
+        it "target ごとの mappings と data を IndexDataValidator に渡す" do
             model_class = build_searchable_class
             model_class.include(described_class)
 
@@ -603,20 +705,16 @@ RSpec.describe AreSearch::Searchable do
             data = { title: "hello" }
             errors = double("errors")
 
-            allow(AreSearch)
-                .to receive(:validate_es_data)
-                .and_return(true)
-
             allow(record = model_class.new)
-                .to receive(:are_search_es_data)
-                .with(:default)
+                .to receive(:are_search_index_data)
+                .with(:default, "default")
                 .and_return(data)
 
             allow(record)
                 .to receive(:errors)
                 .and_return(errors)
 
-            expect(AreSearch::EsDataValidator)
+            expect(AreSearch::IndexDataValidator)
                 .to receive(:validate)
                 .with(mappings, data)
                 .and_return([])
@@ -624,7 +722,7 @@ RSpec.describe AreSearch::Searchable do
             expect(errors)
                 .not_to receive(:add)
 
-            record.are_search_es_data_validate
+            record.are_search_index_data_validate
         end
 
         it "indexable ではない target は検証しない" do
@@ -633,14 +731,14 @@ RSpec.describe AreSearch::Searchable do
             record = model_class.new
 
             allow(record)
-                .to receive(:are_search_es_indexable?)
-                .with(:default)
+                .to receive(:are_search_indexable?)
+                .with(:default, "default")
                 .and_return(false)
 
             expect(record)
-                .not_to receive(:are_search_es_data)
+                .not_to receive(:are_search_index_data)
 
-            record.are_search_es_data_validate
+            record.are_search_index_data_validate
         end
 
         it "不整合があれば validation error を追加する" do
@@ -653,20 +751,16 @@ RSpec.describe AreSearch::Searchable do
             record = model_class.new
             record.id = 123
 
-            allow(AreSearch)
-                .to receive(:validate_es_data)
-                .and_return(true)
-
             allow(record)
-                .to receive(:are_search_es_data)
-                .with(:default)
+                .to receive(:are_search_index_data)
+                .with(:default, "default")
                 .and_return(data)
 
             allow(record)
                 .to receive(:errors)
                 .and_return(errors)
 
-            allow(AreSearch::EsDataValidator)
+            allow(AreSearch::IndexDataValidator)
                 .to receive(:validate)
                 .and_return(violations)
 
@@ -674,33 +768,29 @@ RSpec.describe AreSearch::Searchable do
                 .to receive(:add)
                 .with(:base, "[Article] 検索データが不正です")
 
-            record.are_search_es_data_validate
+            record.are_search_index_data_validate
         end
 
-        it "are_search_es_data の例外は握りつぶさない" do
+        it "are_search_index_data の例外は握りつぶさない" do
             model_class = build_searchable_class
             model_class.include(described_class)
             record = model_class.new
 
-            allow(AreSearch)
-                .to receive(:validate_es_data)
-                .and_return(true)
-
             allow(record)
-                .to receive(:are_search_es_data)
-                .with(:default)
+                .to receive(:are_search_index_data)
+                .with(:default, "default")
                 .and_raise(RuntimeError, "data failed")
 
-            expect(AreSearch::EsDataValidator)
+            expect(AreSearch::IndexDataValidator)
                 .not_to receive(:validate)
 
             expect do
-                record.are_search_es_data_validate
+                record.are_search_index_data_validate
             end.to raise_error(RuntimeError, "data failed")
         end
     end
 
-    describe "#are_search_enqueue_es_sync_request" do
+    describe "#are_search_enqueue_sync_request" do
         it "同じ世代番号と時刻でtargetごとにDB固有処理へ同期要求を渡す" do
             model_class = build_searchable_class
             stub_const("Article", model_class)
@@ -709,7 +799,7 @@ RSpec.describe AreSearch::Searchable do
             database_specific = class_double(AreSearch::DatabaseSpecific)
 
             allow(model_class)
-                .to receive(:are_search_es_mappings)
+                .to receive(:are_search_index_mappings)
                 .and_return(
                     {
                         default: {
@@ -730,6 +820,24 @@ RSpec.describe AreSearch::Searchable do
                         },
                     },
                 )
+
+            allow(model_class)
+                .to receive(:are_search_all_sync_stage_names)
+                .and_return(
+                    default: ["default"],
+                    archive: ["default"],
+                )
+
+            allow(model_class)
+                .to receive(:are_search_sync_stage_names_on_enqueue)
+                .and_return(
+                    default: ["default"],
+                    archive: ["default"],
+                )
+
+            allow(model_class)
+                .to receive(:are_search_sync_stage_names_on_after_commit)
+                .and_return({})
 
             allow(AreSearch)
                 .to receive(:index_prefix)
@@ -758,7 +866,8 @@ RSpec.describe AreSearch::Searchable do
                     ar_model_class_name: "Article",
                     index_target_name:   :default,
                     ar_instance_key:     "123",
-                    es_index_name:       "test__articles__default",
+                    index_alias_name:       "test__articles__default",
+                    sync_stage_name:          "default",
                     request_sequence:    42,
                     request_sequence_at: request_sequence_at,
                 )
@@ -770,18 +879,44 @@ RSpec.describe AreSearch::Searchable do
                     ar_model_class_name: "Article",
                     index_target_name:   :archive,
                     ar_instance_key:     "123",
-                    es_index_name:       "test__articles__archive",
+                    index_alias_name:       "test__articles__archive",
+                    sync_stage_name:          "default",
                     request_sequence:    42,
                     request_sequence_at: request_sequence_at,
                 )
                 .ordered
 
-            record.are_search_enqueue_es_sync_request
+            record.are_search_enqueue_sync_request
         end
     end
 
-    describe "#are_search_enqueue_es_sync_job" do
-        it "commit 後に target_name を含めて SyncJob を enqueue する" do
+    describe "#are_search_upsert_sync_request" do
+        it "allに存在しないstageを拒否する" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+            record = model_class.new
+            record.id = 123
+            index_target = model_class.are_search_index_target(:default)
+
+            expect(AreSearch.database_specific)
+                .not_to receive(:upsert)
+
+            expect do
+                record.are_search_upsert_sync_request_with_sequence(
+                    index_target,
+                    "unknown",
+                    42,
+                    Time.zone.now,
+                )
+            end.to raise_error(
+                ArgumentError,
+                /are_search_all_sync_stage_names\[:default\] に存在しない stage/,
+            )
+        end
+    end
+
+    describe "#are_search_enqueue_sync_job" do
+        it "commit 後に同期キーと processing_token を含めて SyncJob を enqueue する" do
             model_class = build_searchable_class
             stub_const("Article", model_class)
             model_class.include(described_class)
@@ -803,13 +938,13 @@ RSpec.describe AreSearch::Searchable do
                 .with(
                     "app_test",
                     "Article",
-                    :default,
                     "123",
                     "test__articles__default",
+                    "default",
                     "token-1",
                 )
 
-            record.are_search_enqueue_es_sync_job(index_target)
+            record.are_search_enqueue_sync_job(index_target, "default")
         end
     end
 
@@ -824,11 +959,8 @@ RSpec.describe AreSearch::Searchable do
                 .and_return(:job)
 
             expect(record)
-                .to receive(:are_search_enqueue_es_sync_job)
-                .with(kind_of(AreSearch::IndexTarget))
-
-            expect(record)
-                .not_to receive(:are_search_es_sync_direct)
+                .to receive(:are_search_enqueue_sync_job)
+                .with(kind_of(AreSearch::IndexTarget), "default")
 
             record.are_search_after_commit
         end
@@ -842,12 +974,15 @@ RSpec.describe AreSearch::Searchable do
                 .to receive(:after_commit_mode)
                 .and_return(:direct)
 
-            expect(record)
-                .not_to receive(:are_search_enqueue_es_sync_job)
+            index_target = model_class.are_search_index_target(:default)
+            record.id = 123
 
             expect(record)
-                .to receive(:are_search_es_sync_direct)
-                .with(kind_of(AreSearch::IndexTarget))
+                .not_to receive(:are_search_enqueue_sync_job)
+
+            expect(index_target)
+                .to receive(:are_search_sync)
+                .with(123, "default")
 
             record.are_search_after_commit
         end
@@ -861,17 +996,19 @@ RSpec.describe AreSearch::Searchable do
                 .to receive(:after_commit_mode)
                 .and_return(:none)
 
-            expect(record)
-                .not_to receive(:are_search_enqueue_es_sync_job)
+            index_target = model_class.are_search_index_target(:default)
 
             expect(record)
-                .not_to receive(:are_search_es_sync_direct)
+                .not_to receive(:are_search_enqueue_sync_job)
+
+            expect(index_target)
+                .not_to receive(:are_search_sync)
 
             record.are_search_after_commit
         end
     end
 
-    describe "#are_search_es_data_for_index!" do
+    describe "#are_search_index_data_for_index!" do
         it "Hash に予約フィールドを追加して同じ Hash を返す" do
             model_class = build_searchable_class
             model_class.include(described_class)
@@ -883,17 +1020,17 @@ RSpec.describe AreSearch::Searchable do
             data = { title: "hello" }
 
             allow(record)
-                .to receive(:are_search_es_data)
-                .with(:default)
+                .to receive(:are_search_index_data)
+                .with(:default, "default")
                 .and_return(data)
 
-            result = record.are_search_es_data_for_index!(index_target)
+            result = record.are_search_index_data_for_index!(index_target, "default")
 
             expect(result).to equal(data)
             expect(result).to eq(
                 title: "hello",
-                AreSearch::IndexDefinition::RESERVED_ES_AR_INSTANCE_KEY_FIELD_NAME => "123",
-                AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME => ["SearchableArticle"],
+                AreSearch::IndexDefinition::RESERVED_AR_INSTANCE_KEY_FIELD_NAME => "123",
+                AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME => ["SearchableArticle"],
             )
         end
 
@@ -911,10 +1048,10 @@ RSpec.describe AreSearch::Searchable do
             record.id = 123
             index_target = parent_model.are_search_index_target(:default)
 
-            result = record.are_search_es_data_for_index!(index_target)
+            result = record.are_search_index_data_for_index!(index_target, "default")
 
             expect(
-                result[AreSearch::IndexDefinition::RESERVED_ES_AR_MODEL_CLASS_NAME_FIELD_NAME],
+                result[AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME],
             ).to eq([
                 "SearchableGrandChild",
                 "SearchableChild",
@@ -922,46 +1059,55 @@ RSpec.describe AreSearch::Searchable do
             ])
         end
 
-        it "Hash 以外なら AreSearch::Error を出す" do
+        it "Hash 以外なら target名とstage名を含む AreSearch::Error を出す" do
             model_class = build_searchable_class
             model_class.include(described_class)
             record = model_class.new
             index_target = model_class.are_search_index_target(:default)
 
             allow(record)
-                .to receive(:are_search_es_data)
-                .with(:default)
+                .to receive(:are_search_index_data)
+                .with(:default, "with_external_file")
                 .and_return(nil)
 
             expect do
-                record.are_search_es_data_for_index!(index_target)
-            end.to raise_error(AreSearch::Error, /Hash を返してください/)
+                record.are_search_index_data_for_index!(
+                    index_target,
+                    "with_external_file",
+                )
+            end.to raise_error(
+                AreSearch::Error,
+                /are_search_index_data\(:default, "with_external_file"\) は Hash を返してください/,
+            )
         end
 
-        it "予約フィールドがあれば AreSearch::Error を出す" do
+        it "予約フィールドがあれば target名とstage名を含む AreSearch::Error を出す" do
             model_class = build_searchable_class
             model_class.include(described_class)
             record = model_class.new
             index_target = model_class.are_search_index_target(:default)
 
             allow(record)
-                .to receive(:are_search_es_data)
-                .with(:default)
+                .to receive(:are_search_index_data)
+                .with(:default, "with_external_file")
                 .and_return(
                     title: "hello",
-                    are_search_es_ar_instance_key: "123",
+                    are_search_reserved_ar_instance_key: "123",
                 )
 
             expect do
-                record.are_search_es_data_for_index!(index_target)
+                record.are_search_index_data_for_index!(
+                    index_target,
+                    "with_external_file",
+                )
             end.to raise_error(
                 AreSearch::Error,
-                /予約フィールドは指定できません: are_search_es_ar_instance_key/,
+                /are_search_index_data\(:default, "with_external_file"\) に AreSearch の予約フィールドは指定できません: are_search_reserved_ar_instance_key/,
             )
         end
     end
 
-    describe "#are_search_es_sync!" do
+    describe "#are_search_index_or_delete!" do
         it "destroyed でなければ index_target の alias に index する" do
             model_class = build_searchable_class
             model_class.include(described_class)
@@ -984,8 +1130,8 @@ RSpec.describe AreSearch::Searchable do
                 .and_return(false)
 
             allow(record)
-                .to receive(:are_search_es_data_for_index!)
-                .with(index_target)
+                .to receive(:are_search_index_data_for_index!)
+                .with(index_target, "default")
                 .and_return({ title: "hello" })
 
             expect(client)
@@ -996,7 +1142,7 @@ RSpec.describe AreSearch::Searchable do
                     body:  { title: "hello" },
                 )
 
-            record.are_search_es_sync!(index_target)
+            record.are_search_index_or_delete!(index_target, "default")
         end
 
         it "destroyed なら index_target の delete に委譲する" do
@@ -1012,35 +1158,11 @@ RSpec.describe AreSearch::Searchable do
                 .and_return(true)
 
             expect(index_target)
-                .to receive(:are_search_es_delete!)
+                .to receive(:are_search_delete!)
                 .with(123)
 
-            record.are_search_es_sync!(index_target)
+            record.are_search_index_or_delete!(index_target, "default")
         end
     end
 
-    describe "#are_search_es_sync_direct" do
-        it "RecordSync.sync に target_name と index 名と processing_token を渡す" do
-            model_class = build_searchable_class
-            stub_const("Article", model_class)
-            model_class.include(described_class)
-            index_target = model_class.are_search_index_target(:default)
-            record = model_class.new
-            record.id = 123
-
-            allow(AreSearch)
-                .to receive(:index_prefix)
-                .and_return("test")
-
-            allow(SecureRandom)
-                .to receive(:uuid)
-                .and_return("token-1")
-
-            expect(AreSearch::RecordSync)
-                .to receive(:sync)
-                .with("Article", :default, "123", "test__articles__default", "token-1", reraise: false)
-
-            record.are_search_es_sync_direct(index_target)
-        end
-    end
 end
