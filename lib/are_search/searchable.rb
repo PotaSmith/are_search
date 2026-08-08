@@ -122,6 +122,9 @@ module AreSearch
                         "#{reserved_index_field_names.join(", ")}"
             end
 
+            # 利用側が返した Hash を変更せず、AreSearch の予約フィールドは複製側へ追加する。
+            data_for_index = data.dup
+
             # 親クラス全部拾う
             model_class_names = []
 
@@ -134,10 +137,10 @@ module AreSearch
                 current_model_class = current_model_class.superclass
             end
 
-            data[AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME] = model_class_names
-            data[AreSearch::IndexDefinition::RESERVED_AR_INSTANCE_KEY_FIELD_NAME] = self.id.to_s
+            data_for_index[AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME] = model_class_names
+            data_for_index[AreSearch::IndexDefinition::RESERVED_AR_INSTANCE_KEY_FIELD_NAME] = self.id.to_s
 
-            data
+            data_for_index
         end
 
         # このレコードの現在の状態を Elasticsearch へ直接反映する。

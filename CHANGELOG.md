@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+- BulkIndexer と Reindexer の実処理入口で、Searchable を継承した STI 子クラスの IndexTarget を拒否するよう変更。共有 alias へ子クラスのレコードだけを投入して完了扱いになる経路と、Reindexer の直接呼び出しで公開APIのガードを迂回する経路を防止
+- `are_search_index_data` の戻り値を直接変更せず、複製した Hash へ AreSearch の予約フィールドを追加するよう変更。freeze 済みまたは再利用する Hash でも呼び出し側データを汚染しないよう修正
 - Elasticsearch client 作成時のデバッグログで、接続先情報だけを出力し、`user` / `password` などの認証情報を含めないよう変更
 - sync limit alert メールから `last_error` 本文を除外。`last_error_at` と通知条件は維持し、エラー詳細は `are_search_sync_requests` で確認する形へ変更
 - Elasticsearch の alias と物理 index の判定を整理。`EsAdapter#index_alias_exists?` で alias 存在確認を boolean として扱い、alias 名と同名の物理 index 判定では通常 alias を物理 index と誤認しないよう修正。重複していた `IndexManager#index_alias_exists?` を削除して判定を `EsAdapter` へ統一

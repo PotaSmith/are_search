@@ -635,39 +635,6 @@ RSpec.describe AreSearch::IndexTarget do
             expect(result).to equal(reindex_result)
         end
 
-        it "Searchable を継承した子クラスからは拒否する" do
-            searchable_parent = double("searchable_parent")
-            allow(searchable_parent)
-                .to receive(:include?)
-                .with(AreSearch::Searchable)
-                .and_return(true)
-
-            child_model_class = double(
-                "SpecialArticle",
-                name:                     "SpecialArticle",
-                superclass:               searchable_parent,
-                are_search_ar_table_name: "articles",
-                are_search_index_mappings:   target_mappings,
-            )
-
-            child_index_target = described_class.new(
-                child_model_class,
-                :default,
-            )
-
-            expect(AreSearch::Reindexer)
-                .not_to receive(:reindex_index_target)
-
-            expect do
-                child_index_target.are_search_reindex(
-                    stage_position: :first,
-                )
-            end.to raise_error(
-                AreSearch::Error,
-                "Searchable を継承した子クラスから reindex は実行できません: SpecialArticle",
-            )
-        end
-
         it "firstとlast以外は拒否する" do
             allow(model_class)
                 .to receive(:are_search_get_all_sync_stage_names)

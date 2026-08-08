@@ -30,13 +30,6 @@ module AreSearch
         #   :stop_phase  : 停止した処理段階。成功時は nil
         #   :done_phases : 完了した処理段階
         def are_search_reindex(stage_position:)
-            # 同じ alias を共有する上位モデルの全レコードを欠落させないため、
-            # Searchable を継承した子クラスからの reindex を拒否する。
-            if model_class.superclass&.include?(AreSearch::Searchable)
-                raise AreSearch::Error,
-                    "Searchable を継承した子クラスから reindex は実行できません: #{model_class.name}"
-            end
-
             sync_stage_names = model_class.are_search_get_all_sync_stage_names(index_target_name)
 
             sync_stage_name = nil
@@ -59,6 +52,8 @@ module AreSearch
         extend self
 
         def reindex_index_target(index_target, sync_stage_name)
+            validate_arguments!(index_target, sync_stage_name)
+
             result = {
                 result: :not_success,
                 message: '',
@@ -81,6 +76,30 @@ module AreSearch
         end
 
         private
+
+        # Reindexerが使用する対象と実行設定を確認する。
+        def validate_arguments!(index_target, sync_stage_name)
+            unless index_target.instance_of?(AreSearch::IndexTarget)
+                raise ArgumentError, "index_target は AreSearch::IndexTarget を指定してください"
+            end
+
+            model_class = index_target.model_class
+
+            # 同じ alias を共有する上位モデルの全レコードを欠落させないため、
+            # Searchable を継承した子クラスの IndexTarget を拒否する。
+            if model_class.superclass&.include?(AreSearch::Searchable)
+                raise AreSearch::Error,
+                    "Searchable を継承した子クラスから reindex は実行できません: #{model_class.name}"
+            end
+
+            sync_stage_names = model_class.are_search_get_all_sync_stage_names(
+                index_target.index_target_name,
+            )
+            unless sync_stage_names.include?(sync_stage_name)
+                raise ArgumentError,
+                    "sync_stage_name が IndexTarget に定義されていません: #{sync_stage_name}"
+            end
+        end
 
         def bulk_index_target(index_target, sync_stage_name, physical_index_name, result)
             total      = index_target.model_class.count

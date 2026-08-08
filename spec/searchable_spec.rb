@@ -1009,7 +1009,33 @@ RSpec.describe AreSearch::Searchable do
     end
 
     describe "#are_search_index_data_for_index!" do
-        it "Hash に予約フィールドを追加して同じ Hash を返す" do
+        it "利用側Hashを変更せず複製したHashへ予約フィールドを追加する" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+            stub_const("SearchableArticle", model_class)
+
+            record = model_class.new
+            record.id = 123
+            index_target = model_class.are_search_index_target(:default)
+            data = { title: "hello" }.freeze
+
+            allow(record)
+                .to receive(:are_search_index_data)
+                .with(:default, "default")
+                .and_return(data)
+
+            result = record.are_search_index_data_for_index!(index_target, "default")
+
+            expect(result).not_to equal(data)
+            expect(data).to eq(title: "hello")
+            expect(result).to eq(
+                title: "hello",
+                AreSearch::IndexDefinition::RESERVED_AR_INSTANCE_KEY_FIELD_NAME => "123",
+                AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME => ["SearchableArticle"],
+            )
+        end
+
+        it "同じ利用側Hashを複数回返しても予約フィールドで汚染しない" do
             model_class = build_searchable_class
             model_class.include(described_class)
             stub_const("SearchableArticle", model_class)
@@ -1024,14 +1050,13 @@ RSpec.describe AreSearch::Searchable do
                 .with(:default, "default")
                 .and_return(data)
 
-            result = record.are_search_index_data_for_index!(index_target, "default")
+            first_result = record.are_search_index_data_for_index!(index_target, "default")
+            second_result = record.are_search_index_data_for_index!(index_target, "default")
 
-            expect(result).to equal(data)
-            expect(result).to eq(
-                title: "hello",
-                AreSearch::IndexDefinition::RESERVED_AR_INSTANCE_KEY_FIELD_NAME => "123",
-                AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME => ["SearchableArticle"],
-            )
+            expect(data).to eq(title: "hello")
+            expect(first_result).not_to equal(data)
+            expect(second_result).not_to equal(data)
+            expect(second_result).to eq(first_result)
         end
 
         it "実体クラスから Searchable を実装した親クラスまでの名前を保存する" do

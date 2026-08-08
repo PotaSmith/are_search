@@ -31,23 +31,41 @@ RSpec.describe AreSearch::Reindexer do
         "default"
     end
 
+    let(:record_count) do
+        0
+    end
+
     let(:model) do
         class_double(
             "Article",
-            count: record_count,
+            count:      record_count,
+            superclass: nil,
         )
     end
 
     let(:index_target) do
-        double(
-            "index_target",
-            model_class:                      model,
-            index_target_name:                      :default,
-            are_search_index_alias_name:         "test__articles__default",
-            are_search_index_mappings:           mappings,
-            are_search_index_mappings_for_index: mappings_for_index,
-            are_search_index_settings:     index_settings,
-        )
+        target = AreSearch::IndexTarget.allocate
+
+        allow(target)
+            .to receive(:model_class)
+            .and_return(model)
+        allow(target)
+            .to receive(:index_target_name)
+            .and_return(:default)
+        allow(target)
+            .to receive(:are_search_index_alias_name)
+            .and_return("test__articles__default")
+        allow(target)
+            .to receive(:are_search_index_mappings)
+            .and_return(mappings)
+        allow(target)
+            .to receive(:are_search_index_mappings_for_index)
+            .and_return(mappings_for_index)
+        allow(target)
+            .to receive(:are_search_index_settings)
+            .and_return(index_settings)
+
+        target
     end
 
     let(:client) do
@@ -97,11 +115,82 @@ RSpec.describe AreSearch::Reindexer do
         allow(AreSearch).to receive(:client).and_return(client)
         stub_const("ProgressBar", progress_bar_class)
 
+        allow(model)
+            .to receive(:are_search_get_all_sync_stage_names)
+            .with(:default)
+            .and_return([sync_stage_name])
+
         logger = instance_double("Logger", error: nil)
         allow(Rails).to receive(:logger).and_return(logger)
     end
 
     describe ".reindex_index_target" do
+        it "IndexTarget以外は拒否する" do
+            expect(AreSearch::IndexManager)
+                .not_to receive(:reindex)
+
+            expect do
+                described_class.reindex_index_target(
+                    Object.new,
+                    sync_stage_name,
+                )
+            end.to raise_error(
+                ArgumentError,
+                "index_target は AreSearch::IndexTarget を指定してください",
+            )
+        end
+
+        it "Searchable を継承した子クラスのIndexTargetを直接渡した場合は拒否する" do
+            searchable_parent = double("searchable_parent")
+            allow(searchable_parent)
+                .to receive(:include?)
+                .with(AreSearch::Searchable)
+                .and_return(true)
+
+            child_model_class = double(
+                "SpecialArticle",
+                name:       "SpecialArticle",
+                superclass: searchable_parent,
+            )
+            child_index_target = AreSearch::IndexTarget.allocate
+            allow(child_index_target)
+                .to receive(:model_class)
+                .and_return(child_model_class)
+
+            expect(AreSearch::IndexManager)
+                .not_to receive(:reindex)
+
+            expect do
+                described_class.reindex_index_target(
+                    child_index_target,
+                    sync_stage_name,
+                )
+            end.to raise_error(
+                AreSearch::Error,
+                "Searchable を継承した子クラスから reindex は実行できません: SpecialArticle",
+            )
+        end
+
+        it "IndexTargetに存在しないstageは拒否する" do
+            allow(model)
+                .to receive(:are_search_get_all_sync_stage_names)
+                .with(:default)
+                .and_return(["other"])
+
+            expect(AreSearch::IndexManager)
+                .not_to receive(:reindex)
+
+            expect do
+                described_class.reindex_index_target(
+                    index_target,
+                    sync_stage_name,
+                )
+            end.to raise_error(
+                ArgumentError,
+                "sync_stage_name が IndexTarget に定義されていません: default",
+            )
+        end
+
         context "when all bulk requests succeed" do
             let(:record_count) do
                 2

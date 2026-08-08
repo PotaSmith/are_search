@@ -121,7 +121,16 @@ module AreSearch
                 raise ArgumentError, "index_target は AreSearch::IndexTarget を指定してください"
             end
 
-            sync_stage_names = @index_target.model_class.are_search_get_all_sync_stage_names(
+            model_class = @index_target.model_class
+
+            # 同じ alias を共有する上位モデルの全レコードを欠落させないため、
+            # Searchable を継承した子クラスの IndexTarget を拒否する。
+            if model_class.superclass&.include?(AreSearch::Searchable)
+                raise AreSearch::Error,
+                    "Searchable を継承した子クラスから bulk_index は実行できません: #{model_class.name}"
+            end
+
+            sync_stage_names = model_class.are_search_get_all_sync_stage_names(
                 @index_target.index_target_name,
             )
             unless sync_stage_names.include?(@sync_stage_name)

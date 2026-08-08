@@ -57,6 +57,9 @@ RSpec.describe AreSearch::BulkIndexer do
 
     before do
         allow(model_class)
+            .to receive(:superclass)
+            .and_return(nil)
+        allow(model_class)
             .to receive(:are_search_get_all_sync_stage_names)
             .with(:default)
             .and_return([sync_stage_name])
@@ -601,6 +604,35 @@ RSpec.describe AreSearch::BulkIndexer do
             end.to raise_error(
                 ArgumentError,
                 "index_target は AreSearch::IndexTarget を指定してください",
+            )
+        end
+
+        it "Searchableを継承した子クラスのIndexTargetは拒否する" do
+            parent_model = double("parent_model")
+
+            allow(parent_model)
+                .to receive(:include?)
+                .with(AreSearch::Searchable)
+                .and_return(true)
+            allow(model_class)
+                .to receive(:superclass)
+                .and_return(parent_model)
+            allow(model_class)
+                .to receive(:name)
+                .and_return("ChildArticle")
+
+            expect(model_class)
+                .not_to receive(:are_search_get_all_sync_stage_names)
+            expect(model_class)
+                .not_to receive(:all)
+            expect(AreSearch::EsAdapter)
+                .not_to receive(:no_validation_bulk)
+
+            expect do
+                indexer.bulk_index_index_target
+            end.to raise_error(
+                AreSearch::Error,
+                "Searchable を継承した子クラスから bulk_index は実行できません: ChildArticle",
             )
         end
 
