@@ -1,0 +1,2 @@
+class DocumentSecondChild < DocumentSecond
+end

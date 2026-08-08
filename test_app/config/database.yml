@@ -1,0 +1,16 @@
+default: &default
+  adapter: postgresql
+  host: <%= ConfVars.get(:database, :host) %>
+  port: <%= ConfVars.get(:database, :port) %>
+  username: <%= ConfVars.get(:database, :username) %>
+  password: <%= ConfVars.get(:database, :password) %>
+  encoding: unicode
+  max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+
+development:
+  <<: *default
+  database: are_search_test_app_development
+
+test:
+  <<: *default
+  database: are_search_test_app_test
