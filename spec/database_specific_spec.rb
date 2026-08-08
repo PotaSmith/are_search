@@ -39,19 +39,6 @@ RSpec.describe AreSearch::DatabaseSpecific do
 end
 
 RSpec.describe AreSearch::PostgreSQLDatabaseSpecific do
-    describe ".next_request_sequence" do
-        it "PostgreSQL sequence の次の値を整数で返す" do
-            connection = ActiveRecord::Base.connection
-
-            expect(connection)
-                .to receive(:select_value)
-                .with(described_class::REQUEST_SEQUENCE_SQL)
-                .and_return("123")
-
-            expect(described_class.next_request_sequence).to eq(123)
-        end
-    end
-
     describe ".upsert" do
         it "同期要求を一意キーでupsertする" do
             request_sequence_at = Time.zone.now

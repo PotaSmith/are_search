@@ -630,6 +630,12 @@ module AreSearch
             #     fields: [
             #         "runtime_status",
             #     ],
+            #     stored_fields: [
+            #         "body",
+            #     ],
+            #     docvalue_fields: [
+            #         "status",
+            #     ],
             # }
             response: {
                 hash: {
@@ -651,6 +657,34 @@ module AreSearch
                         {
                             key: {
                                 key_name: :fields,
+                            },
+                            value: {
+                                array: {
+                                    children: {
+                                        scalar: {
+                                            type: "string",
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                        {
+                            key: {
+                                key_name: :stored_fields,
+                            },
+                            value: {
+                                array: {
+                                    children: {
+                                        scalar: {
+                                            type: "string",
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                        {
+                            key: {
+                                key_name: :docvalue_fields,
                             },
                             value: {
                                 array: {

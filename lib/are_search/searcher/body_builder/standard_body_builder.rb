@@ -35,8 +35,10 @@ module AreSearch
                 per_page             = AreSearch::SearcherUtils.resolve_default_option(per_page_opt, 25)
                 normalized_sort      = normalize_sort_options(sort_opts)
                 normalized_highlight = normalize_highlight_options(highlight_opts)
-                response_source      = build_response_source(response_opts)
-                response_fields      = build_response_fields(response_opts)
+                response_source          = build_response_source(response_opts)
+                response_fields          = build_response_fields(response_opts)
+                response_stored_fields   = build_response_stored_fields(response_opts)
+                response_docvalue_fields = build_response_docvalue_fields(response_opts)
 
                 from = (page - 1) * per_page
                 size = per_page
@@ -56,6 +58,12 @@ module AreSearch
                 body[:sort] = normalized_sort if normalized_sort.present?
                 body[:highlight] = normalized_highlight if normalized_highlight.nil? == false
                 body[:fields] = response_fields if response_fields.nil? == false
+                if response_stored_fields.nil? == false
+                    body[:stored_fields] = response_stored_fields
+                end
+                if response_docvalue_fields.nil? == false
+                    body[:docvalue_fields] = response_docvalue_fields
+                end
                 if runtime_mappings_opts.nil? == false
                     body[:runtime_mappings] = runtime_mappings_opts
                 end
@@ -94,6 +102,22 @@ module AreSearch
                 return nil if response_opts.nil?
 
                 response_opts[:fields]
+            end
+
+            # 検索結果へ返すstored_fields指定をそのまま返す。
+            # store設定の判定はElasticsearchへ委ねる。
+            def build_response_stored_fields(response_opts)
+                return nil if response_opts.nil?
+
+                response_opts[:stored_fields]
+            end
+
+            # 検索結果へ返すdocvalue_fields指定をそのまま返す。
+            # doc_values利用可否の判定はElasticsearchへ委ねる。
+            def build_response_docvalue_fields(response_opts)
+                return nil if response_opts.nil?
+
+                response_opts[:docvalue_fields]
             end
 
             # Hash形式のsortを、記述順を維持したElasticsearch用Arrayへ変換する。

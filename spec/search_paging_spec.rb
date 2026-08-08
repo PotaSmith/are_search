@@ -104,14 +104,14 @@ RSpec.describe "search paging" do
     end
 
     before do
-        allow(AreSearch::IndexManager)
+        allow(AreSearch::EsAdapter)
             .to receive(:index_alias_exists?)
-            .with("test__articles__default")
+            .with(index_alias_name: "test__articles__default")
             .and_return(true)
 
-        allow(AreSearch::IndexManager)
+        allow(AreSearch::EsAdapter)
             .to receive(:index_alias_exists?)
-            .with("test__documents__default")
+            .with(index_alias_name: "test__documents__default")
             .and_return(true)
     end
 

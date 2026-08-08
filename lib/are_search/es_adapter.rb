@@ -49,6 +49,7 @@ module AreSearch
         end
 
         # Elasticsearch のalias取得APIを呼び出す。
+        # alias名と同名の物理indexだけが存在する場合、get_alias は NotFound になる。
         def indices_get_alias(index_alias_name:)
             AreSearch::IndexDefinition.valid_index_alias_name!(index_alias_name)
 
@@ -57,7 +58,10 @@ module AreSearch
             {}
         end
 
-        # 指定aliasから生成された物理indexを取得する。
+        # 指定aliasから生成されたtimestamp付き物理indexを取得する。
+        # indices.get はaliasも解決するが、このメソッドは alias名 + "__*" の
+        # AreSearch物理index形式だけを検索する。
+        # 一致するindexが無い場合、Elasticsearch 9では成功した空responseが返る場合がある。
         def physical_indices_for_alias(index_alias_name:)
             AreSearch::IndexDefinition.valid_index_alias_name!(index_alias_name)
 
@@ -80,29 +84,39 @@ module AreSearch
         end
 
         # alias名と同名の物理indexを取得する。
+        # indices.get は通常aliasを参照先の物理indexへ解決するため、
+        # 先にalias存在確認を行い、通常aliasは物理indexとして取得しない。
         def alias_named_physical_index(index_alias_name:)
-            AreSearch::IndexDefinition.valid_index_alias_name!(index_alias_name)
+            return {} if index_alias_exists?(index_alias_name: index_alias_name)
 
             AreSearch.client.indices.get(index: index_alias_name)
         rescue Elastic::Transport::Transport::Errors::NotFound
             {}
         end
 
-        # Elasticsearch のalias存在確認APIを呼び出す。
-        def indices_exists_alias(index_alias_name:)
+        # Elasticsearch のaliasが存在するか確認する。
+        # exists_alias の返り値はtrueの場合だけ存在として扱う。
+        def index_alias_exists?(index_alias_name:)
             AreSearch::IndexDefinition.valid_index_alias_name!(index_alias_name)
 
-            AreSearch.client.indices.exists_alias(name: index_alias_name)
+            AreSearch.client.indices.exists_alias(
+                name: index_alias_name,
+            ) == true
         end
 
         # alias名と同名の物理indexが存在するか確認する。
+        # indices.exists は通常aliasも存在扱いにするため、
+        # 先にalias存在確認を行い、通常aliasは物理indexとして判定しない。
         def alias_named_physical_index_exists?(index_alias_name:)
-            AreSearch::IndexDefinition.valid_index_alias_name!(index_alias_name)
+            return false if index_alias_exists?(index_alias_name: index_alias_name)
 
             AreSearch.client.indices.exists(index: index_alias_name)
         end
 
         # timestamp付き物理indexを削除する。
+        # indices.delete はaliasを参照先へ展開しない。
+        # 物理index形式の名前を持つaliasを指定するとElasticsearchはBadRequestを返す。
+        # NotFoundだけをnot_foundへ変換し、それ以外のElasticsearchエラーは送出する。
         def delete_physical_index(physical_index_name:)
             AreSearch::IndexDefinition.valid_physical_index_name!(physical_index_name)
 
@@ -114,6 +128,9 @@ module AreSearch
         end
 
         # alias名と同名の物理indexを削除する。
+        # indices.delete は通常aliasを参照先へ展開しない。
+        # 通常aliasを指定するとElasticsearchはBadRequestを返す。
+        # NotFoundだけをnot_foundへ変換し、それ以外のElasticsearchエラーは送出する。
         def delete_alias_named_physical_index(index_alias_name:)
             AreSearch::IndexDefinition.valid_index_alias_name!(index_alias_name)
 
@@ -125,6 +142,7 @@ module AreSearch
         end
 
         # Elasticsearch のindex作成APIを呼び出す。
+        # 同名のindexだけでなく、同名のaliasが存在する場合もElasticsearchはBadRequestを返す。
         def indices_create(physical_index_name:, body:)
             AreSearch::IndexDefinition.valid_physical_index_name!(physical_index_name)
 

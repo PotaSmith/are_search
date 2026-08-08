@@ -404,7 +404,7 @@ RSpec.describe "are_search rake tasks" do
 
     describe "are_search:mark_all" do
         before do
-            allow(AreSearch::IndexManager)
+            allow(AreSearch::EsAdapter)
                 .to receive(:index_alias_exists?)
                 .and_return(true)
         end

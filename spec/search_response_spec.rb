@@ -50,9 +50,9 @@ RSpec.describe "search response" do
             .to receive(:index_prefix)
             .and_return("test")
 
-        allow(AreSearch::IndexManager)
+        allow(AreSearch::EsAdapter)
             .to receive(:index_alias_exists?)
-            .with("test__articles__default")
+            .with(index_alias_name: "test__articles__default")
             .and_return(true)
     end
 
@@ -268,6 +268,116 @@ RSpec.describe "search response" do
                     dump_body: true,
                 )
             end.to raise_error(ArgumentError, /opts\[:response\]\[fields\]/)
+        end
+    end
+
+    it "response.stored_fieldsをElasticsearchのstored_fieldsへ指定する" do
+        body = AreSearch::Searcher.search(
+            [article_index_target],
+            queries: [
+                {
+                    query_string: "Rails",
+                    fields:       [:title],
+                },
+            ],
+            response: {
+                stored_fields: [
+                    "body",
+                    "payload.raw",
+                ],
+            },
+            dump_body: true,
+        )
+
+        expect(body[:stored_fields]).to eq([
+            "body",
+            "payload.raw",
+        ])
+    end
+
+    it "response.stored_fieldsはStringのArrayに限定する" do
+        invalid_values = [
+            [],
+            :body,
+            [:body],
+            "body",
+            nil,
+        ]
+
+        invalid_values.each do |invalid_value|
+            expect do
+                AreSearch::Searcher.search(
+                    [article_index_target],
+                    queries: [
+                        {
+                            query_string: "Rails",
+                            fields:       [:title],
+                        },
+                    ],
+                    response: {
+                        stored_fields: invalid_value,
+                    },
+                    dump_body: true,
+                )
+            end.to raise_error(
+                ArgumentError,
+                /opts\[:response\]\[stored_fields\]/,
+            )
+        end
+    end
+
+    it "response.docvalue_fieldsをElasticsearchのdocvalue_fieldsへ指定する" do
+        body = AreSearch::Searcher.search(
+            [article_index_target],
+            queries: [
+                {
+                    query_string: "Rails",
+                    fields:       [:title],
+                },
+            ],
+            response: {
+                docvalue_fields: [
+                    "status",
+                    "published_at",
+                ],
+            },
+            dump_body: true,
+        )
+
+        expect(body[:docvalue_fields]).to eq([
+            "status",
+            "published_at",
+        ])
+    end
+
+    it "response.docvalue_fieldsはStringのArrayに限定する" do
+        invalid_values = [
+            [],
+            :status,
+            [:status],
+            "status",
+            nil,
+        ]
+
+        invalid_values.each do |invalid_value|
+            expect do
+                AreSearch::Searcher.search(
+                    [article_index_target],
+                    queries: [
+                        {
+                            query_string: "Rails",
+                            fields:       [:title],
+                        },
+                    ],
+                    response: {
+                        docvalue_fields: invalid_value,
+                    },
+                    dump_body: true,
+                )
+            end.to raise_error(
+                ArgumentError,
+                /opts\[:response\]\[docvalue_fields\]/,
+            )
         end
     end
 

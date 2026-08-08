@@ -12,6 +12,26 @@ RSpec.describe AreSearch::EsAdapter do
             .and_return(client)
     end
 
+    describe ".index_alias_exists?" do
+        let(:index_alias_name) do
+            "test__articles__default"
+        end
+
+
+        it "Elasticsearchがtrue以外を返してもfalseへ正規化する" do
+            expect(indices)
+                .to receive(:exists_alias)
+                .with(name: index_alias_name)
+                .and_return(nil)
+
+            result = described_class.index_alias_exists?(
+                index_alias_name: index_alias_name,
+            )
+
+            expect(result).to eq(false)
+        end
+    end
+
     describe ".update_alias" do
         let(:new_physical_index_name) do
             "test__articles__default__2026_08_04_12_00_00_000000"

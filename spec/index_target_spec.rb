@@ -250,10 +250,10 @@ RSpec.describe AreSearch::IndexTarget do
                 .and_return("test")
         end
 
-        it "対象aliasの存在確認をIndexManagerへ委譲する" do
-            expect(AreSearch::IndexManager)
+        it "対象aliasの存在確認をEsAdapterへ委譲する" do
+            expect(AreSearch::EsAdapter)
                 .to receive(:index_alias_exists?)
-                .with("test__articles__default")
+                .with(index_alias_name: "test__articles__default")
                 .and_return(true)
 
             expect(index_target.are_search_index_alias_exists?).to eq(true)
@@ -337,9 +337,9 @@ RSpec.describe AreSearch::IndexTarget do
                 .to receive(:index_prefix)
                 .and_return("test")
 
-            allow(AreSearch::IndexManager)
+            allow(AreSearch::EsAdapter)
                 .to receive(:index_alias_exists?)
-                .with("test__articles__default")
+                .with(index_alias_name: "test__articles__default")
                 .and_return(true)
         end
 
@@ -507,9 +507,9 @@ RSpec.describe AreSearch::IndexTarget do
         end
 
         it "既存aliasがある場合は拒否する" do
-            allow(AreSearch::IndexManager)
+            allow(AreSearch::EsAdapter)
                 .to receive(:index_alias_exists?)
-                .with("test__articles__default")
+                .with(index_alias_name: "test__articles__default")
                 .and_return(true)
 
             expect(AreSearch::IndexManager)
@@ -542,9 +542,9 @@ RSpec.describe AreSearch::IndexTarget do
                 :default,
             )
 
-            allow(AreSearch::IndexManager)
+            allow(AreSearch::EsAdapter)
                 .to receive(:index_alias_exists?)
-                .with("test__articles__default")
+                .with(index_alias_name: "test__articles__default")
                 .and_return(false)
 
             expect(AreSearch::IndexManager)
@@ -559,9 +559,9 @@ RSpec.describe AreSearch::IndexTarget do
         end
 
         it "空index作成をcreate_index操作としてIndexManagerへ委譲する" do
-            allow(AreSearch::IndexManager)
+            allow(AreSearch::EsAdapter)
                 .to receive(:index_alias_exists?)
-                .with("test__articles__default")
+                .with(index_alias_name: "test__articles__default")
                 .and_return(false)
 
             received_result = nil

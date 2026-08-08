@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+- Elasticsearch の alias と物理 index の判定を整理。`EsAdapter#index_alias_exists?` で alias 存在確認を boolean として扱い、alias 名と同名の物理 index 判定では通常 alias を物理 index と誤認しないよう修正。重複していた `IndexManager#index_alias_exists?` を削除して判定を `EsAdapter` へ統一
+- 検索結果取得用の `response.stored_fields` と `response.docvalue_fields` を追加。Elasticsearch の `stored_fields` / `docvalue_fields` へ String 配列を渡し、取得値を既存の `records_with_hit` の `hit[:fields]` から参照できるよう変更
+- `response.fields` は通常 field の値を `_source` から取得するため、`store: true` だけでは取得できないことをガイドへ明記。`stored_fields`、`docvalue_fields`、runtime field との取得経路の違いを整理
+
 ## [0.8.0] - 2026-08-08
 
 - このバージョンは、reindex、DB、jobの作り直しが必要だが、バージョンが1.0.0以下なので移行手順は用意しない

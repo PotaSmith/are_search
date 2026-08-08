@@ -74,9 +74,9 @@ RSpec.describe "search option flow" do
             .to receive(:index_prefix)
             .and_return("test")
 
-        allow(AreSearch::IndexManager)
+        allow(AreSearch::EsAdapter)
             .to receive(:index_alias_exists?)
-            .with("test__articles__default")
+            .with(index_alias_name: "test__articles__default")
             .and_return(true)
     end
 

@@ -90,7 +90,9 @@ module AreSearch
 
         # 対象の Elasticsearch alias が存在するかを返す。
         def are_search_index_alias_exists?
-            AreSearch::IndexManager.index_alias_exists?(are_search_index_alias_name)
+            AreSearch::EsAdapter.index_alias_exists?(
+                index_alias_name: are_search_index_alias_name,
+            )
         end
 
         # alias が指していない古い物理インデックスをすべて削除する（currentのみ残す）。

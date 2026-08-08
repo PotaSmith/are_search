@@ -127,9 +127,9 @@ RSpec.describe AreSearch::IndexMarker do
 
     describe ".create_manual!" do
         before do
-            allow(AreSearch::IndexManager)
+            allow(AreSearch::EsAdapter)
                 .to receive(:index_alias_exists?)
-                .with(index_alias_name)
+                .with(index_alias_name: index_alias_name)
                 .and_return(true)
         end
 
@@ -145,7 +145,7 @@ RSpec.describe AreSearch::IndexMarker do
         it "既存 marker があれば alias を確認せず nil を返して上書きしない" do
             existing_marker = create_index_marker(operation: "reindex")
 
-            expect(AreSearch::IndexManager)
+            expect(AreSearch::EsAdapter)
                 .not_to receive(:index_alias_exists?)
 
             marker = described_class.create_manual!(index_alias_name)
@@ -155,9 +155,9 @@ RSpec.describe AreSearch::IndexMarker do
         end
 
         it "alias が存在しなければ nil を返して marker を作成しない" do
-            allow(AreSearch::IndexManager)
+            allow(AreSearch::EsAdapter)
                 .to receive(:index_alias_exists?)
-                .with(index_alias_name)
+                .with(index_alias_name: index_alias_name)
                 .and_return(false)
 
             marker = described_class.create_manual!(index_alias_name)
@@ -235,9 +235,9 @@ RSpec.describe AreSearch::IndexMarker do
 
     describe "AreSearch manual marker API" do
         before do
-            allow(AreSearch::IndexManager)
+            allow(AreSearch::EsAdapter)
                 .to receive(:index_alias_exists?)
-                .with(index_alias_name)
+                .with(index_alias_name: index_alias_name)
                 .and_return(true)
         end
 

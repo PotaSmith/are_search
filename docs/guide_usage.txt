@@ -275,7 +275,8 @@ runtime_mappingsで定義したフィールドは、typeに応じてproperties�
 
 標準検索オプションの通常フィールド名は、各 target の properties 直下に定義された Symbol に限る。
 runtime_mappingsのフィールド名は、そのHash直下のSymbolを使用する。
-response.sourceとresponse.fieldsはmappingとの照合を行わない。
+response.source、response.fields、response.stored_fields、
+response.docvalue_fieldsはmappingとの照合を行わない。
 
 
 ## 3-1. runtime_mappings
@@ -326,7 +327,7 @@ raw_body検索ではruntime_mappingsをraw_body内へ指定し、
 ## 3-2. response
 ----------------------------------------------------------------
 
-検索結果へ追加で含める_sourceとfieldsを指定する。
+検索結果へ追加で含める_sourceとfields系の取得方法を指定する。
 
     response: {
         source: [
@@ -337,17 +338,46 @@ raw_body検索ではruntime_mappingsをraw_body内へ指定し、
             "runtime_status",
             "published_at",
         ],
+        stored_fields: [
+            "body",
+        ],
+        docvalue_fields: [
+            "status",
+            "user_id",
+        ],
     }
 
 source未指定時は、ActiveRecordの復元に必要な予約フィールドだけを_sourceから取得する。
 指定したsource pathは予約フィールドへ追加される。
 
-sourceとfieldsはStringのArrayで指定する。
-propertiesやmappingの _source.includes / excludes との照合は行わない。
-indexの _source に保存されていない値はsourceへ含まれない。
-fieldsの値はElasticsearchのfieldsへそのまま指定する。
+source、fields、stored_fields、docvalue_fieldsはStringのArrayで指定する。
+propertiesやmappingの _source.includes / excludes、store、doc_valuesとの照合は行わない。
 
-raw_body検索ではresponseを使用せず、_sourceとfieldsをbodyへ直接指定する。
+source
+    Elasticsearchの_sourceから取得する。
+    indexの _source に保存されていない値は含まれない。
+
+fields
+    Elasticsearchのfieldsへそのまま指定する。
+    通常のmapping fieldはElasticsearchが _source から値を取得するため、
+    indexの _source に保存されていない値は含まれない。
+    runtime fieldは _source に保存されていなくても取得できる。
+
+stored_fields
+    Elasticsearchのstored_fieldsへそのまま指定する。
+    mappingでstore: trueになっているフィールドを _source とは別に取得する。
+    storeされていないフィールドを指定した場合の扱いはElasticsearchに委ねる。
+
+docvalue_fields
+    Elasticsearchのdocvalue_fieldsへそのまま指定する。
+    keyword、数値、date等のdoc valuesを利用できるフィールドを _source とは別に取得する。
+    doc valuesを利用できないフィールドを指定した場合の扱いはElasticsearchに委ねる。
+
+fields、stored_fields、docvalue_fieldsで返された値は、いずれもrecords_with_hitの
+hit[:fields]から取得する。
+
+raw_body検索ではresponseを使用せず、_source、fields、stored_fields、
+docvalue_fieldsをbodyへ直接指定する。
 
 
 ## 3-3. 外部入力として使用する値
@@ -783,6 +813,7 @@ hit は次のキーを持つ。
 
     :fields
         Elasticsearch が返した fields。
+        response.fields、response.stored_fields、response.docvalue_fieldsで取得した値を含む。
         フィールド名は Symbol。値のArrayは変更しない。
         対象 hit に値が無い場合は空 Hash。
 

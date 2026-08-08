@@ -112,7 +112,9 @@ module AreSearch
             return nil if marked?(index_alias_name)
 
             # 手動指定の誤りで、存在しない alias の marker を作成しない。
-            return nil if AreSearch::IndexManager.index_alias_exists?(index_alias_name) == false
+            return nil if AreSearch::EsAdapter.index_alias_exists?(
+                index_alias_name: index_alias_name,
+            ) == false
 
             create_for_index_operation!(index_alias_name, operation: MANUAL_OPERATION)
         rescue AreSearch::IndexMarkerUnavailable

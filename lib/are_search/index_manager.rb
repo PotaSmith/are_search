@@ -16,10 +16,6 @@ module AreSearch
         # Searchable は参照しない。
         # モデル依存の bulk 投入処理は Reindexer 側に置く。
 
-        def index_alias_exists?(index_alias_name)
-            physical_index_names_by_alias(index_alias_name).any?
-        end
-
         # alias の 物理インデックスの一覧。
         def physical_index_names_by_alias(index_alias_name)
             AreSearch::EsAdapter.indices_get_alias(index_alias_name: index_alias_name).keys
@@ -28,7 +24,10 @@ module AreSearch
         def index_status(index_alias_name)
             current_physical_names = physical_index_names_by_alias(index_alias_name)
             physical_names = physical_index_names_by_alias_pattern(index_alias_name)
-            alias_named_physical_index_exists = alias_named_physical_index_exists?(index_alias_name)
+            alias_named_physical_index_exists =
+                AreSearch::EsAdapter.alias_named_physical_index_exists?(
+                    index_alias_name: index_alias_name,
+                )
 
             {
                 index_alias_name:        index_alias_name,
@@ -112,7 +111,9 @@ module AreSearch
             end
 
             # 利用側の指定誤りで、存在しない alias の guard を開始しない。
-            if index_alias_exists?(index_alias_name) == false
+            if AreSearch::EsAdapter.index_alias_exists?(
+                index_alias_name: index_alias_name,
+            ) == false
                 raise ArgumentError, "indexが存在しません #{index_alias_name}"
             end
 
@@ -254,14 +255,6 @@ module AreSearch
             physical_names.sort.last
         end
 
-        def alias_named_physical_index_exists?(index_alias_name)
-            response = AreSearch::EsAdapter.alias_named_physical_index(
-                index_alias_name: index_alias_name,
-            )
-
-            response.keys.include?(index_alias_name)
-        end
-
         def build_index_status_warnings(current_physical_names, physical_names, alias_named_physical_index_exists)
             warnings = []
             newest_physical_name = newest_physical_index_name(physical_names)
@@ -288,7 +281,6 @@ module AreSearch
         end
 
         def delete_alias_named_physical_index_if_exists!(index_alias_name)
-            return if AreSearch::EsAdapter.indices_exists_alias(index_alias_name: index_alias_name)
             return unless AreSearch::EsAdapter.alias_named_physical_index_exists?(
                 index_alias_name: index_alias_name,
             )

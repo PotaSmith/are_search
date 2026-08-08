@@ -143,9 +143,9 @@ RSpec.describe AreSearch::IndexManager do
                 )
 
             allow(indices)
-                .to receive(:get)
+                .to receive(:exists)
                 .with(index: index_alias_name)
-                .and_raise(Elastic::Transport::Transport::Errors::NotFound)
+                .and_return(false)
 
             status = described_class.index_status(index_alias_name)
 
@@ -763,13 +763,9 @@ RSpec.describe AreSearch::IndexManager do
     describe ".with_index_guard" do
         before do
             allow(indices)
-                .to receive(:get_alias)
+                .to receive(:exists_alias)
                 .with(name: index_alias_name)
-                .and_return(
-                    alias_response_for(
-                        "test__articles__default__2026_08_04_00_00_00_000000",
-                    ),
-                )
+                .and_return(true)
         end
 
         it "flock と marker の内側で block を実行して成功結果を設定する" do
@@ -819,9 +815,9 @@ RSpec.describe AreSearch::IndexManager do
             result = build_guard_result
 
             allow(indices)
-                .to receive(:get_alias)
+                .to receive(:exists_alias)
                 .with(name: index_alias_name)
-                .and_raise(Elastic::Transport::Transport::Errors::NotFound)
+                .and_return(false)
 
             expect do
                 described_class.with_index_guard(
