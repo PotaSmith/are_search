@@ -206,12 +206,6 @@ Run the tests.
 bundle exec rspec
 ```
 
-## Contributing
-
-This gem is more of a practical template for safely using Elasticsearch in Rails applications than a general-purpose search framework.
-
-It is intended to be forked or cloned and adapted to each application.
-
 ## License
 
 The gem is available as open source under the terms of the [MIT License](https://opensource.org/licenses/MIT).

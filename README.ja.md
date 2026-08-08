@@ -206,12 +206,6 @@ docs/guide_reference.txt                 設定、内部動作、低レベルAPI
 bundle exec rspec
 ```
 
-## Contributing
-
-この gem は、汎用検索フレームワークというより、Rails アプリで Elasticsearch を安全に扱うための実務寄りの雛形です。
-
-利用するアプリに合わせて fork / clone して変更する使い方を想定しています。
-
 ## License
 
 The gem is available as open source under the terms of the [MIT License](https://opensource.org/licenses/MIT).
