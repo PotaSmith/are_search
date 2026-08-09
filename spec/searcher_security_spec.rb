@@ -14,6 +14,7 @@ RSpec.describe AreSearch::Searcher do
         double(
             "index_target",
             model_class: model_class,
+            are_search_index_settings: { max_result_window: 2_000 },
         )
     end
 
@@ -42,15 +43,16 @@ RSpec.describe AreSearch::Searcher do
         }
 
         allow(AreSearch::SearchParamValidator)
-            .to receive(:validate)
+            .to receive(:validate!)
             .with(
                 [index_target],
                 [model_class],
+                2_000,
                 sort: valid_options[:sort],
                 page: 3,
                 per_page: 10,
             )
-            .and_return([valid_options, nil])
+            .and_return(valid_options)
 
         query_builder = double("query_builder")
         body_builder = double("body_builder")
@@ -81,7 +83,7 @@ RSpec.describe AreSearch::Searcher do
 
         expect(body_builder)
             .to receive(:build)
-            .with([index_target], query, kind_of(Hash)) do |_index_targets, _query, actual_options|
+            .with([index_target], query, kind_of(Hash), 2_000) do |_index_targets, _query, actual_options|
                 actual_options.clear
                 body
             end
@@ -102,14 +104,14 @@ RSpec.describe AreSearch::Searcher do
 
         expect(result.status).to eq(AreSearch::SearchResult::STATUS_PARAMS_INVALID)
         expect(result.records).to eq([])
-        expect(result.records.current_page).to eq(3)
+        expect(result.records.page).to eq(3)
         expect(result.records.per_page).to eq(10)
         expect(result.records.total_count).to eq(0)
     end
 
     it "AreSearchパラメーターの検証エラーは空結果へ変換しない" do
         allow(AreSearch::SearchParamValidator)
-            .to receive(:validate)
+            .to receive(:validate!)
             .and_raise(ArgumentError, "invalid option")
 
         expect(AreSearch::SearchBodyPolicy).not_to receive(:valid?)

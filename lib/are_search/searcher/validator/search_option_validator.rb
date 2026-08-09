@@ -5,10 +5,9 @@ module AreSearch
         class << self
 
             # 検索オプションまたは単一nodeを定義に従って検査し、正規化済みの値を返す。
-            def validate(opts, definitions, context)
+            def validate!(opts, definitions, context)
                 if opts.instance_of?(Hash) == false
-                    raise ArgumentError,
-                        "opts は Hash で指定してください: #{opts.inspect}"
+                    raise ArgumentError, "opts は Hash で指定してください: #{opts.inspect}"
                 end
 
                 normalized_options = {}
@@ -17,8 +16,7 @@ module AreSearch
                     parse_symbol_value(raw_option_name, "opts[:#{raw_option_name}]")
 
                     if definitions[raw_option_name] == nil
-                        raise ArgumentError,
-                            "未知の検索オプションが指定されています: #{raw_option_name.inspect}"
+                        raise ArgumentError, "未知の検索オプションが指定されています: #{raw_option_name.inspect}"
                     end
                     # 上を通過した時点で sym 確定
                     sym_option_name = raw_option_name
@@ -72,8 +70,7 @@ module AreSearch
                 definition = definitions[node_type]
 
                 if definition.nil?
-                    raise ArgumentError,
-                        "#{path} のnode_type #{node_type.inspect} は定義されていません: #{node.inspect}"
+                    raise ArgumentError, "#{path} のnode_type #{node_type.inspect} は定義されていません: #{node.inspect}"
                 end
 
                 if node_type == :scalar
@@ -83,8 +80,7 @@ module AreSearch
                 elsif node_type == :hash
                     parse_hash(node, definition, path, context)
                 else
-                    raise ArgumentError,
-                        "未知のnode_typeです: #{node_type.inspect}"
+                    raise ArgumentError, "未知のnode_typeです: #{node_type.inspect}"
                 end
             end
 
@@ -143,8 +139,7 @@ module AreSearch
                     )
 
                     if selected_value_definition == nil
-                        raise ArgumentError,
-                            "#{path} に未知のキーがあります: #{raw_key.inspect}"
+                        raise ArgumentError, "#{path} に未知のキーがあります: #{raw_key.inspect}"
                     end
 
                     normalized_hash[raw_key] = parse_node(
@@ -207,8 +202,7 @@ module AreSearch
                 return if definition.key?(:item_count) == false
                 return if normalized_hash.length == definition[:item_count]
 
-                raise ArgumentError,
-                    "#{path} は #{definition[:item_count]} 件で指定してください: #{normalized_hash.inspect}"
+                raise ArgumentError, "#{path} は #{definition[:item_count]} 件で指定してください: #{normalized_hash.inspect}"
             end
 
             # must_keysに指定された固定キーがHash内に存在することを確認する。
@@ -218,8 +212,7 @@ module AreSearch
                 missing_keys = definition[:must_keys] - normalized_hash.keys
                 return if missing_keys.empty?
 
-                raise ArgumentError,
-                    "#{path} に必要なキーがありません: #{missing_keys.inspect}"
+                raise ArgumentError, "#{path} に必要なキーがありません: #{missing_keys.inspect}"
             end
 
             # must_not_keysに指定された固定キーがHash内に存在しないことを確認する。
@@ -229,8 +222,7 @@ module AreSearch
                 prohibited_keys = definition[:must_not_keys] & normalized_hash.keys
                 return if prohibited_keys.empty?
 
-                raise ArgumentError,
-                    "#{path} に指定できないキーがあります: #{prohibited_keys.inspect}"
+                raise ArgumentError, "#{path} に指定できないキーがあります: #{prohibited_keys.inspect}"
             end
 
             # 名前付きtypeに従って単一値を検査し、正規化する。
@@ -323,8 +315,7 @@ module AreSearch
             # Symbolだけを許可する。
             def parse_symbol_value(value, path)
                 if value.instance_of?(Symbol) == false
-                    raise ArgumentError,
-                        "#{path} は Symbol で指定してください: #{value.inspect}"
+                    raise ArgumentError, "#{path} は Symbol で指定してください: #{value.inspect}"
                 end
 
                 value
@@ -333,8 +324,7 @@ module AreSearch
             # Stringだけを許可する。
             def parse_string_value(value, path)
                 if value.instance_of?(String) == false
-                    raise ArgumentError,
-                        "#{path} は String で指定してください: #{value.inspect}"
+                    raise ArgumentError, "#{path} は String で指定してください: #{value.inspect}"
                 end
 
                 value
@@ -343,8 +333,7 @@ module AreSearch
             # 値の型は限定せず、nilだけを拒否して入力とは別の値を返す。
             def parse_not_nil_value(value, path)
                 if value.nil?
-                    raise ArgumentError,
-                        "#{path} に nil は指定できません"
+                    raise ArgumentError, "#{path} に nil は指定できません"
                 end
 
                 parse_any_value(value)
@@ -355,8 +344,7 @@ module AreSearch
                 return value if value == true
                 return value if value == false
 
-                raise ArgumentError,
-                    "#{path} は true または false で指定してください: #{value.inspect}"
+                raise ArgumentError, "#{path} は true または false で指定してください: #{value.inspect}"
             end
 
             # StringまたはSymbolの単一値だけを許可する。
@@ -364,8 +352,7 @@ module AreSearch
                 return value if value.instance_of?(String)
                 return value if value.instance_of?(Symbol)
 
-                raise ArgumentError,
-                    "#{path} は String または Symbol で指定してください: #{value.inspect}"
+                raise ArgumentError, "#{path} は String または Symbol で指定してください: #{value.inspect}"
             end
 
             # StringまたはIntegerの単一値だけを許可する。
@@ -373,8 +360,7 @@ module AreSearch
                 return value if value.instance_of?(String)
                 return value if value.instance_of?(Integer)
 
-                raise ArgumentError,
-                    "#{path} は String または Integer で指定してください: #{value.inspect}"
+                raise ArgumentError, "#{path} は String または Integer で指定してください: #{value.inspect}"
             end
 
             # String、Integer、true、falseの単一値だけを許可する。
@@ -384,8 +370,7 @@ module AreSearch
                 return value if value == true
                 return value if value == false
 
-                raise ArgumentError,
-                    "#{path} は String、Integer、true、falseのいずれかで指定してください: #{value.inspect}"
+                raise ArgumentError, "#{path} は String、Integer、true、falseのいずれかで指定してください: #{value.inspect}"
             end
 
             # String、Integer、Float、true、falseの単一値だけを許可する。
@@ -396,8 +381,7 @@ module AreSearch
                 return value if value == true
                 return value if value == false
 
-                raise ArgumentError,
-                    "#{path} は String、Integer、Float、true、falseのいずれかで指定してください: #{value.inspect}"
+                raise ArgumentError, "#{path} は String、Integer、Float、true、falseのいずれかで指定してください: #{value.inspect}"
             end
 
             # 正のIntegerまたはFloatだけを許可する。
@@ -408,8 +392,7 @@ module AreSearch
                     return value
                 end
 
-                raise ArgumentError,
-                    "#{path} は正の数で指定してください: #{value.inspect}"
+                raise ArgumentError, "#{path} は正の数で指定してください: #{value.inspect}"
             end
 
             # 正のIntegerだけを許可する。
@@ -418,8 +401,7 @@ module AreSearch
                     return value
                 end
 
-                raise ArgumentError,
-                    "#{path} は正の整数で指定してください: #{value.inspect}"
+                raise ArgumentError, "#{path} は正の整数で指定してください: #{value.inspect}"
             end
 
             # query_typeはSymbolに限定し、定義済みの値だけを許可する。
@@ -430,20 +412,17 @@ module AreSearch
                     return query_type
                 end
 
-                raise ArgumentError,
-                    "#{path} は #{AreSearch::StandardQueryBuilder::TYPES.inspect} のいずれかで指定してください: #{value.inspect}"
+                raise ArgumentError, "#{path} は #{AreSearch::StandardQueryBuilder::TYPES.inspect} のいずれかで指定してください: #{value.inspect}"
             end
 
             # sym key かどうか確認
             def parse_symbol_key(value, path)
                 if value.instance_of?(Symbol) == false
-                    raise ArgumentError,
-                        "#{path} は symで指定してください: #{value.inspect}"
+                    raise ArgumentError, "#{path} は symで指定してください: #{value.inspect}"
                 end
 
                 if AreSearch::IndexDefinition.valid_index_field_name?(value) == false
-                    raise ArgumentError,
-                        "#{path} は有効な名前で指定してください: #{value.inspect}"
+                    raise ArgumentError, "#{path} は有効な名前で指定してください: #{value.inspect}"
                 end
 
                 value
@@ -466,16 +445,14 @@ module AreSearch
             def parse_model_class(value, path)
                 return value if value.instance_of?(Class)
 
-                raise ArgumentError,
-                    "#{path} はモデルClassで指定してください: #{value.inspect}"
+                raise ArgumentError, "#{path} はモデルClassで指定してください: #{value.inspect}"
             end
 
             # ActiveRecord::Relationとその継承クラスだけを許可する。
             def parse_active_record_relation(value, path)
                 return value if value.is_a?(ActiveRecord::Relation)
 
-                raise ArgumentError,
-                    "#{path} は ActiveRecord::Relation で指定してください: #{value.inspect}"
+                raise ArgumentError, "#{path} は ActiveRecord::Relation で指定してください: #{value.inspect}"
             end
 
             # フィールド名を指定されたcontextのフィールド一覧と照合する。
@@ -484,9 +461,7 @@ module AreSearch
 
                 return field_name if context_fields.include?(field_name)
 
-                raise ArgumentError,
-                    "#{path} に context.#{context_method} に含まれないフィールドが指定されています: " \
-                    "#{field_name.inspect}"
+                raise ArgumentError, "#{path} に context.#{context_method} に含まれないフィールドが指定されています: #{field_name.inspect}"
             end
 
             # context参照型のフィールド名を指定集合と照合する。
@@ -503,16 +478,14 @@ module AreSearch
             def parse_searchable_instance(value, path)
                 return value if value.class.include?(AreSearch::Searchable)
 
-                raise ArgumentError,
-                    "#{path} は AreSearch::Searchable のインスタンスで指定してください: #{value.inspect}"
+                raise ArgumentError, "#{path} は AreSearch::Searchable のインスタンスで指定してください: #{value.inspect}"
             end
 
             # IndexTargetのインスタンスだけを許可する。
             def parse_index_target(value, path)
                 return value if value.instance_of?(AreSearch::IndexTarget)
 
-                raise ArgumentError,
-                    "#{path} は AreSearch::IndexTarget で指定してください: #{value.inspect}"
+                raise ArgumentError, "#{path} は AreSearch::IndexTarget で指定してください: #{value.inspect}"
             end
         end
     end

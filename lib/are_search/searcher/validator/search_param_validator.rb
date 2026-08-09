@@ -6,25 +6,21 @@ module AreSearch
 
             # index targetとモデルから検査用contextを作成し、
             # SearchOptionValidatorで検索オプションを検査・正規化する。
-            # 外部入力として許可した値が不正な場合は、valid_optionsをnilにして
-            # エラーメッセージを返す。
             # 複数オプション間の関係だけは、このクラスで追加検査する。
-            def validate(index_targets, models, **dirty_options)
+            def validate!(index_targets, models, max_result_window, **dirty_options)
                 context = AreSearch::SearchOptionContext.build(
                     index_targets,
                     models,
                     dirty_options[:runtime_mappings],
                 )
 
-                begin
-                    options = AreSearch::SearchOptionValidator.validate(
-                        dirty_options,
-                        AreSearch::SearchOptionValidator::OPTION_DEFINITIONS,
-                        context,
-                    )
-                rescue AreSearch::InvalidSearchOption => error
-                    return [nil, error.message]
-                end
+                options = AreSearch::SearchOptionValidator.validate!(
+                    dirty_options,
+                    AreSearch::SearchOptionValidator::OPTION_DEFINITIONS,
+                    context,
+                )
+
+                validate_paging_range!(options, max_result_window)
 
                 model_relations = options[:model_relations]
                 if model_relations.nil? == false
@@ -38,17 +34,28 @@ module AreSearch
 
                 if options[:build_model_bool] == true
                     if options.key?(:raw_body) == false
-                        raise ArgumentError,
-                            ":build_model_bool を使用する場合は :raw_body が必要です"
+                        raise ArgumentError, ":build_model_bool を使用する場合は :raw_body が必要です"
                     end
 
                     validate_model_bool_body!(options[:raw_body])
                 end
 
-                [options, nil]
+                options
             end
 
             private
+
+            # page / per_page から算出した検索開始位置が、
+            # Elasticsearch の取得可能範囲内にあることを確認する。
+            def validate_paging_range!(options, max_result_window)
+                page = AreSearch::SearcherUtils.resolve_default_option(options[:page], 1)
+                per_page = AreSearch::SearcherUtils.resolve_default_option(options[:per_page], 25)
+                from = (page - 1) * per_page
+
+                return if from < max_result_window
+
+                raise AreSearch::InvalidSearchOption, "opts[:page] と opts[:per_page] から算出した from が max_result_window 以上です"
+            end
 
             # More Like Thisの基準ドキュメントとfieldsの関係を検査する。
             def validate_mlt_options!(mlt_options)
@@ -67,9 +74,7 @@ module AreSearch
                 model_relations.each do |model, relation|
                     next if relation.klass == model
 
-                    raise ArgumentError,
-                        "model_relations のモデルと Relation の klass が一致していません: " \
-                        "#{model.name} != #{relation.klass.name}"
+                    raise ArgumentError, "model_relations のモデルと Relation の klass が一致していません: #{model.name} != #{relation.klass.name}"
                 end
             end
 
@@ -82,8 +87,7 @@ module AreSearch
 
                 if instance_index_target.nil? ||
                         instance_index_target.are_search_index_alias_name != index_target_options.are_search_index_alias_name
-                    raise ArgumentError,
-                        "instance から取得した index_target と指定された index_target が一致していません"
+                    raise ArgumentError, "instance から取得した index_target と指定された index_target が一致していません"
                 end
             end
 
@@ -94,9 +98,7 @@ module AreSearch
                 fields_options.each do |field_name|
                     next if valid_fields.include?(field_name)
 
-                    raise ArgumentError,
-                        "mlt.fields は mlt.index_target の text または keyword 型フィールドを指定してください: " \
-                        "#{field_name.inspect}"
+                    raise ArgumentError, "mlt.fields は mlt.index_target の text または keyword 型フィールドを指定してください: #{field_name.inspect}"
                 end
             end
 
@@ -123,30 +125,24 @@ module AreSearch
 
                 query_key = raw_body_key(raw_body, :query)
                 if query_key.nil?
-                    raise ArgumentError,
-                        ":build_model_bool を使用する場合は :raw_body に query が必要です"
+                    raise ArgumentError, ":build_model_bool を使用する場合は :raw_body に query が必要です"
                 end
 
                 query_body = raw_body[query_key]
                 if query_body.instance_of?(Hash) == false
-                    raise ArgumentError,
-                        ":build_model_bool を使用する場合は query を Hash で指定してください: " \
-                        "#{query_body.inspect}"
+                    raise ArgumentError, ":build_model_bool を使用する場合は query を Hash で指定してください: #{query_body.inspect}"
                 end
 
                 validate_raw_body_key_pair!(query_body, :bool, "query")
 
                 bool_key = raw_body_key(query_body, :bool)
                 if bool_key.nil?
-                    raise ArgumentError,
-                        ":build_model_bool を使用する場合は query.bool が必要です"
+                    raise ArgumentError, ":build_model_bool を使用する場合は query.bool が必要です"
                 end
 
                 bool_body = query_body[bool_key]
                 if bool_body.instance_of?(Hash) == false
-                    raise ArgumentError,
-                        ":build_model_bool を使用する場合は query.bool を Hash で指定してください: " \
-                        "#{bool_body.inspect}"
+                    raise ArgumentError, ":build_model_bool を使用する場合は query.bool を Hash で指定してください: #{bool_body.inspect}"
                 end
 
                 validate_raw_body_key_pair!(bool_body, :filter, "query.bool")
@@ -159,8 +155,7 @@ module AreSearch
                 return if filter_value.instance_of?(Hash)
                 return if filter_value.instance_of?(Array)
 
-                raise ArgumentError,
-                    ":build_model_bool を使用する場合は query.bool.filter を " \
+                raise ArgumentError, ":build_model_bool を使用する場合は query.bool.filter を " \
                     "Hash、Array、nil のいずれかで指定してください: #{filter_value.inspect}"
             end
 
@@ -169,8 +164,7 @@ module AreSearch
                 string_key = key.to_s
 
                 if hash.key?(key) && hash.key?(string_key)
-                    raise ArgumentError,
-                        ":raw_body #{path} に #{key.inspect} と #{string_key.inspect} を同時に指定できません"
+                    raise ArgumentError, ":raw_body #{path} に #{key.inspect} と #{string_key.inspect} を同時に指定できません"
                 end
             end
 

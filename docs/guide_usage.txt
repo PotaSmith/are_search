@@ -392,7 +392,8 @@ docvalue_fieldsをbodyへ直接指定する。
 各オプションの型と制約が適用される。
 これらの値が制約に合わない場合、search_failure_mode が :empty_result なら検索を実行せず、
 STATUS_PARAMS_INVALID の空結果を返す。:raise なら AreSearch::InvalidSearchOption を送出する。
-page は正の Integer で指定し、max_result_window 以降のページは0件になる。
+page は正の Integer で指定する。page と per_page から算出した開始位置が max_result_window 以上の場合も、
+検索を実行せず同じ検索パラメータ不正として扱う。
 
 
 検索条件が1件の場合。
@@ -585,17 +586,32 @@ result.records は Kaminari の paginate ヘルパーに対応する。
 
 主なページ情報。
 
-    result.records.current_page
+    result.records.page
     result.records.per_page
     result.records.total_count
     result.records.es_total_count
+    result.records.pagination_total_count
     result.records.total_pages
 
 page と per_page は正の Integer。
 取得範囲の上限は target の max_result_window。複数 target では最小値を使用する。
+page と per_page から算出した開始位置が max_result_window 以上の場合は検索パラメータ不正になる。
+開始位置が上限未満で、要求件数が上限を超える最後のページでは、Elasticsearch へ渡す size を縮小する。
 
-result.records.total_count は、現在ページでDB復元できなかった件数を差し引く。
-Elasticsearch の総件数は result.records.es_total_count で返す。
+件数は用途ごとに分かれる。
+
+    es_total_count
+        Elasticsearch が返した検索ヒット総数。
+
+    total_count
+        es_total_count から、現在ページでActiveRecordへ復元できなかった件数を差し引いた表示用総件数。
+
+    pagination_total_count
+        es_total_count と max_result_window の小さい方から、現在ページでActiveRecordへ復元できなかった件数を差し引いた
+        ページング可能件数。
+
+total_pages、previous_page、next_page、out_of_range? などのページ判定は pagination_total_count を使用する。
+Kaminari の page_entries_info が参照する total_count は表示用総件数を返す。
 
 
 # 7. sort

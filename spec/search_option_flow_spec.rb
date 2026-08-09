@@ -159,7 +159,7 @@ RSpec.describe "search option flow" do
 
             expect(result.status).to eq(AreSearch::SearchResult::STATUS_PARAMS_INVALID)
             expect(result.records).to eq([])
-            expect(result.records.current_page).to eq(1)
+            expect(result.records.page).to eq(1)
             expect(result.records.per_page).to eq(25)
         end
     end

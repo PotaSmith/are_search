@@ -61,6 +61,109 @@ RSpec.describe "AreSearch search features integration", type: :model do
         )
     end
 
+    # ページング境界確認用のDocumentSecondをDBへ一括投入し、実indexへreindexする。
+    def create_pagination_documents(count)
+        now = Time.current
+        rows = []
+
+        (1..count).each do |user_id|
+            rows << {
+                title:      "paginationboundarytoken",
+                body:       "pagination boundary body",
+                status:     "published",
+                user_id:    user_id,
+                created_at: now,
+                updated_at: now,
+            }
+        end
+
+        DocumentSecond.insert_all!(rows)
+        rebuild_index
+        refresh_index
+    end
+
+    it "max_result_window境界まで実Elasticsearchで取得し境界以降は検索前に拒否する" do
+        create_pagination_documents(2_001)
+
+        crossing_result = AreSearch::Searcher.search(
+            [index_target],
+            queries: [
+                {
+                    query_string: "paginationboundarytoken",
+                    fields:       [:title],
+                },
+            ],
+            sort: {
+                user_id: :asc,
+            },
+            page:     2,
+            per_page: 1_500,
+        )
+
+        expect(crossing_result.status).to eq(AreSearch::SearchResult::STATUS_OK)
+        expect(crossing_result.records.length).to eq(500)
+        expect(crossing_result.records.first.user_id).to eq(1_501)
+        expect(crossing_result.records.last.user_id).to eq(2_000)
+        expect(crossing_result.records.es_total_count).to eq(2_001)
+        expect(crossing_result.records.total_count).to eq(2_001)
+        expect(crossing_result.records.pagination_total_count).to eq(2_000)
+        expect(crossing_result.records.total_pages).to eq(2)
+        expect(crossing_result.records.last_page?).to eq(true)
+        expect(crossing_result.records.next_page).to eq(nil)
+
+        edge_result = AreSearch::Searcher.search(
+            [index_target],
+            queries: [
+                {
+                    query_string: "paginationboundarytoken",
+                    fields:       [:title],
+                },
+            ],
+            sort: {
+                user_id: :asc,
+            },
+            page:     2_000,
+            per_page: 1,
+        )
+
+        expect(edge_result.status).to eq(AreSearch::SearchResult::STATUS_OK)
+        expect(edge_result.records.map(&:user_id)).to eq([2_000])
+        expect(edge_result.records.es_total_count).to eq(2_001)
+        expect(edge_result.records.pagination_total_count).to eq(2_000)
+        expect(edge_result.records.last_page?).to eq(true)
+        expect(edge_result.records.next_page).to eq(nil)
+
+        boundary_result = AreSearch::Searcher.search(
+            [index_target],
+            queries: [
+                {
+                    query_string: "paginationboundarytoken",
+                    fields:       [:title],
+                },
+            ],
+            page:     2_001,
+            per_page: 1,
+        )
+
+        expect(boundary_result.status).to eq(AreSearch::SearchResult::STATUS_PARAMS_INVALID)
+        expect(boundary_result.records).to eq([])
+
+        over_result = AreSearch::Searcher.search(
+            [index_target],
+            queries: [
+                {
+                    query_string: "paginationboundarytoken",
+                    fields:       [:title],
+                },
+            ],
+            page:     2_002,
+            per_page: 1,
+        )
+
+        expect(over_result.status).to eq(AreSearch::SearchResult::STATUS_PARAMS_INVALID)
+        expect(over_result.records).to eq([])
+    end
+
     it "storeを指定していないtextフィールドを通常検索できる" do
         document = create_document(
             title:   "nostoretitle token",

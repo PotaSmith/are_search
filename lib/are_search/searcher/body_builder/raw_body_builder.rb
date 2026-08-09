@@ -18,7 +18,7 @@ module AreSearch
             end
 
             # 利用者指定bodyを複製し、モデル条件とページングだけを反映する
-            def build(index_targets, _query, valid_options)
+            def build(index_targets, _query, valid_options, max_result_window)
                 raw_body_opt         = valid_options.delete(:raw_body)
                 build_model_bool_opt = valid_options.delete(:build_model_bool)
                 page_opt             = valid_options.delete(:page)
@@ -30,10 +30,7 @@ module AreSearch
                 search_body = raw_body_opt.dup
 
                 if build_model_bool_opt == true
-                    search_body = build_raw_search_model_bool(
-                        search_body,
-                        index_targets,
-                    )
+                    search_body = build_raw_search_model_bool(search_body, index_targets)
                 end
 
                 search_body.delete(:from)
@@ -41,13 +38,7 @@ module AreSearch
                 search_body.delete(:size)
                 search_body.delete("size")
 
-                from = (page - 1) * per_page
-                size = per_page
-                es_from, es_size = resolve_paging_params(
-                    index_targets,
-                    from,
-                    size,
-                )
+                es_from, es_size = resolve_paging_params(max_result_window, page, per_page)
 
                 search_body[:from] = es_from
                 search_body[:size] = es_size

@@ -16,23 +16,24 @@ module AreSearch
                 verify_searchable!(model)
             end
             verify_no_parent_child_index_targets!(index_targets)
+            max_result_window = resolve_max_result_window(index_targets)
 
-            valid_options, error_message = SearchParamValidator.validate(index_targets, models, **options)
-
-            if error_message.nil? == false
+            begin
+                valid_options = SearchParamValidator.validate!(index_targets, models, max_result_window, **options)
+            rescue AreSearch::InvalidSearchOption => error
                 return search_failure_result(
                     1,
                     25,
                     status: SearchResult::STATUS_PARAMS_INVALID,
                     error_class: AreSearch::InvalidSearchOption,
-                    error_message: error_message,
+                    error_message: error.message,
                 )
             end
 
             query_options = valid_options.dup
             body_options = valid_options.dup
             query = AreSearch::QueryBuilderSelector.select(valid_options).build(index_targets, query_options)
-            body = AreSearch::BodyBuilderSelector.select(valid_options).build(index_targets, query, body_options)
+            body = AreSearch::BodyBuilderSelector.select(valid_options).build(index_targets, query, body_options, max_result_window)
 
             # ここで使うオプションを取る
             search_options = valid_options.dup
@@ -55,8 +56,7 @@ module AreSearch
             runtime_mappings_exists = body.key?(:runtime_mappings) || body.key?("runtime_mappings")
 
             if runtime_mappings_exists && enable_runtime_mappings_opts != true
-                raise ArgumentError,
-                    "runtime_mappings を使用する場合は enable_runtime_mappings: true を指定してください"
+                raise ArgumentError, "runtime_mappings を使用する場合は enable_runtime_mappings: true を指定してください"
             end
 
             # --- 変換 ---
@@ -103,6 +103,7 @@ module AreSearch
                 model_relations,
                 page,
                 per_page,
+                max_result_window,
             )
         end
 
@@ -128,6 +129,15 @@ module AreSearch
         end
 
         private
+
+        # 検索対象 IndexTarget 群で使用できる最小の max_result_window を返す。
+        def resolve_max_result_window(index_targets)
+            values = index_targets.map { |index_target|
+                index_target.are_search_index_settings[:max_result_window]
+            }
+
+            values.min
+        end
 
         # 検索で参照する全aliasの存在確認対象を、検索対象とオプションから集める。
         def collect_index_targets_for_exists_check(index_targets, options)
@@ -194,10 +204,11 @@ module AreSearch
         def empty_search_result(page, per_page, status: SearchResult::STATUS_OK)
             paginated = PaginatedCollection.new(
                 [],
-                current_page:   page,
-                per_page:       per_page,
-                total_count:    0,
-                es_total_count: 0,
+                page:              page,
+                per_page:          per_page,
+                es_total_count:    0,
+                hits_count:        0,
+                max_result_window: 0,
             )
             SearchResult.new(paginated, [], {}, {}, status: status)
         end
@@ -221,9 +232,9 @@ module AreSearch
         #########################################################################
 
         # ES リクエストを実行し、結果復元情報を使って SearchResult を組み立てる
-        def build_result(response, index_to_index_targets, model_relations, page, per_page)
+        def build_result(response, index_to_index_targets, model_relations, page, per_page, max_result_window)
 
-            paginated_results = build_paginated_results(response, index_to_index_targets, model_relations, page, per_page)
+            paginated_results = build_paginated_results(response, index_to_index_targets, model_relations, page, per_page, max_result_window)
 
             aggs_results = build_aggs_results(response)
 
@@ -293,31 +304,30 @@ module AreSearch
         # レコード関連生成
         #########################################################################
 
-        def build_paginated_results(response, index_to_index_targets, model_relations, page, per_page)
+        def build_paginated_results(response, index_to_index_targets, model_relations, page, per_page, max_result_window)
             hits = response.dig("hits", "hits")
 
             if hits.nil?
-                return empty_paginated_results(page, per_page, 0)
+                return empty_paginated_results(page, per_page, 0, 0, max_result_window)
             end
 
             es_total_count = response.dig("hits", "total", "value").to_i
 
             if hits.any? { |hit| hit["_source"].nil? }
-                return empty_paginated_results(page, per_page, es_total_count)
+                return empty_paginated_results(page, per_page, es_total_count, hits.size, max_result_window)
             end
 
             record_result    = build_records_results(hits, index_to_index_targets, model_relations)
             records          = record_result[:records]
             records_with_hit = record_result[:records_with_hit]
 
-            total_count =  build_display_total_count(es_total_count, hits, records)
-
             paginated_records = PaginatedCollection.new(
                 records,
-                current_page:   page,
-                per_page:       per_page,
-                total_count:    total_count,
-                es_total_count: es_total_count,
+                page:              page,
+                per_page:          per_page,
+                es_total_count:    es_total_count,
+                hits_count:        hits.size,
+                max_result_window: max_result_window,
             )
 
             {
@@ -326,13 +336,14 @@ module AreSearch
             }
         end
 
-        def empty_paginated_results(page, per_page, es_total_count)
+        def empty_paginated_results(page, per_page, es_total_count, hits_count, max_result_window)
             paginated_records = PaginatedCollection.new(
                 [],
-                current_page:   page,
-                per_page:       per_page,
-                total_count:    0,
-                es_total_count: es_total_count,
+                page:              page,
+                per_page:          per_page,
+                es_total_count:    es_total_count,
+                hits_count:        hits_count,
+                max_result_window: max_result_window,
             )
 
             {
@@ -440,16 +451,6 @@ module AreSearch
             return nil if index_alias_name.nil?
 
             index_to_index_targets[index_alias_name]
-        end
-
-        def build_display_total_count(es_total_count, hits, records)
-            dropped_count = hits.size - records.size
-            dropped_count = 0 if dropped_count < 0
-
-            total_count = es_total_count - dropped_count
-            total_count = 0 if total_count < 0
-
-            total_count
         end
 
     end

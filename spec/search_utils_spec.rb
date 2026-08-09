@@ -19,6 +19,8 @@ RSpec.describe AreSearch::SearchParamValidator do
         end
     end
 
+    let(:max_result_window) { 2_000 }
+
     let(:article_index_target) do
         double(
             "article_index_target",
@@ -87,24 +89,22 @@ RSpec.describe AreSearch::SearchParamValidator do
     end
 
 
-    # 成功した検証結果だけを取り出し、エラーが返っていないことを確認する。
+    # 成功した検証結果を返す。
     def validate_options(index_targets, models, **options)
-        valid_options, error_message = described_class.validate(
+        described_class.validate!(
             index_targets,
             models,
+            max_result_window,
             **options,
         )
-
-        expect(error_message).to eq(nil)
-
-        valid_options
     end
 
-    describe ".validate" do
+    describe ".validate!" do
         it "定義されたnested HashとArrayを検査して入力形式を維持する" do
-            result, error_message = described_class.validate(
+            result = described_class.validate!(
                 [article_index_target],
                 [article_model],
+                max_result_window,
                 queries: [
                     {
                         query_string: "",
@@ -120,7 +120,6 @@ RSpec.describe AreSearch::SearchParamValidator do
                 ],
             )
 
-            expect(error_message).to eq(nil)
             expect(result.dig(:queries, 0, :fields)).to eq([:title])
             expect(result[:where]).to eq([
                 {
@@ -163,9 +162,10 @@ RSpec.describe AreSearch::SearchParamValidator do
             )
 
             expect do
-                described_class.validate(
+                described_class.validate!(
                     [article_index_target],
                     [article_model],
+                    max_result_window,
                     queries: [
                         {
                             query_string: "",
@@ -176,9 +176,10 @@ RSpec.describe AreSearch::SearchParamValidator do
             end.to raise_error(ArgumentError)
 
             expect do
-                described_class.validate(
+                described_class.validate!(
                     [article_index_target],
                     [article_model],
+                    max_result_window,
                     queries: [
                         {
                             query_string: "",
@@ -201,9 +202,10 @@ RSpec.describe AreSearch::SearchParamValidator do
 
             undefined_field_names.each do |field_name|
                 expect do
-                    described_class.validate(
+                    described_class.validate!(
                         [article_index_target],
                         [article_model],
+                        max_result_window,
                         queries: [
                             {
                                 query_string: "",
@@ -245,9 +247,10 @@ RSpec.describe AreSearch::SearchParamValidator do
             )
 
             expect do
-                described_class.validate(
+                described_class.validate!(
                     [article_index_target],
                     [article_model],
+                    max_result_window,
                     queries: [
                         {
                             query_string: "Rails",
@@ -311,18 +314,20 @@ RSpec.describe AreSearch::SearchParamValidator do
                 mlt.delete(required_key)
 
                 expect do
-                    described_class.validate(
+                    described_class.validate!(
                         [article_index_target],
                         [article_model],
+                        max_result_window,
                         mlt: mlt,
                     )
                 end.to raise_error(ArgumentError)
             end
 
             expect do
-                described_class.validate(
+                described_class.validate!(
                     [article_index_target],
                     [article_model],
+                    max_result_window,
                     mlt: {
                         instance:     mlt_instance,
                         index_target: mlt_index_target,
@@ -332,9 +337,10 @@ RSpec.describe AreSearch::SearchParamValidator do
             end.to raise_error(ArgumentError)
 
             expect do
-                described_class.validate(
+                described_class.validate!(
                     [article_index_target],
                     [article_model],
+                    max_result_window,
                     mlt: {
                         instance:     mlt_instance,
                         index_target: mlt_index_target,
@@ -388,9 +394,10 @@ RSpec.describe AreSearch::SearchParamValidator do
             )
 
             expect do
-                described_class.validate(
+                described_class.validate!(
                     [article_index_target],
                     [article_model],
+                    max_result_window,
                     queries: [
                         {
                             query_string: "",
@@ -409,9 +416,10 @@ RSpec.describe AreSearch::SearchParamValidator do
             )
 
             expect do
-                described_class.validate(
+                described_class.validate!(
                     [article_index_target],
                     [article_model],
+                    max_result_window,
                     queries: [
                         {
                             query_string: "",
@@ -479,7 +487,7 @@ RSpec.describe AreSearch::SearchParamValidator do
             ])
         end
 
-        it "外部入力として使用する値が不正な場合はエラーメッセージを返す" do
+        it "外部入力として使用する値が不正な場合はInvalidSearchOptionを送出する" do
             invalid_options = [
                 {
                     queries: [
@@ -542,23 +550,23 @@ RSpec.describe AreSearch::SearchParamValidator do
             ]
 
             invalid_options.each do |options|
-                valid_options, error_message = described_class.validate(
-                    [article_index_target],
-                    [article_model],
-                    **options,
-                )
-
-                expect(valid_options).to eq(nil)
-                expect(error_message).to be_instance_of(String)
-                expect(error_message.empty?).to eq(false)
+                expect do
+                    described_class.validate!(
+                        [article_index_target],
+                        [article_model],
+                        max_result_window,
+                        **options,
+                    )
+                end.to raise_error(AreSearch::InvalidSearchOption)
             end
         end
 
         it "外部入力以外の値が不正な場合は例外を伝播する" do
             expect do
-                described_class.validate(
+                described_class.validate!(
                     [article_index_target],
                     [article_model],
+                    max_result_window,
                     queries: [
                         {
                             query_string: "",
@@ -596,9 +604,10 @@ RSpec.describe AreSearch::SearchParamValidator do
             )
 
             expect do
-                described_class.validate(
+                described_class.validate!(
                     [article_index_target, document_index_target],
                     [article_model, document_model],
+                    max_result_window,
                     queries: [
                         {
                             query_string: "",
@@ -614,9 +623,10 @@ RSpec.describe AreSearch::SearchParamValidator do
             end.to raise_error(ArgumentError)
 
             expect do
-                described_class.validate(
+                described_class.validate!(
                     [article_index_target, document_index_target],
                     [article_model, document_model],
+                    max_result_window,
                     queries: [
                         {
                             query_string: "",
@@ -628,9 +638,10 @@ RSpec.describe AreSearch::SearchParamValidator do
             end.to raise_error(ArgumentError, /all_valid_non_text_fields/)
 
             expect do
-                described_class.validate(
+                described_class.validate!(
                     [article_index_target],
                     [article_model],
+                    max_result_window,
                     queries: [
                         {
                             query_string: "",
@@ -769,9 +780,10 @@ RSpec.describe AreSearch::SearchParamValidator do
 
             invalid_aggs.each do |aggs|
                 expect do
-                    described_class.validate(
+                    described_class.validate!(
                         [article_index_target],
                         [article_model],
+                        max_result_window,
                         queries: [
                             {
                                 query_string: "",
@@ -824,9 +836,10 @@ RSpec.describe AreSearch::SearchParamValidator do
             )
 
             expect do
-                described_class.validate(
+                described_class.validate!(
                     [article_index_target],
                     [article_model],
+                    max_result_window,
                     queries: [
                         {
                             query_string: "",
@@ -840,9 +853,10 @@ RSpec.describe AreSearch::SearchParamValidator do
             end.to raise_error(ArgumentError)
 
             expect do
-                described_class.validate(
+                described_class.validate!(
                     [article_index_target],
                     [article_model],
+                    max_result_window,
                     queries: [
                         {
                             query_string: "",
@@ -876,29 +890,64 @@ RSpec.describe AreSearch::SearchParamValidator do
             expect(result[:per_page]).to eq(25)
         end
 
-        it "不正なpageはエラーメッセージを返し不正なper_pageは例外にする" do
-            [0, -1, 1.5, "1"].each do |value|
-                valid_options, error_message = described_class.validate(
+        it "pageとper_pageから算出した開始位置がmax_result_window以上なら拒否する" do
+            expect do
+                described_class.validate!(
                     [article_index_target],
                     [article_model],
+                    30,
                     queries: [
                         {
                             query_string: "",
                             fields: [:title],
                         },
                     ],
-                    page: value,
+                    page: 3,
+                    per_page: 20,
                 )
+            end.to raise_error(AreSearch::InvalidSearchOption, /max_result_window/)
 
-                expect(valid_options).to eq(nil)
-                expect(error_message).to match(/正の整数/)
+            expect do
+                described_class.validate!(
+                    [article_index_target],
+                    [article_model],
+                    30,
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
+                    page: 2,
+                    per_page: 20,
+                )
+            end.not_to raise_error
+        end
+
+        it "不正なpageはInvalidSearchOptionを送出し不正なper_pageはArgumentErrorにする" do
+            [0, -1, 1.5, "1"].each do |value|
+                expect do
+                    described_class.validate!(
+                        [article_index_target],
+                        [article_model],
+                        max_result_window,
+                        queries: [
+                            {
+                                query_string: "",
+                                fields: [:title],
+                            },
+                        ],
+                        page: value,
+                    )
+                end.to raise_error(AreSearch::InvalidSearchOption, /正の整数/)
             end
 
             [0, -1, 1.5, "1"].each do |value|
                 expect do
-                    described_class.validate(
+                    described_class.validate!(
                         [article_index_target],
                         [article_model],
+                        max_result_window,
                         queries: [
                             {
                                 query_string: "",
@@ -932,9 +981,10 @@ RSpec.describe AreSearch::SearchParamValidator do
             expect(result[:model_relations][model]).to equal(relation)
 
             expect do
-                described_class.validate(
+                described_class.validate!(
                     [article_index_target],
                     [model],
+                    max_result_window,
                     queries: [
                         {
                             query_string: "",
@@ -951,9 +1001,10 @@ RSpec.describe AreSearch::SearchParamValidator do
             )
 
             expect do
-                described_class.validate(
+                described_class.validate!(
                     [article_index_target],
                     [model],
+                    max_result_window,
                     queries: [
                         {
                             query_string: "",
@@ -967,9 +1018,10 @@ RSpec.describe AreSearch::SearchParamValidator do
             end.to raise_error(ArgumentError, /ActiveRecord::Relation/)
 
             expect do
-                described_class.validate(
+                described_class.validate!(
                     [article_index_target],
                     [model],
+                    max_result_window,
                     queries: [
                         {
                             query_string: "",
@@ -983,9 +1035,10 @@ RSpec.describe AreSearch::SearchParamValidator do
             end.to raise_error(ArgumentError, /ActiveRecord::Relation/)
 
             expect do
-                described_class.validate(
+                described_class.validate!(
                     [article_index_target],
                     [model],
+                    max_result_window,
                     queries: [
                         {
                             query_string: "",
@@ -1017,17 +1070,19 @@ RSpec.describe AreSearch::SearchParamValidator do
             expect(result[:build_model_bool]).to eq(true)
 
             expect do
-                described_class.validate(
+                described_class.validate!(
                     [article_index_target],
                     [article_model],
+                    max_result_window,
                     raw_body: [],
                 )
             end.to raise_error(ArgumentError)
 
             expect do
-                described_class.validate(
+                described_class.validate!(
                     [article_index_target],
                     [article_model],
+                    max_result_window,
                     raw_body: {
                         query: {
                             bool: {},
@@ -1050,9 +1105,10 @@ RSpec.describe AreSearch::SearchParamValidator do
             )
 
             expect do
-                described_class.validate(
+                described_class.validate!(
                     [article_index_target, mixed_target],
                     [article_model, document_model],
+                    max_result_window,
                     queries: [
                         {
                             query_string: "",
@@ -1063,9 +1119,10 @@ RSpec.describe AreSearch::SearchParamValidator do
             end.to raise_error(ArgumentError, /any_text_without_non_text_fields/)
 
             expect do
-                described_class.validate(
+                described_class.validate!(
                     [article_index_target, mixed_target],
                     [article_model, document_model],
+                    max_result_window,
                     where: {
                         status: {
                             term: "published",

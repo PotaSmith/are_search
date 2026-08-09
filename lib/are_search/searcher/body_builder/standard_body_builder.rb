@@ -20,7 +20,7 @@ module AreSearch
             end
 
             # 検証済みの検索オプションから標準 Elasticsearch body を組み立てる。
-            def build(index_targets, query, valid_options)
+            def build(index_targets, query, valid_options, max_result_window)
                 # 使うオプションだけ取る
                 runtime_mappings_opts  = valid_options.delete(:runtime_mappings)
                 aggs_opts              = valid_options.delete(:aggs)
@@ -40,9 +40,7 @@ module AreSearch
                 response_stored_fields   = build_response_stored_fields(response_opts)
                 response_docvalue_fields = build_response_docvalue_fields(response_opts)
 
-                from = (page - 1) * per_page
-                size = per_page
-                es_from, es_size = resolve_paging_params(index_targets, from, size)
+                es_from, es_size = resolve_paging_params(max_result_window, page, per_page)
 
                 body = {
                     track_total_hits: true,

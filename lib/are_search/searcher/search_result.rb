@@ -5,73 +5,116 @@ module AreSearch
 
         # ページネーション結果コレクション
 
-        attr_reader :current_page, :per_page, :total_count, :es_total_count
+        # Kaminari paginate / 前後ページ系 helper の使用を想定
+        attr_reader :page, :per_page
+        alias limit_value per_page # Kaminari paginate / page_entries_info 互換
 
-        def initialize(records, current_page:, per_page:, total_count:, es_total_count: nil)
+        # Kaminari page_entries_info の使用を想定
+        attr_reader :total_count
+
+        attr_reader :es_total_count, :hits_count, :max_result_window, :pagination_total_count
+        alias total_entries total_count # will_paginate互換
+
+        # 検索で得た件数情報を保持し、ページング用件数を組み立てる。
+        def initialize(
+            records,
+            page:,
+            per_page:,
+            es_total_count:,
+            hits_count:,
+            max_result_window:
+        )
             raise ArgumentError, "per_page は1以上で指定してください" if per_page.to_i < 1
-
             super(records)
-            @current_page   = current_page.to_i
-            @per_page       = per_page.to_i
-            @total_count    = total_count.to_i
-            @es_total_count = es_total_count.nil? ? @total_count : es_total_count.to_i
+
+            # 検索パラメータ
+            @page = page.to_i
+            @per_page = per_page.to_i
+
+            # 検索結果
+            @es_total_count = es_total_count.to_i
+            @hits_count = hits_count.to_i
+            @max_result_window = max_result_window.to_i
+
+            # これ以降が計算
+
+            # 補正値
+            dropped_count = (hits_count - records.size)
+
+            # 補正込の es内データ件数
+            @total_count = @es_total_count - dropped_count
+
+            # 補正込の esが検索結果として返却した総数
+            @pagination_total_count = [es_total_count, max_result_window].min - dropped_count
         end
 
         def dup
             PaginatedCollection.new(
                 to_a.dup,
-                current_page:   @current_page,
-                per_page:       @per_page,
-                total_count:    @total_count,
-                es_total_count: @es_total_count,
+                page:              @page,
+                per_page:          @per_page,
+                es_total_count:    @es_total_count,
+                hits_count:        @hits_count,
+                max_result_window: @max_result_window,
             )
         end
 
-        def total_pages
-            return 0 if @total_count == 0
+        #
+        # page, per_page は検索パラメータそのまま
+        # 検索パラメータチェックにより数値保証はある
+        # page 省略時は 1
+        # per_page 省略時は 25
+        #
 
-            (@total_count.to_f / @per_page).ceil
+        # Kaminari paginate / page_entries_info の使用を想定
+        def total_pages
+            return 0 if @pagination_total_count == 0
+
+            (@pagination_total_count.to_f / @per_page).ceil
         end
 
         def first_page?
-            @current_page <= 1
+            @page <= 1
         end
 
         def last_page?
-            @current_page == total_pages
+            @page == total_pages
         end
 
+        # will_paginate互換
         def out_of_range?
-            @current_page < 1 || @current_page > total_pages
+            @page < 1 || @page > total_pages
         end
+        alias out_of_bounds? out_of_range? # will_paginate互換
 
+        # Kaminari 前後ページ系 helper の使用を想定
         def previous_page
             return nil if first_page?
             return nil if out_of_range?
 
-            @current_page - 1
+            @page - 1
         end
+        alias prev_page previous_page # Kaminari 前ページ系 helper 互換
 
+        # Kaminari 次ページ系 helper の使用を想定
         def next_page
             return nil if last_page?
             return nil if out_of_range?
 
-            @current_page + 1
+            @page + 1
         end
 
+        # Kaminari page_entries_info の使用を想定
         def offset
-            (@current_page - 1) * @per_page
+            (@page - 1) * @per_page
         end
+        alias offset_value offset # Kaminari page_entries_info 互換
 
+        # Kaminari page_entries_info の使用を想定
         def entry_name(count:)
             "entry"
         end
 
-        alias limit_value    per_page
-        alias total_entries  total_count
-        alias out_of_bounds? out_of_range? # will_paginate互換
-        alias prev_page      previous_page # kaminari互換
-        alias offset_value   offset        # kaminari互換
     end
 
     class SearchResult

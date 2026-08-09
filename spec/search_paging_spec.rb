@@ -177,42 +177,107 @@ RSpec.describe "search paging" do
         expect(body[:size]).to eq(10)
     end
 
-    it "raw_body検索も max_result_window 補正を行う" do
+    it "開始位置がmax_result_window以上なら検索前にparams_invalidにする" do
+        expect(AreSearch::EsAdapter).not_to receive(:no_validation_search)
+
+        result = AreSearch::Searcher.search(
+            [article_index_target],
+            raw_body: {
+                query: {
+                    match_all: {},
+                },
+            },
+            page:     3,
+            per_page: 20,
+        )
+
+        expect(result.status).to eq(AreSearch::SearchResult::STATUS_PARAMS_INVALID)
+        expect(result.records).to eq([])
+    end
+
+    it "ES総件数がmax_result_windowを超えてもページング可能件数は上限内にする" do
+        response = {
+            "hits" => {
+                "hits"  => [],
+                "total" => { "value" => 100 },
+            },
+        }
+
+        allow(AreSearch::EsAdapter)
+            .to receive(:no_validation_search)
+            .and_return(response)
+
+        result = AreSearch::Searcher.search(
+            [article_index_target],
+            raw_body: {
+                query: {
+                    match_all: {},
+                },
+            },
+            page:     1,
+            per_page: 20,
+        )
+
+        expect(result.records.total_count).to eq(100)
+        expect(result.records.es_total_count).to eq(100)
+        expect(result.records.pagination_total_count).to eq(30)
+        expect(result.records.total_pages).to eq(2)
+        expect(result.records.next_page).to eq(2)
+    end
+
+    it "max_result_window末端の部分ページで復元不能分をpagination_total_countから差し引く" do
         client = double("client")
-        body = {
-            query: {
-                match_all: {},
+        records = (21..27).map { |id| article_model.new(id) }
+        hits = (21..30).map do |id|
+            {
+                "_index"  => "test__articles__default__2026_07_03_03_10_00_123456",
+                "_id"     => id.to_s,
+                "_source" => {
+                    AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME.to_s => ["Article"],
+                    AreSearch::IndexDefinition::RESERVED_AR_INSTANCE_KEY_FIELD_NAME.to_s     => id.to_s,
+                },
+            }
+        end
+        response = {
+            "hits" => {
+                "hits"  => hits,
+                "total" => { "value" => 100 },
             },
         }
 
         allow(AreSearch)
             .to receive(:client)
             .and_return(client)
-
         expect(client)
-            .to receive(:search) do |args|
-                expect(args[:index]).to eq("test__articles__default")
-                expect(args[:body][:from]).to eq(30)
-                expect(args[:body][:size]).to eq(0)
-                expect(args[:body][:query]).to eq(match_all: {})
+            .to receive(:search) do |index:, body:|
+                expect(index).to eq("test__articles__default")
+                expect(body[:from]).to eq(20)
+                expect(body[:size]).to eq(10)
 
-                {
-                    "hits" => {
-                        "hits"  => [],
-                        "total" => { "value" => 100 },
-                    },
-                }
+                response
             end
+        allow(article_model)
+            .to receive(:where)
+            .with(id: (21..30).map(&:to_s))
+            .and_return(records)
 
         result = AreSearch::Searcher.search(
             [article_index_target],
-            raw_body: body,
-            page:     3,
+            raw_body: {
+                query: {
+                    match_all: {},
+                },
+            },
+            page:     2,
             per_page: 20,
         )
 
-        expect(result.records.total_count).to eq(100)
+        expect(result.records).to eq(records)
         expect(result.records.es_total_count).to eq(100)
+        expect(result.records.total_count).to eq(97)
+        expect(result.records.pagination_total_count).to eq(27)
+        expect(result.records.total_pages).to eq(2)
+        expect(result.records.next_page).to eq(nil)
     end
 
     it "DB復元で落ちたhitをtotal_countから差し引き、ES件数はes_total_countへ残す" do
@@ -283,6 +348,8 @@ RSpec.describe "search paging" do
         ])
         expect(result.records.total_count).to eq(99)
         expect(result.records.es_total_count).to eq(100)
+        expect(result.records.pagination_total_count).to eq(29)
+        expect(result.records.total_pages).to eq(2)
     end
 
     it "hitsが無い異常レスポンスはレコード関連結果を空にする" do
@@ -318,7 +385,7 @@ RSpec.describe "search paging" do
         expect(result.raw_response).to equal(response)
     end
 
-    it "1件でも_sourceが無い場合は復元せずES件数だけ残す" do
+    it "1件でも_sourceが無い場合はページ内hitを復元不能として件数補正する" do
         client = double("client")
         response = {
             "hits" => {
@@ -367,8 +434,9 @@ RSpec.describe "search paging" do
 
         expect(result.records).to eq([])
         expect(result.records_with_hit).to eq([])
-        expect(result.records.total_count).to eq(0)
+        expect(result.records.total_count).to eq(98)
         expect(result.records.es_total_count).to eq(100)
+        expect(result.records.pagination_total_count).to eq(28)
         expect(result.aggs(:status)).to eq([["published", 10]])
         expect(result.raw_response).to equal(response)
     end
@@ -612,7 +680,7 @@ RSpec.describe "search paging" do
 
         expect(result.status).to eq(AreSearch::SearchResult::STATUS_PARAMS_INVALID)
         expect(result.records).to eq([])
-        expect(result.records.current_page).to eq(1)
+        expect(result.records.page).to eq(1)
         expect(result.records.per_page).to eq(25)
 
         expect do

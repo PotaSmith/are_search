@@ -152,9 +152,9 @@ RSpec.describe AreSearch::Searcher do
                 .and_return(true)
 
             expect(AreSearch::SearchParamValidator)
-                .to receive(:validate)
-                .with([article_index_target], [article_model], page: "2")
-                .and_return([nil, "opts[:page] は正の整数で指定してください"])
+                .to receive(:validate!)
+                .with([article_index_target], [article_model], 2_000, page: "2")
+                .and_raise(AreSearch::InvalidSearchOption, "opts[:page] は正の整数で指定してください")
 
             expect(AreSearch::QueryBuilderSelector).not_to receive(:select)
             expect(AreSearch::BodyBuilderSelector).not_to receive(:select)
@@ -168,7 +168,7 @@ RSpec.describe AreSearch::Searcher do
 
             expect(result.status).to eq(AreSearch::SearchResult::STATUS_PARAMS_INVALID)
             expect(result.records).to eq([])
-            expect(result.records.current_page).to eq(1)
+            expect(result.records.page).to eq(1)
             expect(result.records.per_page).to eq(25)
             expect(result.records.total_count).to eq(0)
             expect(result.records_with_hit).to eq([])
@@ -183,9 +183,9 @@ RSpec.describe AreSearch::Searcher do
                 .and_return(true)
 
             expect(AreSearch::SearchParamValidator)
-                .to receive(:validate)
-                .with([article_index_target], [article_model], page: "2")
-                .and_return([nil, "opts[:page] は正の整数で指定してください"])
+                .to receive(:validate!)
+                .with([article_index_target], [article_model], 2_000, page: "2")
+                .and_raise(AreSearch::InvalidSearchOption, "opts[:page] は正の整数で指定してください")
 
             expect do
                 described_class.search(
@@ -212,13 +212,14 @@ RSpec.describe AreSearch::Searcher do
                 .and_return(true)
 
             expect(AreSearch::SearchParamValidator)
-                .to receive(:validate)
+                .to receive(:validate!)
                 .with(
                     [article_index_target],
                     [article_model],
+                    2_000,
                     queries: queries,
                 )
-                .and_return([valid_options, nil])
+                .and_return(valid_options)
 
             allow(AreSearch.search_body_policy)
                 .to receive(:valid?)
@@ -255,13 +256,14 @@ RSpec.describe AreSearch::Searcher do
                 .and_return(true)
 
             expect(AreSearch::SearchParamValidator)
-                .to receive(:validate)
+                .to receive(:validate!)
                 .with(
                     [article_index_target],
                     [article_model],
+                    2_000,
                     queries: queries,
                 )
-                .and_return([valid_options, nil])
+                .and_return(valid_options)
 
             allow(AreSearch.search_body_policy)
                 .to receive(:valid?)
@@ -291,9 +293,9 @@ RSpec.describe AreSearch::Searcher do
                 .and_return(true)
 
             expect(AreSearch::SearchParamValidator)
-                .to receive(:validate)
-                .with([article_index_target], [article_model])
-                .and_return([valid_options, nil])
+                .to receive(:validate!)
+                .with([article_index_target], [article_model], 2_000)
+                .and_return(valid_options)
 
             expect(AreSearch::QueryBuilderSelector)
                 .to receive(:select)
@@ -312,7 +314,7 @@ RSpec.describe AreSearch::Searcher do
 
             expect(body_builder)
                 .to receive(:build)
-                .with([article_index_target], query, {})
+                .with([article_index_target], query, {}, 2_000)
                 .and_return(body)
 
             expect(AreSearch.search_body_policy)
@@ -331,7 +333,7 @@ RSpec.describe AreSearch::Searcher do
 
             expect(result.status).to eq(AreSearch::SearchResult::STATUS_INDEX_NOT_FOUND)
             expect(result.records).to eq([])
-            expect(result.records.current_page).to eq(1)
+            expect(result.records.page).to eq(1)
             expect(result.records.per_page).to eq(25)
             expect(result.records.total_count).to eq(0)
             expect(result.records_with_hit).to eq([])
@@ -356,13 +358,14 @@ RSpec.describe AreSearch::Searcher do
                 .and_return(true)
 
             expect(AreSearch::SearchParamValidator)
-                .to receive(:validate)
+                .to receive(:validate!)
                 .with(
                     [article_index_target],
                     [article_model],
+                    2_000,
                     queries: queries,
                 )
-                .and_return([valid_options, nil])
+                .and_return(valid_options)
 
             allow(AreSearch.search_body_policy)
                 .to receive(:valid?)
@@ -402,13 +405,14 @@ RSpec.describe AreSearch::Searcher do
                 .and_return(true)
 
             expect(AreSearch::SearchParamValidator)
-                .to receive(:validate)
+                .to receive(:validate!)
                 .with(
                     [article_index_target],
                     [article_model],
+                    2_000,
                     mlt: mlt_options,
                 )
-                .and_return([valid_options, nil])
+                .and_return(valid_options)
 
             expect(AreSearch::QueryBuilderSelector)
                 .to receive(:select)
@@ -430,7 +434,7 @@ RSpec.describe AreSearch::Searcher do
 
             expect(body_builder)
                 .to receive(:build)
-                .with([article_index_target], query, valid_options)
+                .with([article_index_target], query, valid_options, 2_000)
                 .and_return(body)
 
             expect(AreSearch.search_body_policy)
@@ -449,7 +453,7 @@ RSpec.describe AreSearch::Searcher do
 
             expect(result.status).to eq(AreSearch::SearchResult::STATUS_INDEX_NOT_FOUND)
             expect(result.records).to eq([])
-            expect(result.records.current_page).to eq(1)
+            expect(result.records.page).to eq(1)
             expect(result.records.per_page).to eq(25)
             expect(result.records.total_count).to eq(0)
             expect(result.records_with_hit).to eq([])
@@ -890,6 +894,7 @@ RSpec.describe AreSearch::Searcher do
                 {},
                 1,
                 25,
+                2_000,
             )
 
             expect(result.status).to eq(AreSearch::SearchResult::STATUS_OK)

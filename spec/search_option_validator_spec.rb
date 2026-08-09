@@ -27,7 +27,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
 
     # 単一nodeをトップレベルオプションとして検査し、nodeの結果だけを返す。
     def validate_node(value, definition, context: nil)
-        result = described_class.validate(
+        result = described_class.validate!(
             {
                 value: value,
             },
@@ -49,7 +49,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
         }
     end
 
-    describe ".validate のオプション定義Map処理" do
+    describe ".validate! のオプション定義Map処理" do
         it "Symbolのオプション名を扱い、nilをそのまま残す" do
             definitions = {
                 query_string: {
@@ -57,7 +57,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
                 },
             }
 
-            result = described_class.validate(
+            result = described_class.validate!(
                 {
                     query_string: nil,
                 },
@@ -75,7 +75,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
                 type: scalar_definition("positive_integer"),
             }
 
-            result = described_class.validate(
+            result = described_class.validate!(
                 {
                     type: 1,
                 },
@@ -94,7 +94,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
             }
 
             expect do
-                described_class.validate(
+                described_class.validate!(
                     {
                         unknown: 1,
                     },
@@ -113,7 +113,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
             }
 
             expect do
-                described_class.validate(
+                described_class.validate!(
                     {
                         "page" => 1,
                     },
@@ -127,7 +127,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
         end
     end
 
-    describe ".validate の候補定義処理" do
+    describe ".validate! の候補定義処理" do
         it "nodeの実体型に対応する定義を選択する" do
             definition = {
                 scalar: {
@@ -172,7 +172,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
         end
     end
 
-    describe ".validate のerror_class処理" do
+    describe ".validate! のerror_class処理" do
         it "オプション全体の検査エラーを指定例外へ付け替える" do
             definition = scalar_definition("positive_integer")
             definition[:error_class] = AreSearch::InvalidSearchOption
@@ -251,7 +251,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
         end
     end
 
-    describe ".validate の名前付きtype処理" do
+    describe ".validate! の名前付きtype処理" do
         it "anyはHashとArrayを再帰的に複製する" do
             value = {
                 "query" => [
@@ -403,7 +403,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
         end
     end
 
-    describe ".validate のArray処理" do
+    describe ".validate! のArray処理" do
         it "各要素をchildren定義で検査する" do
             definition = {
                 array: {
@@ -445,7 +445,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
         end
     end
 
-    describe ".validate のkey_name Hash処理" do
+    describe ".validate! のkey_name Hash処理" do
         it "必須の固定キーを検査する" do
             definition = {
                 hash: {
@@ -691,7 +691,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
 
     end
 
-    describe ".validate の可変キーHash処理" do
+    describe ".validate! の可変キーHash処理" do
         it "key_nameを優先し、typeで残りのキーを検査する" do
             definition = {
                 hash: {
@@ -787,7 +787,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
         end
     end
 
-    describe ".validate のcontext参照型処理" do
+    describe ".validate! のcontext参照型処理" do
         let(:article_model) do
             Class.new
         end
@@ -972,7 +972,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
 
         it "contextは第3位置引数として必須" do
             expect do
-                described_class.validate(
+                described_class.validate!(
                     {},
                     {},
                 )
@@ -994,7 +994,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
 
             invalid_options.each do |options|
                 expect do
-                    described_class.validate(
+                    described_class.validate!(
                         options,
                         AreSearch::SearchOptionValidator::OPTION_DEFINITIONS,
                         context,
@@ -1008,7 +1008,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
                 any_text_without_non_text_fields: [:title, :body],
             )
 
-            result = described_class.validate(
+            result = described_class.validate!(
                 {
                     queries: [
                         {
@@ -1145,7 +1145,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
 
             invalid_options.each do |options, expected_message|
                 expect do
-                    described_class.validate(
+                    described_class.validate!(
                         options,
                         AreSearch::SearchOptionValidator::OPTION_DEFINITIONS,
                         context,
