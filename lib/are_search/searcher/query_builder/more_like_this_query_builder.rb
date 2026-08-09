@@ -54,10 +54,11 @@ module AreSearch
             private
 
             # mltをElasticsearchのmore_like_this句へ変換する。
-            # instanceとindex_targetはlikeへ変換し、fieldsとその他の検証済みパラメーターを同じ階層へ渡す。
+            # likeの基準情報をElasticsearchのdocument形式へ変換し、fieldsとその他の検証済みパラメーターを渡す。
             def build_mlt_clause(mlt_opts)
-                instance = mlt_opts[:instance]
-                index_target = mlt_opts[:index_target]
+                like_opts = mlt_opts[:like]
+                instance = like_opts[:instance]
+                index_target = like_opts[:index_target]
 
                 mlt_clause = {
                     fields: mlt_opts[:fields].map(&:to_s),
@@ -73,9 +74,8 @@ module AreSearch
                 }
 
                 mlt_opts.each do |key, value|
-                    next if key == :instance
-                    next if key == :index_target
                     next if key == :fields
+                    next if key == :like
 
                     mlt_clause[key] = value
                 end

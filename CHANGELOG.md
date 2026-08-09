@@ -4,7 +4,9 @@
 
 ## [Unreleased]
 
-- after_commit の同期開始を stage 単位で失敗隔離するよう整理し、force sync・reindex の bulk response 検証と ActiveRecord の `id` / Elasticsearch 用文字列 `key` の扱いを明確化。
+- More Like This の基準情報を mlt.like にまとめ、instance と index_target を指定する形へ整理。
+- mlt.fields の検索対象と基準を _source または store: true から取得可能であることも検証するように修正
+- force sync・reindex の bulk response の検証を追加
 - ページネーションを `max_result_window` の範囲に合わせて整理。開始位置が `max_result_window` 以上になる検索は実行前に検索パラメータ不正として扱うよう変更
 - 検索結果の件数を `es_total_count`、`total_count`、`pagination_total_count` に分離。
 - BulkIndexer と Reindexer の実処理入口で、Searchable を継承した STI 子クラスの IndexTarget を拒否するよう変更。共有 alias へ子クラスのレコードだけを投入して完了扱いになる経路と、Reindexer の直接呼び出しで公開APIのガードを迂回する経路を防止

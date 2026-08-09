@@ -99,9 +99,7 @@ module AreSearch
         def index_alias_exists?(index_alias_name:)
             AreSearch::IndexDefinition.valid_index_alias_name!(index_alias_name)
 
-            AreSearch.client.indices.exists_alias(
-                name: index_alias_name,
-            ) == true
+            AreSearch.client.indices.exists_alias(name: index_alias_name) == true
         end
 
         # alias名と同名の物理indexが存在するか確認する。
@@ -110,7 +108,7 @@ module AreSearch
         def alias_named_physical_index_exists?(index_alias_name:)
             return false if index_alias_exists?(index_alias_name: index_alias_name)
 
-            AreSearch.client.indices.exists(index: index_alias_name)
+            AreSearch.client.indices.exists(index: index_alias_name) == true
         end
 
         # timestamp付き物理indexを削除する。

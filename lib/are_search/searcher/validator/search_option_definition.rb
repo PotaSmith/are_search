@@ -344,9 +344,11 @@ module AreSearch
             },
 
             # mlt: {
-            #     instance: article,
-            #     index_target: Article.are_search_index_target(:default),
             #     fields: [:title, :body],
+            #     like: {
+            #         instance: article,
+            #         index_target: Article.are_search_index_target(:default),
+            #     },
             #     min_term_freq: 1,
             #     min_doc_freq: 2,
             #     max_query_terms: 20,
@@ -357,32 +359,10 @@ module AreSearch
             mlt: {
                 hash: {
                     must_keys: [
-                        :instance,
-                        :index_target,
                         :fields,
+                        :like,
                     ],
-                    must_not_keys: [:like],
                     key_values: [
-                        {
-                            key: {
-                                key_name: :instance,
-                            },
-                            value: {
-                                scalar: {
-                                    type: "searchable_instance",
-                                },
-                            },
-                        },
-                        {
-                            key: {
-                                key_name: :index_target,
-                            },
-                            value: {
-                                scalar: {
-                                    type: "index_target",
-                                },
-                            },
-                        },
                         {
                             key: {
                                 key_name: :fields,
@@ -394,6 +374,41 @@ module AreSearch
                                             type: "any_text_or_keyword_without_other_type_field",
                                         },
                                     },
+                                },
+                            },
+                        },
+                        {
+                            key: {
+                                key_name: :like,
+                            },
+                            value: {
+                                hash: {
+                                    must_keys: [
+                                        :instance,
+                                        :index_target,
+                                    ],
+                                    key_values: [
+                                        {
+                                            key: {
+                                                key_name: :instance,
+                                            },
+                                            value: {
+                                                scalar: {
+                                                    type: "searchable_instance",
+                                                },
+                                            },
+                                        },
+                                        {
+                                            key: {
+                                                key_name: :index_target,
+                                            },
+                                            value: {
+                                                scalar: {
+                                                    type: "index_target",
+                                                },
+                                            },
+                                        },
+                                    ],
                                 },
                             },
                         },

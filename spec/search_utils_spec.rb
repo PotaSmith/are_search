@@ -52,7 +52,22 @@ RSpec.describe AreSearch::SearchParamValidator do
             .and_return(
                 properties: {
                     title:  { type: "text" },
-                    status: { type: "keyword" },
+                    body:   { type: "text" },
+                    status: { type: "keyword", store: true },
+                    count:  { type: "integer" },
+                },
+            )
+        allow(index_target)
+            .to receive(:are_search_index_mappings_for_index)
+            .and_return(
+                _source: {
+                    includes: [:title],
+                },
+                properties: {
+                    title:  { type: "text" },
+                    body:   { type: "text" },
+                    status: { type: "keyword", store: true },
+                    count:  { type: "integer" },
                 },
             )
 
@@ -260,14 +275,16 @@ RSpec.describe AreSearch::SearchParamValidator do
             end.to raise_error(ArgumentError)
         end
 
-        it "mltはinstance、index_target、fieldsを必須とし、その他のパラメーターを値の型を限定せず受け付ける" do
+        it "mltはfieldsとlikeの2要素を必須とし、likeはinstanceとindex_targetを必須にする" do
             result = validate_options(
                 [article_index_target],
                 [article_model],
                 mlt: {
-                    instance:             mlt_instance,
-                    index_target:         mlt_index_target,
-                    fields:               [:title, :status],
+                    fields: [:title, :status],
+                    like: {
+                        instance:     mlt_instance,
+                        index_target: mlt_index_target,
+                    },
                     min_term_freq:        1,
                     min_doc_freq:         2,
                     max_query_terms:      20,
@@ -283,9 +300,11 @@ RSpec.describe AreSearch::SearchParamValidator do
             )
 
             expect(result[:mlt]).to eq(
-                instance:             mlt_instance,
-                index_target:         mlt_index_target,
-                fields:               [:title, :status],
+                fields: [:title, :status],
+                like: {
+                    instance:     mlt_instance,
+                    index_target: mlt_index_target,
+                },
                 min_term_freq:        1,
                 min_doc_freq:         2,
                 max_query_terms:      20,
@@ -299,17 +318,13 @@ RSpec.describe AreSearch::SearchParamValidator do
                 },
             )
 
-            required_keys = [
-                :instance,
-                :index_target,
-                :fields,
-            ]
-
-            required_keys.each do |required_key|
+            [:fields, :like].each do |required_key|
                 mlt = {
-                    instance:     mlt_instance,
-                    index_target: mlt_index_target,
-                    fields:       [:title],
+                    fields: [:title],
+                    like: {
+                        instance:     mlt_instance,
+                        index_target: mlt_index_target,
+                    },
                 }
                 mlt.delete(required_key)
 
@@ -323,15 +338,37 @@ RSpec.describe AreSearch::SearchParamValidator do
                 end.to raise_error(ArgumentError)
             end
 
+            [:instance, :index_target].each do |required_key|
+                like = {
+                    instance:     mlt_instance,
+                    index_target: mlt_index_target,
+                }
+                like.delete(required_key)
+
+                expect do
+                    described_class.validate!(
+                        [article_index_target],
+                        [article_model],
+                        max_result_window,
+                        mlt: {
+                            fields: [:title],
+                            like:   like,
+                        },
+                    )
+                end.to raise_error(ArgumentError)
+            end
+
             expect do
                 described_class.validate!(
                     [article_index_target],
                     [article_model],
                     max_result_window,
                     mlt: {
-                        instance:     mlt_instance,
-                        index_target: mlt_index_target,
-                        fields:       [:count],
+                        fields: [:count],
+                        like: {
+                            instance:     mlt_instance,
+                            index_target: mlt_index_target,
+                        },
                     },
                 )
             end.to raise_error(ArgumentError)
@@ -342,14 +379,101 @@ RSpec.describe AreSearch::SearchParamValidator do
                     [article_model],
                     max_result_window,
                     mlt: {
-                        instance:     mlt_instance,
-                        index_target: mlt_index_target,
-                        fields: {
-                            title: 2.0,
+                        fields: [:title],
+                        like: {
+                            instance:     mlt_instance,
+                            index_target: mlt_index_target,
+                            fields:       [:title],
                         },
                     },
                 )
-            end.to raise_error(ArgumentError)
+            end.to raise_error(ArgumentError, /未知のキーがあります: :fields/)
+        end
+
+        it "mlt.fieldsは基準index targetの型と取得方法も検査する" do
+            source_result = validate_options(
+                [article_index_target],
+                [article_model],
+                mlt: {
+                    fields: [:title],
+                    like: {
+                        instance:     mlt_instance,
+                        index_target: mlt_index_target,
+                    },
+                },
+            )
+            store_result = validate_options(
+                [article_index_target],
+                [article_model],
+                mlt: {
+                    fields: [:status],
+                    like: {
+                        instance:     mlt_instance,
+                        index_target: mlt_index_target,
+                    },
+                },
+            )
+
+            expect(source_result.dig(:mlt, :fields)).to eq([:title])
+            expect(store_result.dig(:mlt, :fields)).to eq([:status])
+
+            invalid_type_mappings = {
+                _source: {
+                    includes: [:title],
+                },
+                properties: {
+                    title:  { type: "integer" },
+                    body:   { type: "text" },
+                    status: { type: "keyword", store: true },
+                    count:  { type: "integer" },
+                },
+            }
+
+            allow(mlt_index_target)
+                .to receive(:are_search_index_mappings_for_index)
+                .and_return(invalid_type_mappings)
+
+            expect do
+                validate_options(
+                    [article_index_target],
+                    [article_model],
+                    mlt: {
+                        fields: [:title],
+                        like: {
+                            instance:     mlt_instance,
+                            index_target: mlt_index_target,
+                        },
+                    },
+                )
+            end.to raise_error(ArgumentError, /text または keyword/)
+
+            allow(mlt_index_target)
+                .to receive(:are_search_index_mappings_for_index)
+                .and_return(
+                    _source: {
+                        includes: [:title],
+                    },
+                    properties: {
+                        title:  { type: "text" },
+                        body:   { type: "text" },
+                        status: { type: "keyword", store: true },
+                        count:  { type: "integer" },
+                    },
+                )
+
+            expect do
+                validate_options(
+                    [article_index_target],
+                    [article_model],
+                    mlt: {
+                        fields: [:body],
+                        like: {
+                            instance:     mlt_instance,
+                            index_target: mlt_index_target,
+                        },
+                    },
+                )
+            end.to raise_error(ArgumentError, /_source.*store/)
         end
 
         it "where系は非textフィールドのterm、terms、rangeだけを受け付ける" do

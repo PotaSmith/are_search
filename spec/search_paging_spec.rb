@@ -35,6 +35,9 @@ RSpec.describe "search paging" do
                         index_settings: {
                             max_result_window: 30,
                         },
+                        _source: {
+                            includes: [:title],
+                        },
                         properties: {
                             title: { type: "text" },
                         },
@@ -163,9 +166,11 @@ RSpec.describe "search paging" do
         body = AreSearch::Searcher.search(
             [mlt_index_target],
             mlt: {
-                instance:     article,
-                index_target: mlt_index_target,
                 fields: [:title],
+                like: {
+                    instance:     article,
+                    index_target: mlt_index_target,
+                },
             },
             page:             2,
             per_page:         20,

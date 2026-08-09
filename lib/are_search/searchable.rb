@@ -244,41 +244,40 @@ module AreSearch
 
         # commit後の同期開始をstage単位で実行し、失敗しても残りのstageを継続する。
         def are_search_after_commit
+            after_commit_mode = AreSearch.after_commit_mode
+
             self.class.are_search_index_targets.each do |index_target|
                 self.class.are_search_get_sync_stage_names_on_after_commit(index_target.index_target_name).each do |sync_stage_name|
-                    after_commit_mode = AreSearch.after_commit_mode
-
-                    if after_commit_mode == :none
-                        next
-                    end
-                    if after_commit_mode != :job && after_commit_mode != :direct
-                        raise ArgumentError, "unknown after_commit_mode: #{after_commit_mode.inspect}"
-                    end
-
-                    result = nil
-                    begin
-                        if after_commit_mode == :job
-                            result = are_search_enqueue_sync_job(index_target, sync_stage_name)
-                        else
-                            result = index_target.are_search_sync(id, sync_stage_name)
-                        end
-                    rescue StandardError => error
-                        AreSearch.logger.error do
-                            "[AreSearch] after_commit sync failed: model=#{self.class.name} id=#{id} " \
-                                "index_target=#{index_target.index_target_name} sync_stage=#{sync_stage_name} " \
-                                "mode=#{after_commit_mode} error=#{error.class}: #{error.message}"
-                        end
-                        next
-                    end
-
-                    if result == false
-                        AreSearch.logger.error do
-                            "[AreSearch] after_commit sync failed: model=#{self.class.name} id=#{id} " \
-                                "index_target=#{index_target.index_target_name} sync_stage=#{sync_stage_name} " \
-                                "mode=#{after_commit_mode}"
-                        end
-                    end
+                    are_search_after_commit_per_stage(after_commit_mode, index_target, sync_stage_name)
                 end
+            end
+        end
+
+        # 指定 stage の同期開始を実行し、失敗をログへ残して呼び出し元へ伝播させない。
+        def are_search_after_commit_per_stage(after_commit_mode, index_target, sync_stage_name)
+            case after_commit_mode
+            when :job
+                result = are_search_enqueue_sync_job(index_target, sync_stage_name)
+            when :direct
+                result = index_target.are_search_sync(id, sync_stage_name)
+            when :none
+                return
+            else
+                raise ArgumentError, "unknown after_commit_mode: #{after_commit_mode.inspect}"
+            end
+
+            if result == false
+                AreSearch.logger.error do
+                    "[AreSearch] after_commit sync failed: model=#{self.class.name} id=#{id} " \
+                        "index_target=#{index_target.index_target_name} sync_stage=#{sync_stage_name} " \
+                        "mode=#{after_commit_mode}"
+                end
+            end
+        rescue StandardError => error
+            AreSearch.logger.error do
+                "[AreSearch] after_commit sync failed: model=#{self.class.name} id=#{id} " \
+                    "index_target=#{index_target.index_target_name} sync_stage=#{sync_stage_name} " \
+                    "mode=#{after_commit_mode} error=#{error.class}: #{error.message}"
             end
         end
 

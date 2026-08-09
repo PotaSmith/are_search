@@ -263,7 +263,7 @@ module AreSearch
     end
 
     # ロックファイル類のベースディレクトリ。
-    # 配下に sync_locks/ と index_locks/ をgem側の規約で作る。
+    # 配下に locks/sync/ と locks/index/ をgem側の規約で作る。
     # 未設定の場合は Rails.root/tmp/are_search/locks を使う。
     # Rails.root に依存するため即値ではなく参照時に遅延評価する。
     def self.lock_dir

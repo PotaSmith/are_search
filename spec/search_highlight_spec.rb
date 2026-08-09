@@ -32,6 +32,9 @@ RSpec.describe "search highlight" do
                         index_settings: {
                             max_result_window: 2_000,
                         },
+                        _source: {
+                            includes: [:title],
+                        },
                         properties: {
                             title:  { type: "text" },
                             body:   { type: "text" },
@@ -298,9 +301,11 @@ RSpec.describe "search highlight" do
         body = AreSearch::Searcher.search(
             [article_index_target],
             mlt: {
-                instance:     article,
-                index_target: article_index_target,
-                fields: [:title, :status],
+                fields: [:title],
+                like: {
+                    instance:     article,
+                    index_target: article_index_target,
+                },
             },
             highlight: {
                 fields: [:body, :status],

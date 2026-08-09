@@ -277,7 +277,7 @@ RSpec.describe "AreSearch search features integration", type: :model do
         ).to include("<em>highlighttoken</em>")
     end
 
-    it "ドキュメント記載のMore Like This形式でstoreありtextから類似文書を検索する" do
+    it "More Like Thisでstore済みのfieldsを基準documentから取得して検索する" do
         reference = create_document(
             title:   "reference",
             body:    "ruby rails elasticsearch search integration example",
@@ -302,9 +302,57 @@ RSpec.describe "AreSearch search features integration", type: :model do
         result = AreSearch::Searcher.search(
             [index_target],
             mlt: {
-                instance:             reference,
-                index_target:         index_target,
-                fields:               [:body],
+                fields: [:body],
+                like: {
+                    instance:     reference,
+                    index_target: index_target,
+                },
+                min_term_freq:        1,
+                min_doc_freq:         1,
+                max_query_terms:      20,
+                min_word_length:      2,
+                minimum_should_match: "30%",
+                boost_terms:          1.5,
+            },
+        )
+
+        result_ids = result.records.map(&:id)
+
+        expect(result.status).to eq(AreSearch::SearchResult::STATUS_OK)
+        expect(result_ids).to include(similar.id)
+        expect(result_ids).not_to include(different.id)
+    end
+
+    it "More Like Thisで_sourceのfieldsを基準documentから取得して検索する" do
+        reference = create_document(
+            title:   "ruby rails elasticsearch search integration example",
+            body:    "reference body",
+            status:  "published",
+            user_id: 909,
+        )
+        similar = create_document(
+            title:   "ruby rails elasticsearch search integration guide",
+            body:    "similar body",
+            status:  "published",
+            user_id: 910,
+        )
+        different = create_document(
+            title:   "banana orange pineapple tropical fruit",
+            body:    "different body",
+            status:  "published",
+            user_id: 911,
+        )
+
+        refresh_index
+
+        result = AreSearch::Searcher.search(
+            [index_target],
+            mlt: {
+                fields: [:title],
+                like: {
+                    instance:     reference,
+                    index_target: index_target,
+                },
                 min_term_freq:        1,
                 min_doc_freq:         1,
                 max_query_terms:      20,

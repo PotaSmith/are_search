@@ -29,7 +29,7 @@ module AreSearch
 
                 mlt_options = options[:mlt]
                 if mlt_options.nil? == false
-                    validate_mlt_options!(mlt_options)
+                    MltLikeValidator.validate!(mlt_options[:like], mlt_options[:fields])
                 end
 
                 if options[:build_model_bool] == true
@@ -57,18 +57,6 @@ module AreSearch
                 raise AreSearch::InvalidSearchOption, "opts[:page] と opts[:per_page] から算出した from が max_result_window 以上です"
             end
 
-            # More Like Thisの基準ドキュメントとfieldsの関係を検査する。
-            def validate_mlt_options!(mlt_options)
-                validate_mlt_index_target_options!(
-                    mlt_options[:instance],
-                    mlt_options[:index_target],
-                )
-                validate_mlt_fields!(
-                    mlt_options[:index_target],
-                    mlt_options[:fields],
-                )
-            end
-
             # model_relationsのRelationが、keyに指定されたモデルから作られていることを確認する。
             def validate_model_relations!(model_relations)
                 model_relations.each do |model, relation|
@@ -76,47 +64,6 @@ module AreSearch
 
                     raise ArgumentError, "model_relations のモデルと Relation の klass が一致していません: #{model.name} != #{relation.klass.name}"
                 end
-            end
-
-            # More Like Thisの基準インスタンスから同じtargetを解決し、
-            # 指定されたindex targetと同じElasticsearch indexを指すか確認する。
-            def validate_mlt_index_target_options!(instance_options, index_target_options)
-                instance_index_target = instance_options.class.are_search_index_target(
-                    index_target_options.index_target_name,
-                )
-
-                if instance_index_target.nil? ||
-                        instance_index_target.are_search_index_alias_name != index_target_options.are_search_index_alias_name
-                    raise ArgumentError, "instance から取得した index_target と指定された index_target が一致していません"
-                end
-            end
-
-            # More Like Thisのfieldsを基準targetから取得可能な型に限定する。
-            def validate_mlt_fields!(index_target_options, fields_options)
-                valid_fields = build_mlt_valid_fields(index_target_options)
-
-                fields_options.each do |field_name|
-                    next if valid_fields.include?(field_name)
-
-                    raise ArgumentError, "mlt.fields は mlt.index_target の text または keyword 型フィールドを指定してください: #{field_name.inspect}"
-                end
-            end
-
-            # MLTの基準targetにあるtextまたはkeyword型フィールドだけを作る。
-            def build_mlt_valid_fields(index_target)
-                valid_fields = []
-                properties = index_target.are_search_index_mappings[:properties]
-
-                properties.each do |field_name, field_options|
-                    next if field_options.instance_of?(Hash) == false
-
-                    field_type = field_options[:type].to_s
-                    next if field_type != "text" && field_type != "keyword"
-
-                    valid_fields << field_name
-                end
-
-                valid_fields
             end
 
             # build_model_boolで変更するquery.bool.filterの構造を確認する。
@@ -155,8 +102,8 @@ module AreSearch
                 return if filter_value.instance_of?(Hash)
                 return if filter_value.instance_of?(Array)
 
-                raise ArgumentError, ":build_model_bool を使用する場合は query.bool.filter を " \
-                    "Hash、Array、nil のいずれかで指定してください: #{filter_value.inspect}"
+                raise ArgumentError, ":build_model_bool を使用する場合は query.bool.filter を Hash、Array、nil のいずれかで" \
+                    "指定してください: #{filter_value.inspect}"
             end
 
             # SymbolとStringの同名keyが同時にある曖昧なraw_bodyを拒否する。
@@ -176,6 +123,90 @@ module AreSearch
                 return string_key if hash.key?(string_key)
 
                 nil
+            end
+        end
+
+        class MltLikeValidator
+            class << self
+
+                # More Like Thisのlikeとfieldsの関係を検査する。
+                def validate!(like_options, fields)
+                    instance = like_options[:instance]
+                    index_target = like_options[:index_target]
+
+                    validate_index_target!(instance, index_target)
+                    validate_fields!(index_target, fields)
+                end
+
+                private
+
+                # 基準インスタンスから同じtargetを解決し、指定されたindex targetと同じElasticsearch indexを指すか確認する。
+                def validate_index_target!(instance, index_target)
+                    instance_index_target = instance.class.are_search_index_target(
+                        index_target.index_target_name,
+                    )
+
+                    instance_index_alias_name = instance_index_target&.are_search_index_alias_name
+
+                    if instance_index_alias_name != index_target.are_search_index_alias_name
+                        raise ArgumentError, "mlt.like.instance から取得した index_target と mlt.like.index_target が一致していません"
+                    end
+                end
+
+                # 基準targetのfieldsをMore Like Thisで使用可能な型と保存状態に限定する。
+                def validate_fields!(index_target, fields)
+                    mappings = index_target.are_search_index_mappings_for_index
+                    properties = mappings[:properties]
+
+                    fields.each do |field_name|
+                        field_options = properties[field_name]
+
+                        unless mlt_field_type?(field_options)
+                            raise ArgumentError, "mlt.fields は mlt.like.index_target の text または keyword 型フィールドを" \
+                                "指定してください: #{field_name.inspect}"
+                        end
+
+                        next if source_field_available?(mappings[:_source], field_name)
+                        next if field_options[:store] == true
+
+                        raise ArgumentError, "mlt.fields は mlt.like.index_target の _source または store から取得可能な" \
+                            "フィールドを指定してください: #{field_name.inspect}"
+                    end
+                end
+
+                # fieldがMore Like Thisで使用可能なtextまたはkeyword型か確認する。
+                def mlt_field_type?(field_options)
+                    return false if field_options.instance_of?(Hash) == false
+
+                    field_type = field_options[:type].to_s
+
+                    field_type == "text" || field_type == "keyword"
+                end
+
+                # fieldが実際の_sourceに保存される設定か確認する。
+                def source_field_available?(source_settings, field_name)
+                    return false if source_settings.instance_of?(Hash) == false
+                    return false unless source_filter_match?(source_settings[:includes], field_name)
+                    return false if source_filter_match?(source_settings[:excludes], field_name)
+
+                    true
+                end
+
+                # _sourceのincludes / excludesがfieldに一致するか確認する。
+                def source_filter_match?(filter_options, field_name)
+                    filter_values = filter_options
+                    unless filter_values.instance_of?(Array)
+                        filter_values = [filter_values]
+                    end
+
+                    filter_values.each do |filter_value|
+                        next if filter_value.nil?
+
+                        return true if File.fnmatch?(filter_value.to_s, field_name.to_s)
+                    end
+
+                    false
+                end
             end
         end
     end

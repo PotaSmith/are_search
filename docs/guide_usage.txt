@@ -147,9 +147,11 @@ queries、sort とは同時に指定できない。
     result = AreSearch::Searcher.search(
         [article_index],
         mlt: {
-            instance:             article,
-            index_target:         article_index,
-            fields:               [:title, :body],
+            fields: [:title, :body],
+            like: {
+                instance:     article,
+                index_target: article_index,
+            },
             min_term_freq:        1,
             min_doc_freq:         2,
             max_query_terms:      20,
@@ -159,17 +161,44 @@ queries、sort とは同時に指定できない。
         },
     )
 
-instance、index_target、fields は必須。
-instance には基準レコード、index_target には基準レコードの IndexTarget を指定する。
-fields は検索対象と基準側の両方に存在する text または keyword 型フィールドを Array で指定する。
-fields に指定するフィールドには store: true が必要。
+mlt.fields と mlt.like は必須。
 
-    body: {
-        type:  "text",
-        store: true,
+mlt.fields は More Like This で使用するフィールドを Symbol のArrayで指定する。
+検索対象側では、1つ以上のIndexTargetに存在し、同名フィールドが別の型で定義されていない
+text または keyword 型フィールドを使用できる。
+
+mlt.fields は mlt.like.index_target の基準ドキュメントのフィールドとしても使用する。
+mlt.like.index_target の場合、型だけでなく `_source` または `store: true` に設定されている必要がある。
+
+mlt.like は基準ドキュメントを指定する。
+mlt.like の instance、index_target は必須。
+
+    instance
+        基準レコード。
+
+    index_target
+        基準レコードが保存されている IndexTarget。
+        instance から同じtargetを解決したときに、同じElasticsearch aliasを指す必要がある。
+
+`_source` から mlt.fields を取得する場合。
+
+    _source: {
+        includes: [:title],
+    },
+    properties: {
+        title: { type: "text" },
     }
 
-Symbolのkeyで指定し、内容はチェックせずElasticsearchへ渡す。
+`store: true` から mlt.fields を使用する場合。
+
+    properties: {
+        body: {
+            type:  "text",
+            store: true,
+        },
+    }
+
+mlt.fields と like 以外の Symbol key は、内容をチェックせずElasticsearchへ渡す。
 min_term_freq、min_doc_freq、max_query_terms の既定値は、それぞれ 2、5、25。
 
 
@@ -256,10 +285,15 @@ sort は標準検索でのみ使用できる。
     queries.fields
         1つ以上の target に存在し、同名フィールドが別の型で定義されていない text フィールド。
 
-    mlt.fields / highlight.fields
+    mlt.fields
+        1つ以上の検索対象 target に存在し、同名フィールドが別の型で定義されていない
+        text または keyword フィールド。
+        mlt.like.index_target にも同名の text または keyword フィールドが存在し、
+        `_source` に保存されているか、mappingで `store: true` を指定している必要がある。
+
+    highlight.fields
         1つ以上の target に存在し、同名フィールドが別の型で定義されていない
         text または keyword フィールド。
-        mlt.fields は、さらに mlt.index_target にも同じ許容型で存在する必要がある。
 
     where / where_not / where_or
         1つ以上の target に存在し、同名フィールドが text 型として定義されていないフィールド。
@@ -783,7 +817,7 @@ status は SearchResult の定数で判定する。
 
     AreSearch::SearchResult::STATUS_INDEX_NOT_FOUND
         値は :index_not_found。
-        検索対象 index、または More Like This の mlt.index_target の alias が存在しないため、
+        検索対象 index、または More Like This の mlt.like.index_target の alias が存在しないため、
         検索を実行せず空結果を返した。
 
 

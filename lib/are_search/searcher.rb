@@ -145,7 +145,7 @@ module AreSearch
 
             mlt_options = options[:mlt]
             if mlt_options.nil? == false
-                additional_index_targets << mlt_options[:index_target]
+                additional_index_targets << mlt_options[:like][:index_target]
             end
 
             index_targets_for_exists_check = index_targets + additional_index_targets

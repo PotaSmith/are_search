@@ -32,10 +32,13 @@ RSpec.describe "search option flow" do
                         index_settings: {
                             max_result_window: 2_000,
                         },
+                        _source: {
+                            includes: [:title],
+                        },
                         properties: {
                             title:  { type: "text" },
                             body:   { type: "text" },
-                            status: { type: "keyword" },
+                            status: { type: "keyword", store: true },
                             count:  { type: "integer" },
                         },
                     },
@@ -45,7 +48,8 @@ RSpec.describe "search option flow" do
                         },
                         properties: {
                             title:  { type: "integer" },
-                            status: { type: "keyword" },
+                            body:   { type: "text" },
+                            status: { type: "keyword", store: true },
                         },
                     },
                 }
@@ -77,6 +81,11 @@ RSpec.describe "search option flow" do
         allow(AreSearch::EsAdapter)
             .to receive(:index_alias_exists?)
             .with(index_alias_name: "test__articles__default")
+            .and_return(true)
+
+        allow(AreSearch::EsAdapter)
+            .to receive(:index_alias_exists?)
+            .with(index_alias_name: "test__articles__mlt_source")
             .and_return(true)
     end
 
@@ -353,9 +362,11 @@ RSpec.describe "search option flow" do
         mlt_body = AreSearch::Searcher.search(
             [article_index_target],
             mlt: {
-                instance:     article,
-                index_target: article_index_target,
                 fields: [:title, :status],
+                like: {
+                    instance:     article,
+                    index_target: article_index_target,
+                },
             },
             where_or: {
                 status: {
@@ -412,9 +423,11 @@ RSpec.describe "search option flow" do
             AreSearch::Searcher.search(
                 [article_index_target],
                 mlt: {
-                    instance:     article,
-                    index_target: article_index_target,
                     fields: [:title, :status],
+                    like: {
+                        instance:     article,
+                        index_target: article_index_target,
+                    },
                 },
                 minimum_should_match:  "50%",
                 dump_body:             true,
@@ -424,9 +437,11 @@ RSpec.describe "search option flow" do
         body = AreSearch::Searcher.search(
             [article_index_target],
             mlt: {
-                instance:     article,
-                index_target: article_index_target,
-                fields:               [:title, :status],
+                fields: [:title, :status],
+                like: {
+                    instance:     article,
+                    index_target: article_index_target,
+                },
                 minimum_should_match: "50%",
             },
             dump_body: true,
@@ -482,9 +497,11 @@ RSpec.describe "search option flow" do
         body = AreSearch::Searcher.search(
             [article_index_target],
             mlt: {
-                instance:     child_instance,
-                index_target: article_index_target,
                 fields: [:title],
+                like: {
+                    instance:     child_instance,
+                    index_target: article_index_target,
+                },
             },
             dump_body: true,
         )
@@ -528,63 +545,87 @@ RSpec.describe "search option flow" do
             AreSearch::Searcher.search(
                 [article_index_target],
                 mlt: {
-                    instance:     other_instance,
-                    index_target: article_index_target,
                     fields: [:title],
+                    like: {
+                        instance:     other_instance,
+                        index_target: article_index_target,
+                    },
                 },
                 dump_body: true,
             )
         end.to raise_error(
             ArgumentError,
-            /instance から取得した index_target と指定された index_target が一致していません/,
+            /mlt\.like\.instance から取得した index_target と mlt\.like\.index_target が一致していません/,
         )
     end
 
-    it "More Like Thisのfieldsは基準index targetにもtext型またはkeyword型として存在する必要がある" do
+    it "More Like Thisのfieldsを検索先と基準index targetの両方で検証する" do
         body = AreSearch::Searcher.search(
             [article_index_target],
             mlt: {
-                instance:     article,
-                index_target: mlt_source_index_target,
                 fields: [:status],
+                like: {
+                    instance:     article,
+                    index_target: mlt_source_index_target,
+                },
             },
             dump_body: true,
         )
 
-        expect(
-            body.dig(:query, :bool, :must, :more_like_this, :fields),
-        ).to eq(["status"])
+        mlt = body.dig(:query, :bool, :must, :more_like_this)
 
-        invalid_fields = [
-            :title,
-            :body,
-        ]
+        expect(mlt[:fields]).to eq(["status"])
+        expect(mlt[:like]).to eq([
+            {
+                _index: "test__articles__mlt_source",
+                _id:    "1",
+            },
+        ])
 
-        invalid_fields.each do |field_name|
-            expect do
-                AreSearch::Searcher.search(
-                    [article_index_target],
-                    mlt: {
+        expect do
+            AreSearch::Searcher.search(
+                [article_index_target],
+                mlt: {
+                    fields: [:title],
+                    like: {
                         instance:     article,
                         index_target: mlt_source_index_target,
-                        fields: [field_name],
                     },
-                    dump_body: true,
-                )
-            end.to raise_error(
-                ArgumentError,
-                /mlt\.index_target.*#{field_name}/,
+                },
+                dump_body: true,
             )
-        end
+        end.to raise_error(
+            ArgumentError,
+            /mlt\.fields.*text または keyword.*:title/,
+        )
+
+        expect do
+            AreSearch::Searcher.search(
+                [article_index_target],
+                mlt: {
+                    fields: [:body],
+                    like: {
+                        instance:     article,
+                        index_target: mlt_source_index_target,
+                    },
+                },
+                dump_body: true,
+            )
+        end.to raise_error(
+            ArgumentError,
+            /mlt\.fields.*_source.*store.*:body/,
+        )
     end
 
     it "More Like Thisはmltの基準情報以外をmore_like_this句へ渡す" do
         body = AreSearch::Searcher.search(
             [article_index_target],
             mlt: {
-                instance:     article,
-                index_target: article_index_target,
-                fields:               [:title, :status],
+                fields: [:title, :status],
+                like: {
+                    instance:     article,
+                    index_target: article_index_target,
+                },
                 min_term_freq:        0,
                 min_doc_freq:         -1,
                 max_query_terms:      0,
@@ -605,6 +646,12 @@ RSpec.describe "search option flow" do
         mlt = body.dig(:query, :bool, :must, :more_like_this)
 
         expect(mlt[:fields]).to eq(["title", "status"])
+        expect(mlt[:like]).to eq([
+            {
+                _index: "test__articles__default",
+                _id:    "1",
+            },
+        ])
         expect(mlt[:min_term_freq]).to eq(0)
         expect(mlt[:min_doc_freq]).to eq(-1)
         expect(mlt[:max_query_terms]).to eq(0)
@@ -625,9 +672,11 @@ RSpec.describe "search option flow" do
             AreSearch::Searcher.search(
                 [article_index_target],
                 mlt: {
-                    instance:     article,
-                    index_target: article_index_target,
                     fields: [:count],
+                    like: {
+                        instance:     article,
+                        index_target: article_index_target,
+                    },
                 },
                 dump_body: true,
             )
@@ -639,21 +688,22 @@ RSpec.describe "search option flow" do
                 mlt: {
                     instance:     article,
                     index_target: article_index_target,
-                    fields: [:title],
-                    like:   "other document",
+                    fields:       [:title],
                 },
                 dump_body: true,
             )
-        end.to raise_error(ArgumentError, /指定できないキー.*like/)
+        end.to raise_error(ArgumentError, /必要なキーがありません: \[:like\]/)
     end
 
     it "mltの省略値をMore Like This句へ設定する" do
         body = AreSearch::Searcher.search(
             [article_index_target],
             mlt: {
-                instance:     article,
-                index_target: article_index_target,
                 fields: [:title],
+                like: {
+                    instance:     article,
+                    index_target: article_index_target,
+                },
             },
             dump_body: true,
         )
@@ -671,9 +721,11 @@ RSpec.describe "search option flow" do
         body = AreSearch::Searcher.search(
             [article_index_target],
             mlt: {
-                instance:     article,
-                index_target: article_index_target,
-                fields:               [:title],
+                fields: [:title],
+                like: {
+                    instance:     article,
+                    index_target: article_index_target,
+                },
                 minimum_should_match: "50%",
             },
             where_or: {

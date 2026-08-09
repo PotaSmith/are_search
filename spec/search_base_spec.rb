@@ -387,9 +387,11 @@ RSpec.describe AreSearch::Searcher do
 
         it "MLT基準 index の alias が無ければ index_not_found の空結果を返す" do
             mlt_options = {
-                instance:     double("document"),
-                index_target: document_index_target,
-                fields:       [:name],
+                fields: [:name],
+                like: {
+                    instance:     double("document"),
+                    index_target: document_index_target,
+                },
             }
             valid_options = {
                 mlt: mlt_options,

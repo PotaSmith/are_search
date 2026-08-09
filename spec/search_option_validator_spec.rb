@@ -1078,9 +1078,11 @@ RSpec.describe AreSearch::SearchOptionValidator do
                 [
                     {
                         mlt: {
-                            instance:     mlt_instance,
-                            index_target: mlt_index_target,
-                            fields:       ["title"],
+                            fields: ["title"],
+                            like: {
+                                instance:     mlt_instance,
+                                index_target: mlt_index_target,
+                            },
                         },
                     },
                     /context\.any_text_or_keyword_without_other_type_fields.*"title"/,
