@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
-require_relative "../support/are_search_integration_support"
+require_relative "../support/integration_support"
 
 RSpec.describe "AreSearch reindex integration", type: :model do
     include AreSearchIntegrationSupport
@@ -126,7 +126,7 @@ RSpec.describe "AreSearch reindex integration", type: :model do
         )
 
         expect(result[:result]).to eq(:not_success)
-        expect(result[:failed_ids]).to eq([failed_document.id.to_s])
+        expect(result[:failed_ids]).to eq([failed_document.id])
         expect(result[:stop_phase]).to eq(:index_to_new_index)
         expect(result[:done_phases]).to include(
             :lock_index,

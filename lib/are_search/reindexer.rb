@@ -111,14 +111,15 @@ module AreSearch
             end
 
             index_target.model_class.find_in_batches(batch_size: AreSearch.batch_size) do |batch|
-                body = build_bulk_body(index_target, sync_stage_name, batch, physical_index_name)
+                body, ids = build_bulk_body(index_target, sync_stage_name, batch, physical_index_name)
                 bar&.increment!(batch.size)
 
                 next if body.empty?
 
                 response = AreSearch::EsAdapter.no_validation_bulk(body: body)
 
-                collect_bulk_errors(response, failed_ids)
+                validate_bulk_response!(response, ids)
+                collect_bulk_errors(response, ids, failed_ids)
             end
 
             if failed_ids.empty?
@@ -131,25 +132,59 @@ module AreSearch
 
         def build_bulk_body(index_target, sync_stage_name, batch, physical_index_name)
             body = []
+            ids = []
 
             batch.each do |record|
                 next if record.are_search_indexable?(index_target.index_target_name, sync_stage_name) != true
 
                 body << { index: { _index: physical_index_name, _id: record.id.to_s } }
                 body << record.are_search_index_data_for_index!(index_target, sync_stage_name)
+                ids << record.id
             end
 
-            body
+            [body, ids]
         end
 
-        def collect_bulk_errors(response, failed_ids)
+        # bulk responseが送信したIDと1対1で対応していることを確認する。
+        def validate_bulk_response!(response, expected_ids)
+            unless response.respond_to?(:[])
+                raise AreSearch::Error, "Elasticsearch bulk response が不正です"
+            end
+
+            items = response["items"]
+            unless items.instance_of?(Array)
+                raise AreSearch::Error, "Elasticsearch bulk response の items が不正です"
+            end
+
+            unless items.length == expected_ids.length
+                raise AreSearch::Error, "Elasticsearch bulk response の件数が一致しません"
+            end
+
+            items.each_with_index do |item, index|
+                unless item.instance_of?(Hash)
+                    raise AreSearch::Error, "Elasticsearch bulk response の item が不正です"
+                end
+
+                result = item["index"]
+                unless result.instance_of?(Hash)
+                    raise AreSearch::Error, "Elasticsearch bulk response の index 結果が不正です"
+                end
+
+                unless result["_id"] == expected_ids[index].to_s
+                    raise AreSearch::Error, "Elasticsearch bulk response の ID が一致しません"
+                end
+            end
+        end
+
+        def collect_bulk_errors(response, ids, failed_ids)
             return unless response["errors"]
 
             response["items"].each do |item|
                 op = item["index"] || item["create"] || item["update"] || item["delete"]
                 next unless op&.dig("error")
 
-                failed_ids << op["_id"]
+                # この find は上でチェックしてるから失敗しない
+                failed_ids << ids.find{|a| a.to_s == op["_id"] }
                 AreSearch.logger.error { "[AreSearch] bulk index failed: id=#{op["_id"]} error=#{op["error"].inspect}" }
             end
         end

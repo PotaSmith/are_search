@@ -105,6 +105,10 @@ DB commit 後の同期方法。
     :none
         after_commit では同期せず、run_sync_requests に任せる。
 
+after_commit で開始した同期またはJob登録が false を返すか例外を送出した場合はエラーログを残す。
+失敗したstageだけを終了し、残りのIndexTarget・stageは継続する。例外は保存処理の呼び出し元へ伝播させない。
+対応する sync request は残り、run_sync_requests で再処理できる。
+
 どのモードでも、保存・削除時には sync request が記録される。
 
 
@@ -639,6 +643,7 @@ commit 後は `are_search_sync_stage_names_on_after_commit` にあるtarget・st
         何も開始せず、rake の通常同期に任せる。
 
 どのモードでも SyncRequest は callback で作成済み。
+after_commit から開始した同期またはJob登録の失敗はstage単位でエラーログへ残し、残りのIndexTarget・stageを継続する。
 after_commit、Job 登録、Elasticsearch 同期のいずれかが失敗しても、未完了要求はデータベースに残る。
 
 通常同期の開始時は、現在のIndexTargetとSyncRequestのtarget名・index名・stage設定が一致することを確認し、

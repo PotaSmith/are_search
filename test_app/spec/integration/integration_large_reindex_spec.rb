@@ -3,7 +3,7 @@
 require "rails_helper"
 require "rake"
 require "tmpdir"
-require_relative "../support/are_search_integration_support"
+require_relative "../support/integration_support"
 
 RSpec.describe "AreSearch large reindex migration integration", type: :model do
     include AreSearchIntegrationSupport

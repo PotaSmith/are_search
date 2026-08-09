@@ -22,17 +22,17 @@ module AreSearch
         end
 
         # Elasticsearch の単一ドキュメント登録APIを呼び出す。
-        def index(index_alias_name:, id:, body:)
+        def index(index_alias_name:, es_key:, body:)
             AreSearch::IndexDefinition.valid_index_alias_name!(index_alias_name)
 
-            AreSearch.client.index(index: index_alias_name, id: id, body: body)
+            AreSearch.client.index(index: index_alias_name, id: es_key, body: body)
         end
 
         # Elasticsearch の単一ドキュメント削除APIを呼び出す。
-        def delete(index_alias_name:, id:)
+        def delete(index_alias_name:, es_key:)
             AreSearch::IndexDefinition.valid_index_alias_name!(index_alias_name)
 
-            response = AreSearch.client.delete(index: index_alias_name, id: id)
+            response = AreSearch.client.delete(index: index_alias_name, id: es_key)
 
             if response["result"] == 'deleted'
                 return success

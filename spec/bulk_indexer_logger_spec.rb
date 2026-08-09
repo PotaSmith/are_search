@@ -47,16 +47,16 @@ RSpec.describe AreSearch::BulkIndexer::Logger do
     end
 
     # Loggerが読める固定時刻の結果行を返す。
-    def logger_result_line(id, result)
-        "[2026-08-07T12:00:00.000000+09:00] #{id} #{result}\n"
+    def logger_result_line(key, result)
+        "[2026-08-07T12:00:00.000000+09:00] #{key} #{result}\n"
     end
 
-    describe "#invalid_id?" do
-        it "空IDと空白を含むIDを拒否する" do
-            expect(logger.invalid_id?("")).to eq(true)
-            expect(logger.invalid_id?("1 2")).to eq(true)
-            expect(logger.invalid_id?("1\n2")).to eq(true)
-            expect(logger.invalid_id?("123")).to eq(false)
+    describe "#invalid_key?" do
+        it "空keyと空白を含むkeyを拒否する" do
+            expect(logger.invalid_key?("")).to eq(true)
+            expect(logger.invalid_key?("1 2")).to eq(true)
+            expect(logger.invalid_key?("1\n2")).to eq(true)
+            expect(logger.invalid_key?("123")).to eq(false)
         end
     end
 
@@ -133,18 +133,18 @@ RSpec.describe AreSearch::BulkIndexer::Logger do
     end
 
     describe "checkpoint読込" do
-        it "checkpointファイルの最後のIDを返す" do
+        it "checkpointファイルの最後のkeyを返す" do
             File.write(
                 check_point_file_path,
                 logger_result_line("1", "check_point") +
                     logger_result_line("10", "check_point") + "\n",
             )
 
-            expect(logger.get_last_check_point_id).to eq("10")
+            expect(logger.get_last_check_point_key).to eq("10")
         end
 
         it "checkpointファイルが無ければnilを返す" do
-            expect(logger.get_last_check_point_id).to eq(nil)
+            expect(logger.get_last_check_point_key).to eq(nil)
         end
 
         it "checkpoint形式と一致しない最後の行があれば拒否する" do
@@ -154,7 +154,7 @@ RSpec.describe AreSearch::BulkIndexer::Logger do
             )
 
             expect do
-                logger.get_last_check_point_id
+                logger.get_last_check_point_key
             end.to raise_error(
                 AreSearch::Error,
                 /ファイルに不正な行があります/,
@@ -163,7 +163,7 @@ RSpec.describe AreSearch::BulkIndexer::Logger do
     end
 
     describe "結果読込" do
-        it "指定結果ファイルから全IDを順番通り返す" do
+        it "指定結果ファイルから全keyを順番通り返す" do
             File.write(
                 failure_file_path,
                 logger_result_line("2", "fail") +
@@ -171,7 +171,7 @@ RSpec.describe AreSearch::BulkIndexer::Logger do
             )
 
             expect(
-                logger.read_result_ids(
+                logger.read_result_keys(
                     failure_file_path,
                     described_class::FAILURE_RESULT,
                 ),
@@ -185,7 +185,7 @@ RSpec.describe AreSearch::BulkIndexer::Logger do
             )
 
             expect do
-                logger.read_result_ids(
+                logger.read_result_keys(
                     failure_file_path,
                     described_class::FAILURE_RESULT,
                 )
@@ -195,7 +195,7 @@ RSpec.describe AreSearch::BulkIndexer::Logger do
             )
         end
 
-        it "4種類の結果ファイルに記録済みの全IDを返す" do
+        it "4種類の結果ファイルに記録済みの全keyを返す" do
             File.write(
                 success_file_path,
                 logger_result_line("1", "success"),
@@ -213,7 +213,7 @@ RSpec.describe AreSearch::BulkIndexer::Logger do
                 logger_result_line("4", "data_fail"),
             )
 
-            expect(logger.get_all_ids).to eq(["1", "2", "3", "4"])
+            expect(logger.get_all_keys).to eq(["1", "2", "3", "4"])
         end
     end
 end

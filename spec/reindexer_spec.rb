@@ -256,7 +256,13 @@ RSpec.describe AreSearch::Reindexer do
                 expect(client)
                     .to receive(:bulk)
                     .with(body: expected_body)
-                    .and_return("errors" => false, "items" => [])
+                    .and_return(
+                        "errors" => false,
+                        "items"  => [
+                            { "index" => { "_id" => "1" } },
+                            { "index" => { "_id" => "2" } },
+                        ],
+                    )
 
                 result = described_class.reindex_index_target(
                     index_target,
@@ -285,7 +291,7 @@ RSpec.describe AreSearch::Reindexer do
                 2
             end
 
-            it "失敗IDを結果Hashへ残す" do
+            it "失敗IDをモデルのID型のまま結果Hashへ残す" do
                 first_record = instance_double(
                     "Article",
                     id: 1,
@@ -340,13 +346,56 @@ RSpec.describe AreSearch::Reindexer do
                 expect(result).to eq(
                     result:      :not_success,
                     message:     "bulk 投入に失敗した ID があるため alias を切り替えませんでした",
-                    failed_ids:  ["2"],
+                    failed_ids:  [2],
                     stop_phase:  :index_to_new_index,
                     done_phases: [
                         :lock_index,
                         :create_marker,
                         :create_new_index,
                     ],
+                )
+            end
+        end
+
+        context "when bulk response does not match the request" do
+            let(:record_count) do
+                1
+            end
+
+            it "items件数が送信件数と一致しなければ例外にする" do
+                record = instance_double(
+                    "Article",
+                    id: 1,
+                    are_search_indexable?: true,
+                    are_search_index_data_for_index!: { id: 1, title: "first" },
+                )
+
+                allow(model).to receive(:find_in_batches) do |batch_size:, &block|
+                    expect(batch_size).to eq(500)
+                    block.call([record])
+                end
+
+                allow(AreSearch::IndexManager)
+                    .to receive(:reindex) do |_index_name, _index_settings, _index_mappings, _operation, result, &block|
+                        run_index_manager_block(
+                            result,
+                            "test_articles__20240101120000",
+                            &block
+                        )
+                    end
+
+                allow(client)
+                    .to receive(:bulk)
+                    .and_return("errors" => false, "items" => [])
+
+                expect do
+                    described_class.reindex_index_target(
+                        index_target,
+                        sync_stage_name,
+                    )
+                end.to raise_error(
+                    AreSearch::Error,
+                    "Elasticsearch bulk response の件数が一致しません",
                 )
             end
         end
@@ -391,7 +440,12 @@ RSpec.describe AreSearch::Reindexer do
                             { id: 1, title: "first" },
                         ],
                     )
-                    .and_return("errors" => false, "items" => [])
+                    .and_return(
+                        "errors" => false,
+                        "items"  => [
+                            { "index" => { "_id" => "1" } },
+                        ],
+                    )
 
                 result = described_class.reindex_index_target(
                     index_target,
@@ -453,7 +507,13 @@ RSpec.describe AreSearch::Reindexer do
                             { id: 2, title: "second" },
                         ],
                     )
-                    .and_return("errors" => false, "items" => [])
+                    .and_return(
+                        "errors" => false,
+                        "items"  => [
+                            { "index" => { "_id" => "1" } },
+                            { "index" => { "_id" => "2" } },
+                        ],
+                    )
 
                 expect(client)
                     .to receive(:bulk)
@@ -463,7 +523,12 @@ RSpec.describe AreSearch::Reindexer do
                             { id: 3, title: "third" },
                         ],
                     )
-                    .and_return("errors" => false, "items" => [])
+                    .and_return(
+                        "errors" => false,
+                        "items"  => [
+                            { "index" => { "_id" => "3" } },
+                        ],
+                    )
 
                 result = described_class.reindex_index_target(
                     index_target,

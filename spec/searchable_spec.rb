@@ -987,6 +987,91 @@ RSpec.describe AreSearch::Searchable do
             record.are_search_after_commit
         end
 
+        it "after_commit_mode が :job でenqueueがfalseならエラーをログへ残す" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+            record = model_class.new
+            record.id = 123
+
+            allow(AreSearch)
+                .to receive(:after_commit_mode)
+                .and_return(:job)
+
+            expect(record)
+                .to receive(:are_search_enqueue_sync_job)
+                .with(kind_of(AreSearch::IndexTarget), "default")
+                .and_return(false)
+
+            expect(logger).to receive(:error) do |&block|
+                message = block.call
+                expect(message).to include("after_commit sync failed")
+                expect(message).to include("sync_stage=default")
+                expect(message).to include("mode=job")
+            end
+
+            record.are_search_after_commit
+        end
+
+        it "after_commit_mode が :direct で同期がfalseならエラーをログへ残す" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+            record = model_class.new
+            record.id = 123
+
+            allow(AreSearch)
+                .to receive(:after_commit_mode)
+                .and_return(:direct)
+
+            index_target = model_class.are_search_index_target(:default)
+
+            expect(index_target)
+                .to receive(:are_search_sync)
+                .with(123, "default")
+                .and_return(false)
+
+            expect(logger).to receive(:error) do |&block|
+                message = block.call
+                expect(message).to include("after_commit sync failed")
+                expect(message).to include("sync_stage=default")
+                expect(message).to include("mode=direct")
+            end
+
+            record.are_search_after_commit
+        end
+
+        it "1stageのJob登録で例外が出ても残りのstageを継続する" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+            record = model_class.new
+            record.id = 123
+
+            allow(model_class)
+                .to receive(:are_search_all_sync_stage_names)
+                .and_return(default: ["first", "second"])
+
+            allow(AreSearch)
+                .to receive(:after_commit_mode)
+                .and_return(:job)
+
+            sync_stage_names = []
+            allow(record).to receive(:are_search_enqueue_sync_job) do |_index_target, sync_stage_name|
+                sync_stage_names << sync_stage_name
+                raise RuntimeError, "enqueue failed" if sync_stage_name == "first"
+
+                true
+            end
+
+            expect(logger).to receive(:error) do |&block|
+                message = block.call
+                expect(message).to include("sync_stage=first")
+                expect(message).to include("RuntimeError: enqueue failed")
+            end
+
+            record.are_search_after_commit
+
+            expect(sync_stage_names).to eq(["first", "second"])
+        end
+
         it "after_commit_mode が :none なら何もしない" do
             model_class = build_searchable_class
             model_class.include(described_class)

@@ -354,8 +354,8 @@ module AreSearch
 
         # ヒット一覧からレコードを復元し、対応する target・_source・highlight とともに検索順で返す
         def build_records_results(hits, index_to_index_targets, model_relations)
-            # index_targetごとにidを集める
-            ids_by_index_target = {}
+            # index_targetごとにElasticsearchのkeyを集める。
+            es_keys_by_index_target = {}
             hits.each do |hit|
                 index_targets = index_targets_for_hit_index(index_to_index_targets, hit["_index"])
                 if index_targets.blank?
@@ -366,21 +366,21 @@ module AreSearch
                 index_targets.each do |index_target|
                     next unless hit_matches_index_target?(hit, index_target)
 
-                    ids_by_index_target[index_target] ||= []
-                    ids_by_index_target[index_target] << hit["_id"]
+                    es_keys_by_index_target[index_target] ||= []
+                    es_keys_by_index_target[index_target] << hit["_id"]
                 end
             end
 
-            # index_targetごとにDBから取得し、idをキーに保持する。
+            # index_targetごとにDBから取得し、Elasticsearchのkeyで参照できる形で保持する。
             records_by_index_target = {}
-            ids_by_index_target.each do |index_target, ids|
+            es_keys_by_index_target.each do |index_target, es_keys|
                 model = index_target.model_class
                 relation = model_relations[model]
 
                 if relation.nil?
-                    relation = model.where(id: ids)
+                    relation = model.where(id: es_keys)
                 else
-                    relation = relation.where(id: ids)
+                    relation = relation.where(id: es_keys)
                 end
 
                 records_for_index_target = {}

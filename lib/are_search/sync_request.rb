@@ -262,6 +262,9 @@ module AreSearch
         end
 
         def are_search_try_force_sync
+            # 対象外
+            return false if processing_token.blank?
+
             index_target = resolve_index_target_nilable
 
             # index_targetがnilの場合は、現在のモデル定義からtargetがなくなった可能性があるため、要求は消さずに残す

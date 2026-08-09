@@ -865,7 +865,7 @@ RSpec.describe AreSearch::SyncRequest do
                 result = sync_request.are_search_try_force_sync
                 reloaded = AreSearch::SyncRequest.find(sync_request.id)
 
-                expect(result).to eq(true)
+                expect(result).to eq(false)
                 expect(reloaded.force_attempted).to eq(false)
                 expect(reloaded.force_try_count).to eq(0)
             end

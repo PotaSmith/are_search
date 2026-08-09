@@ -643,7 +643,7 @@ RSpec.describe "are_search rake tasks" do
                 .and_return(
                     result:      :not_success,
                     message:     "bulk 投入に失敗した ID があるため alias を切り替えませんでした",
-                    failed_ids:  ["123"],
+                    failed_ids:  [123],
                     stop_phase:  :index_to_new_index,
                     done_phases: [:create_new_index],
                 )

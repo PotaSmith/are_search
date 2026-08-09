@@ -3,7 +3,7 @@
 require "rails_helper"
 require "action_mailer"
 require "rake"
-require_relative "../support/are_search_integration_support"
+require_relative "../support/integration_support"
 
 RSpec.describe "AreSearch sync limit alert integration", type: :model do
     include AreSearchIntegrationSupport

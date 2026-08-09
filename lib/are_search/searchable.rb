@@ -159,7 +159,7 @@ module AreSearch
             else
                 AreSearch::EsAdapter.index(
                     index_alias_name: index_target.are_search_index_alias_name,
-                    id:               id.to_s,
+                    es_key:           id.to_s,
                     body:             are_search_index_data_for_index!(index_target, sync_stage_name),
                 )
             end
@@ -242,24 +242,47 @@ module AreSearch
             )
         end
 
+        # commit後の同期開始をstage単位で実行し、失敗しても残りのstageを継続する。
         def are_search_after_commit
             self.class.are_search_index_targets.each do |index_target|
                 self.class.are_search_get_sync_stage_names_on_after_commit(index_target.index_target_name).each do |sync_stage_name|
-                    case AreSearch.after_commit_mode
-                    when :job
-                        are_search_enqueue_sync_job(index_target, sync_stage_name)
-                    when :direct
-                        index_target.are_search_sync(id, sync_stage_name)
-                    when :none
-                        # 何もしない rake タスク任せ
-                    else
-                        raise ArgumentError, "unknown after_commit_mode: #{AreSearch.after_commit_mode.inspect}"
+                    after_commit_mode = AreSearch.after_commit_mode
+
+                    if after_commit_mode == :none
+                        next
+                    end
+                    if after_commit_mode != :job && after_commit_mode != :direct
+                        raise ArgumentError, "unknown after_commit_mode: #{after_commit_mode.inspect}"
+                    end
+
+                    result = nil
+                    begin
+                        if after_commit_mode == :job
+                            result = are_search_enqueue_sync_job(index_target, sync_stage_name)
+                        else
+                            result = index_target.are_search_sync(id, sync_stage_name)
+                        end
+                    rescue StandardError => error
+                        AreSearch.logger.error do
+                            "[AreSearch] after_commit sync failed: model=#{self.class.name} id=#{id} " \
+                                "index_target=#{index_target.index_target_name} sync_stage=#{sync_stage_name} " \
+                                "mode=#{after_commit_mode} error=#{error.class}: #{error.message}"
+                        end
+                        next
+                    end
+
+                    if result == false
+                        AreSearch.logger.error do
+                            "[AreSearch] after_commit sync failed: model=#{self.class.name} id=#{id} " \
+                                "index_target=#{index_target.index_target_name} sync_stage=#{sync_stage_name} " \
+                                "mode=#{after_commit_mode}"
+                        end
                     end
                 end
             end
         end
 
-        # コミット確定時に同期ジョブをキューイングする
+        # コミット確定時に同期ジョブをキューイングする。
         def are_search_enqueue_sync_job(index_target, sync_stage_name)
             AreSearch.logger.debug { "call are_search_enqueue_sync_job #{self.class.name} #{id}" }
 

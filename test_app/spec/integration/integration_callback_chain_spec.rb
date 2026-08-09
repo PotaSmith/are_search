@@ -2,7 +2,7 @@
 
 require "rails_helper"
 require "rake"
-require_relative "../support/are_search_integration_support"
+require_relative "../support/integration_support"
 
 RSpec.describe "AreSearch callback chain integration", type: :model do
     include AreSearchIntegrationSupport

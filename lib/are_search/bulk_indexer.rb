@@ -174,10 +174,10 @@ module AreSearch
         # relationを1件ずつ処理し、容量上限を超えた時点でbulk送信する。
         def index_records(relation)
             relation.find_each do |record|
-                ar_instance_key = record.id.to_s
-                if @logger.invalid_id?(ar_instance_key)
+                key = record.id.to_s
+                if @logger.invalid_key?(key)
                     raise AreSearch::Error,
-                        "bulk結果ファイルへ記録できないIDです: #{ar_instance_key.inspect}"
+                        "bulk結果ファイルへ記録できないIDです: #{key.inspect}"
                 end
 
                 append_buffer(record)
@@ -196,53 +196,53 @@ module AreSearch
         def build_index_relation
             model_class = @index_target.model_class
 
-            last_id = @logger.get_last_check_point_id
-            return model_class.all if last_id.nil?
+            last_key = @logger.get_last_check_point_key
+            return model_class.all if last_key.nil?
 
-            model_class.where("id > ?", last_id)
+            model_class.where("id > ?", last_key)
         end
 
         # recover 時は未解決の失敗IDだけ、通常時は各結果ファイルの最後のIDより後を対象にする。
         def build_recover_relation
             model_class = @index_target.model_class
 
-            recover_ids = get_recover_ids
+            recover_keys = get_recover_keys
 
-            existing_ids = model_class
-                .where(id: recover_ids)
+            existing_keys = model_class
+                .where(id: recover_keys)
                 .pluck(:id)
                 .map(&:to_s)
 
-            missing_ids = recover_ids - existing_ids
+            missing_keys = recover_keys - existing_keys
 
-            missing_ids.each do |id|
-                @logger.write_data_skip_result!(id)
+            missing_keys.each do |key|
+                @logger.write_data_skip_result!(key)
             end
 
-            model_class.where(id: existing_ids)
+            model_class.where(id: existing_keys)
         end
 
         # 対象レコードからbulkのactionとdataを作り、bufferへ渡す。
         # skip対象はactionとdataを持たない1件としてbufferへ渡す。
         def append_buffer(record)
-            ar_instance_key = record.id.to_s
+            key = record.id.to_s
 
             if record.are_search_indexable?(@index_target.index_target_name, @sync_stage_name) != true
-                @buffer.append_no_sync_data(ar_instance_key, :skip, nil)
+                @buffer.append_no_sync_data(key, :skip, nil)
                 return
             end
 
             action = {
                 index: {
                     _index: @index_target.are_search_index_alias_name,
-                    _id:    ar_instance_key,
+                    _id:    key,
                 },
             }
 
             data = record.are_search_index_data_for_index!(@index_target, @sync_stage_name)
-            @buffer.append_sync_data(ar_instance_key, action, data)
+            @buffer.append_sync_data(key, action, data)
         rescue StandardError => error
-            @buffer.append_no_sync_data(ar_instance_key, :fail, error)
+            @buffer.append_no_sync_data(key, :fail, error)
         end
 
         # 指定されたbulk bodyをElasticsearchへ送り、各IDの成否とエラー内容を記録する。
@@ -250,10 +250,10 @@ module AreSearch
         def send_bulk(bulk_data)
             return if bulk_data.nil?
 
-            unless bulk_data[:ids].empty?
+            unless bulk_data[:keys].empty?
                 response = AreSearch::EsAdapter.no_validation_bulk(body: bulk_data[:body])
 
-                validate_bulk_response!(response, bulk_data[:ids])
+                validate_bulk_response!(response, bulk_data[:keys])
 
                 response["items"].each do |item|
                     result = item["index"]
@@ -266,18 +266,18 @@ module AreSearch
                 end
             end
 
-            bulk_data[:fail_id_and_errors].each do |ar_instance_key, error|
-                @logger.write_data_fail_result!(ar_instance_key, error)
+            bulk_data[:fail_key_and_errors].each do |key, error|
+                @logger.write_data_fail_result!(key, error)
             end
-            bulk_data[:skip_ids].each do |ar_instance_key|
-                @logger.write_data_skip_result!(ar_instance_key)
+            bulk_data[:skip_keys].each do |key|
+                @logger.write_data_skip_result!(key)
             end
 
-            @logger.write_check_point!(bulk_data[:check_point_id])
+            @logger.write_check_point!(bulk_data[:check_point_key])
         end
 
         # bulk response が送信したIDと1対1で対応していることを確認する。
-        def validate_bulk_response!(response, expected_ids)
+        def validate_bulk_response!(response, expected_keys)
             unless response.respond_to?(:[])
                 raise AreSearch::Error, "Elasticsearch bulk response が不正です"
             end
@@ -287,7 +287,7 @@ module AreSearch
                 raise AreSearch::Error, "Elasticsearch bulk response の items が不正です"
             end
 
-            unless items.length == expected_ids.length
+            unless items.length == expected_keys.length
                 raise AreSearch::Error,
                     "Elasticsearch bulk response の件数が一致しません"
             end
@@ -302,7 +302,7 @@ module AreSearch
                     raise AreSearch::Error, "Elasticsearch bulk response の index 結果が不正です"
                 end
 
-                unless result["_id"] == expected_ids[index]
+                unless result["_id"] == expected_keys[index]
                     raise AreSearch::Error,
                         "Elasticsearch bulk response の ID が一致しません"
                 end
@@ -310,42 +310,42 @@ module AreSearch
         end
 
         # 前回の失敗IDから、今回の結果ファイルに記録済みのIDを除いたものを対象にする。
-        def get_recover_ids
-            failure_ids = @logger.read_result_ids(@bulk_failure_target_file, Logger::FAILURE_RESULT)
-            data_fail_ids = @logger.read_result_ids(@data_fail_target_file,  Logger::DATA_FAIL_RESULT)
+        def get_recover_keys
+            failure_keys = @logger.read_result_keys(@bulk_failure_target_file, Logger::FAILURE_RESULT)
+            data_fail_keys = @logger.read_result_keys(@data_fail_target_file,  Logger::DATA_FAIL_RESULT)
 
-            target_ids = (failure_ids + data_fail_ids).uniq
+            target_keys = (failure_keys + data_fail_keys).uniq
 
-            if target_ids.length > MAX_RECOVER_COUNT
-                raise AreSearch::Error, "recover対象が多すぎます: #{target_ids.length} / 上限 #{MAX_RECOVER_COUNT}"
+            if target_keys.length > MAX_RECOVER_COUNT
+                raise AreSearch::Error, "recover対象が多すぎます: #{target_keys.length} / 上限 #{MAX_RECOVER_COUNT}"
             end
 
-            recover_ids = target_ids - @logger.get_all_ids
+            recover_keys = target_keys - @logger.get_all_keys
 
-            if recover_ids.empty?
+            if recover_keys.empty?
                 raise AreSearch::Error, "recover対象がありません"
             end
 
-            recover_ids
+            recover_keys
         end
 
         class Buffer
 
             def initialize(max_bulk_bytes:, max_bulk_count:, max_fail_count:, max_skip_count:)
-                @check_point_id = nil
+                @check_point_key = nil
 
-                @ids = []
+                @keys = []
                 @values = []
                 @values_bytesize = 0
                 @values_count = 0
 
-                @reserved_id = nil
+                @reserved_key = nil
                 @reserved_es_action = nil
                 @reserved_index_data = nil
                 @reserved_bytesize = 0
 
-                @skip_ids = []
-                @fail_id_and_errors = []
+                @skip_keys = []
+                @fail_key_and_errors = []
 
                 @max_bulk_bytes = max_bulk_bytes
                 @max_bulk_count = max_bulk_count
@@ -355,14 +355,14 @@ module AreSearch
 
             # 保留中の1件分を送信待ちへ移し、新しい1件分を保持する。
             # actionがnilの1件はskip対象として保持する。
-            def append_no_sync_data(ar_instance_key, action, data)
+            def append_no_sync_data(key, action, data)
                 unless [:fail, :skip].include?(action)
                     raise AreSearch::Error, "不正な内部操作です"
                 end
 
                 push_reserved
 
-                @reserved_id = ar_instance_key
+                @reserved_key = key
                 @reserved_es_action = action
                 @reserved_index_data = data
                 @reserved_bytesize = 0
@@ -370,7 +370,7 @@ module AreSearch
 
             # 保留中の1件分を送信待ちへ移し、新しい1件分を保持する。
             # actionがnilの1件はskip対象として保持する。
-            def append_sync_data(ar_instance_key, action, data)
+            def append_sync_data(key, action, data)
                 if [:fail, :skip].include?(action)
                     raise AreSearch::Error, "不正な内部操作です"
                 end
@@ -380,19 +380,19 @@ module AreSearch
                     reserved_index_data = Elasticsearch::API.serializer.dump(data) + "\n"
                     reserved_bytesize = reserved_es_action.bytesize + reserved_index_data.bytesize
                 rescue StandardError => error
-                    append_no_sync_data(ar_instance_key, :fail, error)
+                    append_no_sync_data(key, :fail, error)
                     return
                 end
 
                 if reserved_bytesize > @max_bulk_bytes
-                    error = AreSearch::Error.new("max_bulk_bytes を超えるデータがあります: id #{ar_instance_key} size #{reserved_bytesize} / #{@max_bulk_bytes}")
-                    append_no_sync_data(ar_instance_key, :fail, error)
+                    error = AreSearch::Error.new("max_bulk_bytes を超えるデータがあります: id #{key} size #{reserved_bytesize} / #{@max_bulk_bytes}")
+                    append_no_sync_data(key, :fail, error)
                     return
                 end
 
                 push_reserved
 
-                @reserved_id = ar_instance_key
+                @reserved_key = key
                 @reserved_es_action = reserved_es_action
                 @reserved_index_data = reserved_index_data
                 @reserved_bytesize = reserved_bytesize
@@ -404,11 +404,11 @@ module AreSearch
                 return true if count >= @max_bulk_count
 
                 # 送信待ちが多すぎる場合
-                return true if @skip_ids.length >= @max_skip_count
-                return true if @fail_id_and_errors.length >= @max_skip_count
+                return true if @skip_keys.length >= @max_skip_count
+                return true if @fail_key_and_errors.length >= @max_skip_count
 
                 # 現在の失敗と、このbulkが全件失敗した場合の合計がrecover上限に達する場合
-                possible_fail_count = logger.fail_count + @values_count + @fail_id_and_errors.length
+                possible_fail_count = logger.fail_count + @values_count + @fail_key_and_errors.length
                 return true if possible_fail_count >= @max_fail_count
 
                 # 失敗が多すぎる場合
@@ -437,20 +437,20 @@ module AreSearch
             def take
                 bulk_data = {
                     body: @values.join,
-                    ids: @ids.dup,
-                    skip_ids: @skip_ids.dup,
-                    fail_id_and_errors: @fail_id_and_errors.dup,
-                    check_point_id: @check_point_id,
+                    keys: @keys.dup,
+                    skip_keys: @skip_keys.dup,
+                    fail_key_and_errors: @fail_key_and_errors.dup,
+                    check_point_key: @check_point_key,
                 }
 
                 @values = []
-                @ids = []
-                @skip_ids = []
-                @fail_id_and_errors = []
+                @keys = []
+                @skip_keys = []
+                @fail_key_and_errors = []
                 @values_bytesize = 0
                 @values_count = 0
 
-                if bulk_data[:ids].empty? && bulk_data[:skip_ids].empty? && bulk_data[:fail_id_and_errors].empty?
+                if bulk_data[:keys].empty? && bulk_data[:skip_keys].empty? && bulk_data[:fail_key_and_errors].empty?
                     return nil
                 else
                     bulk_data
@@ -466,23 +466,23 @@ module AreSearch
             private
 
             def push_reserved
-                return if @reserved_id.nil?
+                return if @reserved_key.nil?
 
                 if @reserved_es_action == :skip
-                    @skip_ids << @reserved_id
+                    @skip_keys << @reserved_key
                 elsif @reserved_es_action == :fail
-                    @fail_id_and_errors << [@reserved_id, @reserved_index_data]
+                    @fail_key_and_errors << [@reserved_key, @reserved_index_data]
                 else
                     @values << @reserved_es_action
                     @values << @reserved_index_data
-                    @ids << @reserved_id
+                    @keys << @reserved_key
                     @values_bytesize += @reserved_bytesize
                     @values_count += 1
                 end
 
-                @check_point_id = @reserved_id
+                @check_point_key = @reserved_key
 
-                @reserved_id = nil
+                @reserved_key = nil
                 @reserved_es_action = nil
                 @reserved_index_data = nil
                 @reserved_bytesize = 0
@@ -512,50 +512,50 @@ module AreSearch
             end
 
             # 結果ファイルの1項目として記録できないIDか確認する。
-            def invalid_id?(ar_instance_key)
-                id = ar_instance_key.to_s
+            def invalid_key?(key)
+                not_nil_key = key.to_s
 
-                id.empty? || id.match?(/\s/)
+                not_nil_key.empty? || not_nil_key.match?(/\s/)
             end
 
             # 成功IDをチェックポイントファイルへ追記する。
-            def write_check_point!(ar_instance_key)
+            def write_check_point!(key)
                 return if @check_point_file_path.nil?
 
-                line = "[#{log_time}] #{ar_instance_key} #{CHECK_POINT_RESULT}\n"
+                line = "[#{log_time}] #{key} #{CHECK_POINT_RESULT}\n"
 
                 append_line!(@check_point_file_path, line)
             end
 
             # 成功IDを成功結果ファイルと全件ログへ追記する。
-            def write_success_result!(ar_instance_key)
-                line = "[#{log_time}] #{ar_instance_key} #{SUCCESS_RESULT}\n"
+            def write_success_result!(key)
+                line = "[#{log_time}] #{key} #{SUCCESS_RESULT}\n"
 
                 append_line!(@success_file_path, line)
                 append_line!(@log_file_path, line)
             end
 
             # skip IDをskip結果ファイルと全件ログへ追記する。
-            def write_data_skip_result!(ar_instance_key)
-                line = "[#{log_time}] #{ar_instance_key} #{DATA_SKIP_RESULT}\n"
+            def write_data_skip_result!(key)
+                line = "[#{log_time}] #{key} #{DATA_SKIP_RESULT}\n"
 
                 append_line!(@data_skip_file_path, line)
                 append_line!(@log_file_path, line)
             end
 
             # 失敗IDを失敗結果ファイルへ、原因を含む結果を全件ログへ追記する。
-            def write_failure_result!(ar_instance_key, error)
-                fail_common(ar_instance_key, error, FAILURE_RESULT, @failure_file_path)
+            def write_failure_result!(key, error)
+                fail_common(key, error, FAILURE_RESULT, @failure_file_path)
             end
 
             # skip IDをskip結果ファイルと全件ログへ追記する。
-            def write_data_fail_result!(ar_instance_key, error)
-                fail_common(ar_instance_key, error, DATA_FAIL_RESULT, @data_fail_file_path)
+            def write_data_fail_result!(key, error)
+                fail_common(key, error, DATA_FAIL_RESULT, @data_fail_file_path)
             end
 
-            def fail_common(ar_instance_key, error, log_type, log_file)
+            def fail_common(key, error, log_type, log_file)
                 time = log_time
-                failure_line = "[#{time}] #{ar_instance_key} #{log_type}\n"
+                failure_line = "[#{time}] #{key} #{log_type}\n"
                 error_message = error.inspect
 
                 if error.respond_to?(:message)
@@ -563,7 +563,7 @@ module AreSearch
                 end
 
                 error_message = error_message.gsub(/[\r\n]+/, " ")
-                log_line = "[#{time}] #{ar_instance_key} #{error_message} #{log_type}\n"
+                log_line = "[#{time}] #{key} #{error_message} #{log_type}\n"
 
                 append_line!(log_file, failure_line)
                 append_line!(@log_file_path, log_line)
@@ -576,38 +576,38 @@ module AreSearch
             end
 
             # 成功結果ファイル、skip結果ファイル、失敗結果の最後のIDの組を返す
-            def get_last_check_point_id
-                read_last_result_id(@check_point_file_path, CHECK_POINT_RESULT)
+            def get_last_check_point_key
+                read_last_result_key(@check_point_file_path, CHECK_POINT_RESULT)
             end
 
             # 全結果ファイルに記録済みの全IDを返す。
-            def get_all_ids
-                read_result_ids(@success_file_path,   SUCCESS_RESULT) +
-                read_result_ids(@failure_file_path,   FAILURE_RESULT) +
-                read_result_ids(@data_skip_file_path, DATA_SKIP_RESULT) +
-                read_result_ids(@data_fail_file_path, DATA_FAIL_RESULT)
+            def get_all_keys
+                read_result_keys(@success_file_path,   SUCCESS_RESULT) +
+                read_result_keys(@failure_file_path,   FAILURE_RESULT) +
+                read_result_keys(@data_skip_file_path, DATA_SKIP_RESULT) +
+                read_result_keys(@data_fail_file_path, DATA_FAIL_RESULT)
             end
 
             # 指定ファイルの全IDを返す。
-            def read_result_ids(file_path, expected_result)
+            def read_result_keys(file_path, expected_result)
                 return [] unless File.exist?(file_path)
 
-                ids = []
+                keys = []
 
                 File.foreach(file_path) do |line|
                     content_line = line.chomp
                     next if content_line.empty?
 
-                    id_string = line_to_id_string(content_line, expected_result)
+                    key = line_to_key(content_line, expected_result)
 
-                    if id_string.nil?
+                    if key.nil?
                         raise AreSearch::Error, "ファイルに不正な行があります: #{file_path}, line #{content_line}"
                     end
 
-                    ids << id_string
+                    keys << key
                 end
 
-                ids
+                keys
             end
 
             private
@@ -626,22 +626,21 @@ module AreSearch
             end
 
             # 最後の内容行が期待する結果形式ならIDを返す。
-            def read_last_result_id(file_path, expected_result)
+            def read_last_result_key(file_path, expected_result)
                 last_line = read_last_content_line(file_path)
                 return nil if last_line.nil?
 
-                id_string = line_to_id_string(last_line, expected_result)
+                key = line_to_key(last_line, expected_result)
 
-                unless id_string
-                    raise AreSearch::Error,
-                        "ファイルに不正な行があります: #{file_path}, line #{last_line}"
+                unless key
+                    raise AreSearch::Error, "ファイルに不正な行があります: #{file_path}, line #{last_line}"
                 end
 
-                id_string
+                key
             end
 
             # 行が期待する結果形式ならIDを返す。
-            def line_to_id_string(line, expected_result)
+            def line_to_key(line, expected_result)
                 pattern = /\A\[[^\]\r\n]+\] (\S+) #{Regexp.escape(expected_result)}\z/
                 matched = line.match(pattern)
 

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
-require_relative "../support/are_search_integration_support"
+require_relative "../support/integration_support"
 
 RSpec.describe "AreSearch transaction integration", type: :model do
     include AreSearchIntegrationSupport

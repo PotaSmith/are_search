@@ -375,6 +375,45 @@ RSpec.describe AreSearch::IndexTarget do
             expect(result).to eq(:search_result)
         end
 
+        it "fields省略時はqueriesの必須キー不足として拒否する" do
+            search_model = Class.new do
+                def self.name
+                    "Article"
+                end
+
+                def self.are_search_ar_table_name
+                    "articles"
+                end
+
+                def self.include?(mod)
+                    return true if mod == AreSearch::Searchable
+
+                    super
+                end
+
+                def self.are_search_index_mappings
+                    {
+                        default: {
+                            index_settings: {
+                                max_result_window: 2_000,
+                            },
+                            properties: {
+                                title: { type: "text" },
+                            },
+                        },
+                    }
+                end
+            end
+            search_index_target = described_class.new(search_model, :default)
+
+            expect do
+                search_index_target.are_search_search("Rails")
+            end.to raise_error(
+                ArgumentError,
+                "opts[:queries][0] に必要なキーがありません: [:fields]",
+            )
+        end
+
         it "relation 未指定時は model_relations を追加しない" do
             expect(AreSearch::Searcher)
                 .to receive(:search) do |_index_targets, **actual_options|

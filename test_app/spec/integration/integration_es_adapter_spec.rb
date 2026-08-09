@@ -97,7 +97,7 @@ RSpec.describe "AreSearch EsAdapter integration", type: :model do
 
         index_response = AreSearch::EsAdapter.index(
             index_alias_name: test_index_alias_name,
-            id:               "1",
+            es_key:           "1",
             body:             { value: 123 },
         )
 
@@ -123,14 +123,14 @@ RSpec.describe "AreSearch EsAdapter integration", type: :model do
         expect(
             AreSearch::EsAdapter.delete(
                 index_alias_name: test_index_alias_name,
-                id:               "1",
+                es_key:           "1",
             ),
         ).to eq(AreSearch::EsAdapter.success)
 
         expect(
             AreSearch::EsAdapter.delete(
                 index_alias_name: test_index_alias_name,
-                id:               "1",
+                es_key:           "1",
             ),
         ).to eq(AreSearch::EsAdapter.not_found)
     end

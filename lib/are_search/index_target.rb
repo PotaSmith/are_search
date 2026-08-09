@@ -179,8 +179,10 @@ module AreSearch
             relation_opt = options.delete(:relation)
             query_options = {
                 query_string: query,
-                fields:       options.delete(:fields),
             }
+            if options.key?(:fields)
+                query_options[:fields] = options.delete(:fields)
+            end
             if options.key?(:query_type)
                 query_options[:query_type] = options.delete(:query_type)
             end
@@ -205,7 +207,7 @@ module AreSearch
         def are_search_delete!(ar_instance_key)
             result = AreSearch::EsAdapter.delete(
                 index_alias_name: are_search_index_alias_name,
-                id:               ar_instance_key.to_s,
+                es_key:           ar_instance_key.to_s,
             )
 
             if result == AreSearch::EsAdapter.not_success

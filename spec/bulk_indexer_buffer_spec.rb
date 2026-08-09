@@ -30,7 +30,7 @@ RSpec.describe AreSearch::BulkIndexer::Buffer do
         action_line.bytesize + data_line.bytesize
     end
 
-    it "sync dataをNDJSONへ変換してIDとcheckpointを返す" do
+    it "sync dataをNDJSONへ変換してkeyとcheckpointを返す" do
         buffer = build_buffer
         action = {
             index: {
@@ -52,10 +52,10 @@ RSpec.describe AreSearch::BulkIndexer::Buffer do
 
         expect(result).to eq(
             body:               expected_body,
-            ids:                ["1"],
-            skip_ids:           [],
-            fail_id_and_errors: [],
-            check_point_id:     "1",
+            keys:               ["1"],
+            skip_keys:          [],
+            fail_key_and_errors: [],
+            check_point_key:    "1",
         )
     end
 
@@ -70,10 +70,10 @@ RSpec.describe AreSearch::BulkIndexer::Buffer do
         first_result = buffer.take
         second_result = buffer.take_all
 
-        expect(first_result[:ids]).to eq(["1"])
-        expect(first_result[:check_point_id]).to eq("1")
-        expect(second_result[:ids]).to eq(["2"])
-        expect(second_result[:check_point_id]).to eq("2")
+        expect(first_result[:keys]).to eq(["1"])
+        expect(first_result[:check_point_key]).to eq("1")
+        expect(second_result[:keys]).to eq(["2"])
+        expect(second_result[:check_point_key]).to eq("2")
     end
 
     it "skipとfailはbulk bodyへ入れずcheckpoint対象として返す" do
@@ -86,10 +86,10 @@ RSpec.describe AreSearch::BulkIndexer::Buffer do
 
         expect(result).to eq(
             body:               "",
-            ids:                [],
-            skip_ids:           ["1"],
-            fail_id_and_errors: [["2", error]],
-            check_point_id:     "2",
+            keys:               [],
+            skip_keys:          ["1"],
+            fail_key_and_errors: [["2", error]],
+            check_point_key:    "2",
         )
     end
 
@@ -127,9 +127,9 @@ RSpec.describe AreSearch::BulkIndexer::Buffer do
         result = buffer.take_all
 
         expect(result[:body]).to eq("")
-        expect(result[:ids]).to eq([])
-        expect(result[:fail_id_and_errors]).to eq([["1", error]])
-        expect(result[:check_point_id]).to eq("1")
+        expect(result[:keys]).to eq([])
+        expect(result[:fail_key_and_errors]).to eq([["1", error]])
+        expect(result[:check_point_key]).to eq("1")
     end
 
     it "1件だけでmax_bulk_bytesを超えるsync dataはdata failとして保持する" do
@@ -143,14 +143,14 @@ RSpec.describe AreSearch::BulkIndexer::Buffer do
         result = buffer.take_all
 
         expect(result[:body]).to eq("")
-        expect(result[:ids]).to eq([])
-        expect(result[:fail_id_and_errors].length).to eq(1)
-        expect(result[:fail_id_and_errors][0][0]).to eq("1")
-        expect(result[:fail_id_and_errors][0][1]).to be_a(AreSearch::Error)
-        expect(result[:fail_id_and_errors][0][1].message).to match(
+        expect(result[:keys]).to eq([])
+        expect(result[:fail_key_and_errors].length).to eq(1)
+        expect(result[:fail_key_and_errors][0][0]).to eq("1")
+        expect(result[:fail_key_and_errors][0][1]).to be_a(AreSearch::Error)
+        expect(result[:fail_key_and_errors][0][1].message).to match(
             /max_bulk_bytes を超えるデータがあります: id 1 size \d+ \/ 1/,
         )
-        expect(result[:check_point_id]).to eq("1")
+        expect(result[:check_point_key]).to eq("1")
     end
 
     it "送信待ちと保留中を合わせたbyte数が上限を超えるとcapacity overになる" do
