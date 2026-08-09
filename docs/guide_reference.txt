@@ -208,12 +208,16 @@ Elasticsearch clientはスレッド単位でキャッシュする。
     queries.query_string
         2048文字
 
-    where / where_not / where_or の term、terms、range の値
+    where / where_not / where_or の term の値
         256文字
 
-terms は各要素を個別に検査する。
-range は各比較値を個別に検査する。
-String以外の許可値は文字列化した長さで検査する。
+    where / where_not / where_or の terms の Array 全体
+        256文字
+
+    where / where_not / where_or の range の Hash 全体
+        256文字
+
+term の値、terms の Array 全体、range の Hash 全体を文字列化した長さで検査する。
 
 差し替える場合は `AreSearch::SearchParamPolicy` の継承クラスを指定する。
 既定の制限を一部だけ変更する場合は `AreSearch::ParamLengthSearchParamPolicy` を継承できる。

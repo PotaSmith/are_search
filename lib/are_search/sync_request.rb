@@ -392,9 +392,6 @@ module AreSearch
 
                 last_error:           nil,
                 last_error_at:        nil,
-
-                processing_token:     nil, # SyncRequestの削除と同じトランザクション内でprocessingを解除する。
-                processing_at:        nil, # SyncRequestの削除と同じトランザクション内でprocessingを解除する。
             )
         end
 

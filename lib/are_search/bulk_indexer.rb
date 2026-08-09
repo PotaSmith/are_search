@@ -640,6 +640,8 @@ module AreSearch
                     Dir.rmdir(archive_dir)
                     raise
                 end
+
+                nil
             end
 
             private

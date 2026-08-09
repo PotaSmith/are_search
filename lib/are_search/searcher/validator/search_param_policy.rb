@@ -30,32 +30,8 @@ module AreSearch
                             condition_value.each do |field_name, field_param|
                                 next if field_param.nil?
                                 field_param.each do |param_type, param_value|
-
-                                    # range
-                                    if param_type == :range
-                                        next if param_value.nil?
-                                        param_value.each do |_range_key, range_value|
-                                            if valid?("#{key}.range", range_value) == false
-                                                raise AreSearch::InvalidSearchOption
-                                            end
-                                        end
-                                    end
-
-                                    # terms
-                                    if param_type == :terms
-                                        next if param_value.nil?
-                                        param_value.each do |term|
-                                            if valid?("#{key}.terms", term) == false
-                                                raise AreSearch::InvalidSearchOption
-                                            end
-                                        end
-                                    end
-
-                                    # term
-                                    if param_type == :term
-                                        if valid?("#{key}.term", param_value) == false
-                                            raise AreSearch::InvalidSearchOption
-                                        end
+                                    if valid?("#{key}.#{param_type}", param_value) == false
+                                        raise AreSearch::InvalidSearchOption
                                     end
                                 end
                             end
@@ -66,4 +42,3 @@ module AreSearch
         end
     end
 end
-
