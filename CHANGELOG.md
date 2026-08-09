@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+- 外部入力として扱う検索値を検査する `search_param_policy` を追加。`SearchParamPolicy` 継承クラスへ差し替え可能に変更
+- BulkIndexer の recover 正常終了時に、通常実行側の失敗結果とrecover側の結果を世代ディレクトリへ退避し、次回recoverで過去の結果ファイルを再読込しないよう変更
 - More Like This の基準情報を mlt.like にまとめ、instance と index_target を指定する形へ整理。
 - mlt.fields の検索対象と基準を _source または store: true から取得可能であることも検証するように修正
 - force sync・reindex の bulk response の検証を追加

@@ -16,6 +16,7 @@ RSpec.describe AreSearch, "configuration" do
         original_rake_operation_enabled = described_class.rake_operation_enabled
         original_analyzer_settings = described_class.analyzer_settings
         original_search_body_policy = described_class.search_body_policy
+        original_search_param_policy = described_class.search_param_policy
         original_database_specific = described_class.database_specific
         original_thread_client = Thread.current.thread_variable_get(:are_search_client)
         original_thread_client_pid = Thread.current.thread_variable_get(:are_search_client_pid)
@@ -39,6 +40,7 @@ RSpec.describe AreSearch, "configuration" do
         described_class.rake_operation_enabled = original_rake_operation_enabled
         described_class.analyzer_settings = original_analyzer_settings
         described_class.search_body_policy = original_search_body_policy
+        described_class.search_param_policy = original_search_param_policy
         described_class.database_specific = original_database_specific
         Thread.current.thread_variable_set(:are_search_client, original_thread_client)
         Thread.current.thread_variable_set(:are_search_client_pid, original_thread_client_pid)
@@ -131,6 +133,31 @@ RSpec.describe AreSearch, "configuration" do
             end.to raise_error(
                 ArgumentError,
                 "search_body_policy は AreSearch::SearchBodyPolicy の継承クラスを指定してください",
+            )
+        end
+    end
+
+    it "search_param_policy は SearchParamPolicy の継承クラスを受け付ける" do
+        policy_class = Class.new(AreSearch::SearchParamPolicy)
+
+        described_class.search_param_policy = policy_class
+
+        expect(described_class.search_param_policy).to equal(policy_class)
+    end
+
+    it "search_param_policy は基底クラスと無関係な値を拒否する" do
+        invalid_values = [
+            AreSearch::SearchParamPolicy,
+            Class.new,
+            Object.new,
+        ]
+
+        invalid_values.each do |invalid_value|
+            expect do
+                described_class.search_param_policy = invalid_value
+            end.to raise_error(
+                ArgumentError,
+                "search_param_policy は AreSearch::SearchParamPolicy の継承クラスを指定してください",
             )
         end
     end

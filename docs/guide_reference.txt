@@ -20,6 +20,7 @@ config/initializers/are_search.rb の AreSearch.setup 後に指定する。
     AreSearch.batch_size                     = 500
     AreSearch.search_failure_mode            = :empty_result
     AreSearch.search_body_policy             = AreSearch::ScriptDenySearchBodyPolicy
+    AreSearch.search_param_policy            = AreSearch::ParamLengthSearchParamPolicy
 
 
 ## 1-1. sync_request_delay
@@ -194,6 +195,44 @@ mappingの properties にあるフィールド名も同じpolicyで検査する�
 Elasticsearch clientはスレッド単位でキャッシュする。
 キャッシュ時のPIDも保持し、fork後にPIDが変わっている場合は `AreSearch.setup` のブロックを再実行してclientを作り直す。
 親プロセスで生成された接続を子プロセスがそのまま再利用することはない。
+
+
+## 1-13. search_param_policy
+----------------------------------------------------------------
+
+外部入力として扱う検索パラメータの値を検査するpolicy。
+デフォルトは `AreSearch::ParamLengthSearchParamPolicy`。
+
+標準policyでは以下の上限を使用する。
+
+    queries.query_string
+        2048文字
+
+    where / where_not / where_or の term、terms、range の値
+        256文字
+
+terms は各要素を個別に検査する。
+range は各比較値を個別に検査する。
+String以外の許可値は文字列化した長さで検査する。
+
+差し替える場合は `AreSearch::SearchParamPolicy` の継承クラスを指定する。
+既定の制限を一部だけ変更する場合は `AreSearch::ParamLengthSearchParamPolicy` を継承できる。
+
+    class ApplicationSearchParamPolicy < AreSearch::ParamLengthSearchParamPolicy
+        def self.valid?(name, value)
+            return value.to_s.length <= 4096 if name == "query_string"
+
+            super
+        end
+    end
+
+    AreSearch.search_param_policy = ApplicationSearchParamPolicy
+
+`valid?` は検査対象名と値を受け取り、許可する場合に true、拒否する場合に false を返す。
+name には `query_string`、`where.term`、`where.terms`、`where.range` と、
+同じ形式の `where_not.*`、`where_or.*` が渡される。
+false の場合は AreSearch::InvalidSearchOption として扱う。
+基底クラス自体や、継承関係のないクラス・オブジェクトは設定できない。
 
 
 # 2. index_settings

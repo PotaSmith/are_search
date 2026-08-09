@@ -109,6 +109,38 @@ RSpec.describe AreSearch::Searcher do
         expect(result.records.total_count).to eq(0)
     end
 
+    it "検索param policyに拒否された場合は検索前にparams_invalid空結果を返す" do
+        valid_options = {
+            queries: [
+                {
+                    query_string: "a" * 2049,
+                    fields: [:title],
+                },
+            ],
+        }
+
+        allow(AreSearch::SearchParamValidator)
+            .to receive(:validate!)
+            .and_return(valid_options)
+
+        expect(AreSearch.search_param_policy)
+            .to receive(:validate!)
+            .with(valid_options)
+            .and_raise(AreSearch::InvalidSearchOption)
+
+        expect(AreSearch::QueryBuilderSelector).not_to receive(:select)
+        expect(AreSearch::BodyBuilderSelector).not_to receive(:select)
+        expect(AreSearch).not_to receive(:client)
+
+        result = described_class.search(
+            [index_target],
+            queries: valid_options[:queries],
+        )
+
+        expect(result.status).to eq(AreSearch::SearchResult::STATUS_PARAMS_INVALID)
+        expect(result.records).to eq([])
+    end
+
     it "AreSearchパラメーターの検証エラーは空結果へ変換しない" do
         allow(AreSearch::SearchParamValidator)
             .to receive(:validate!)

@@ -216,4 +216,78 @@ RSpec.describe AreSearch::BulkIndexer::Logger do
             expect(logger.get_all_keys).to eq(["1", "2", "3", "4"])
         end
     end
+
+    describe "#rename_all" do
+        it "Loggerの結果ファイルと追加ファイルを同じ退避ディレクトリへ移動する" do
+            additional_file_path = File.join(@logger_dir, "additional.log")
+            file_paths = [
+                success_file_path,
+                failure_file_path,
+                data_skip_file_path,
+                data_fail_file_path,
+                additional_file_path,
+            ]
+
+            file_paths.each do |file_path|
+                File.write(file_path, File.basename(file_path))
+            end
+
+            logger.rename_all([additional_file_path])
+
+            archive_dirs = Dir.children(@logger_dir).select do |name|
+                File.directory?(File.join(@logger_dir, name))
+            end
+            expect(archive_dirs.length).to eq(1)
+
+            archive_dir = File.join(@logger_dir, archive_dirs.first)
+
+            file_paths.each do |file_path|
+                expect(File.exist?(file_path)).to eq(false)
+
+                renamed_file_path = File.join(archive_dir, File.basename(file_path))
+                expect(File.read(renamed_file_path)).to eq(File.basename(file_path))
+            end
+        end
+
+        it "存在しない結果ファイルは無視して存在するファイルだけ退避する" do
+            File.write(success_file_path, "success")
+
+            logger.rename_all([])
+
+            archive_dirs = Dir.children(@logger_dir).select do |name|
+                File.directory?(File.join(@logger_dir, name))
+            end
+            expect(archive_dirs.length).to eq(1)
+
+            archive_file_path = File.join(@logger_dir, archive_dirs.first, File.basename(success_file_path))
+            expect(File.exist?(success_file_path)).to eq(false)
+            expect(File.read(archive_file_path)).to eq("success")
+        end
+
+        it "途中のrenameに失敗した場合は移動済みファイルを元へ戻す" do
+            File.write(success_file_path, "success")
+            File.write(failure_file_path, "failure")
+
+            allow(File).to receive(:rename).and_wrap_original do |original_method, file_path, renamed_file_path|
+                if file_path == failure_file_path
+                    raise Errno::EACCES, file_path
+                end
+
+                original_method.call(file_path, renamed_file_path)
+            end
+
+            expect do
+                logger.rename_all([])
+            end.to raise_error(Errno::EACCES)
+
+            expect(File.read(success_file_path)).to eq("success")
+            expect(File.read(failure_file_path)).to eq("failure")
+
+            archive_dirs = Dir.children(@logger_dir).select do |name|
+                File.directory?(File.join(@logger_dir, name))
+            end
+            expect(archive_dirs).to eq([])
+        end
+    end
 end
+

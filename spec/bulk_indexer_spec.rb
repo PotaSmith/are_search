@@ -539,11 +539,15 @@ RSpec.describe AreSearch::BulkIndexer do
 
             indexer.bulk_recover_index_target
 
+            archive_dir = Dir.glob(
+                File.join(result_dir, "recover_*"),
+            ).first
+
             recover_skip_file = File.join(
-                result_dir,
-                "recover",
+                archive_dir,
                 "recover_data_skip.log",
             )
+
             expect(File.read(recover_skip_file)).to match(
                 /\A\[[^\]]+\] 1 data_skip\n\z/,
             )

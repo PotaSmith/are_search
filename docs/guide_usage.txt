@@ -424,6 +424,11 @@ docvalue_fieldsをbodyへ直接指定する。
     page
 
 各オプションの型と制約が適用される。
+標準の search_param_policy では、queries.query_string は2048文字まで、
+where / where_not / where_or の term、terms、range の各値は256文字まで許可する。
+terms は各要素、range は各比較値を個別に検査する。
+この制限は `AreSearch.search_param_policy` で差し替えできる。
+
 これらの値が制約に合わない場合、search_failure_mode が :empty_result なら検索を実行せず、
 STATUS_PARAMS_INVALID の空結果を返す。:raise なら AreSearch::InvalidSearchOption を送出する。
 page は正の Integer で指定する。page と per_page から算出した開始位置が max_result_window 以上の場合も、

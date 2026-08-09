@@ -111,6 +111,8 @@ module AreSearch
 
             relation = build_recover_relation
             index_records(relation)
+
+            @logger.rename_all([@bulk_failure_target_file, @data_fail_target_file])
         end
 
         private
@@ -208,10 +210,7 @@ module AreSearch
 
             recover_keys = get_recover_keys
 
-            existing_keys = model_class
-                .where(id: recover_keys)
-                .pluck(:id)
-                .map(&:to_s)
+            existing_keys = model_class.where(id: recover_keys).pluck(:id).map(&:to_s)
 
             missing_keys = recover_keys - existing_keys
 
@@ -608,6 +607,39 @@ module AreSearch
                 end
 
                 keys
+            end
+
+            # recoverで使用した結果ファイルを同じ退避ディレクトリへ移動する。
+            def rename_all(additional_files)
+                file_paths = [
+                    @success_file_path,
+                    @failure_file_path,
+                    @data_skip_file_path,
+                    @data_fail_file_path,
+                ] + additional_files
+
+                suffix = Time.current.strftime("%Y_%m_%d_%H_%M_%S_%6N")
+                archive_dir = File.join(File.dirname(@log_file_path), "recover_#{suffix}")
+                Dir.mkdir(archive_dir)
+
+                renamed_files = []
+
+                begin
+                    file_paths.each do |file_path|
+                        next unless File.exist?(file_path)
+
+                        renamed_file_path = File.join(archive_dir, File.basename(file_path))
+                        File.rename(file_path, renamed_file_path)
+                        renamed_files << [file_path, renamed_file_path]
+                    end
+                rescue StandardError
+                    renamed_files.reverse_each do |file_path, renamed_file_path|
+                        File.rename(renamed_file_path, file_path)
+                    end
+
+                    Dir.rmdir(archive_dir)
+                    raise
+                end
             end
 
             private

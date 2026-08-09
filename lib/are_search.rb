@@ -35,6 +35,9 @@ require_relative "are_search/searcher/validator/search_option_definition"
 require_relative "are_search/searcher/validator/search_option_validator"
 require_relative "are_search/searcher/validator/search_param_validator"
 
+require_relative "are_search/searcher/validator/search_param_policy"
+require_relative "are_search/searcher/validator/param_length_search_param_policy"
+
 require_relative "are_search/searcher/query_builder/query_builder_base"
 require_relative "are_search/searcher/query_builder/standard_query_builder"
 require_relative "are_search/searcher/query_builder/more_like_this_query_builder"
@@ -92,6 +95,7 @@ module AreSearch
 
     @analyzer_settings = DEFAULT_ANALYZER_SETTINGS
     @search_body_policy = AreSearch::ScriptDenySearchBodyPolicy
+    @search_param_policy = AreSearch::ParamLengthSearchParamPolicy
     @search_failure_mode = :empty_result
     @database_specific = AreSearch::PostgreSQLDatabaseSpecific
     @client_block = nil
@@ -121,8 +125,8 @@ module AreSearch
         @search_body_policy
     end
 
-    # Elasticsearchへ送信するbodyとfield名を検査するpolicyを設定する。
-    # SearchBodyPolicy自体ではなく、その継承クラスだけを受け付ける。
+    # Elasticsearch へ送信するbodyと field 名を検査する policy を設定する。
+    # SearchBodyPolicy 自体ではなく、その継承クラスだけを受け付ける。
     def self.search_body_policy=(policy_class)
         valid_policy_class = policy_class.instance_of?(Class)
 
@@ -131,11 +135,30 @@ module AreSearch
         end
 
         unless valid_policy_class
-            raise ArgumentError,
-                "search_body_policy は AreSearch::SearchBodyPolicy の継承クラスを指定してください"
+            raise ArgumentError, "search_body_policy は AreSearch::SearchBodyPolicy の継承クラスを指定してください"
         end
 
         @search_body_policy = policy_class
+    end
+
+    def self.search_param_policy
+        @search_param_policy
+    end
+
+    # Elasticsearch へ送信する param の値を検査する policy を設定する。
+    # SearchParamPolicy 自体ではなく、その継承クラスだけを受け付ける。
+    def self.search_param_policy=(policy_class)
+        valid_policy_class = policy_class.instance_of?(Class)
+
+        if valid_policy_class
+            valid_policy_class = policy_class < AreSearch::SearchParamPolicy
+        end
+
+        unless valid_policy_class
+            raise ArgumentError, "search_param_policy は AreSearch::SearchParamPolicy の継承クラスを指定してください"
+        end
+
+        @search_param_policy = policy_class
     end
 
     # 検索を実行できない場合に、空結果を返すか例外を送出するかを返す。

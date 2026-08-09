@@ -137,6 +137,23 @@ recover用に別のRESULT_DIRを指定しない。
 recover対象のIDが通常実行後にDBから削除されている場合は、
 recover側のdata_skipとして記録し、そのIDを処理済みにする。
 
+recoverが正常終了すると、そのrecoverで使用した通常実行側の失敗結果とrecover側の結果を、
+RESULT_DIR直下の同じ世代ディレクトリへ移動する。
+
+    recover_YYYY_MM_DD_HH_MM_SS_UUUUUU/
+
+退避対象は、存在している以下の結果ファイル。
+
+    data/bulk_failure.log
+    data/data_fail.log
+    recover/recover_bulk_success.log
+    recover/recover_bulk_failure.log
+    recover/recover_data_skip.log
+    recover/recover_data_fail.log
+
+退避済みの世代ディレクトリは、次回の通常実行やrecoverでは読み込まない。
+recoverが途中で失敗した場合は退避せず、同じRESULT_DIRでrecoverを再実行する。
+
 
 # 8. 結果の確認
 ================================================================
@@ -153,8 +170,10 @@ RESULT_DIRには、bulk.logのほかに以下のディレクトリが作成さ�
 
     data/
     recover/
+    recover_YYYY_MM_DD_HH_MM_SS_UUUUUU/
 
 data/ と recover/ のファイルは、通常再開とrecoverで使用する。
+recover_YYYY_MM_DD_HH_MM_SS_UUUUUU/ は、正常終了したrecoverの結果を世代単位で退避した履歴。
 内容を確認するために読み取ることはできるが、編集、追記、削除、移動、改名、並べ替えを行わない。
 利用者の結果確認にはbulk.logだけを使用する。
 

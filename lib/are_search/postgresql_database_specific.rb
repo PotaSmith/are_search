@@ -5,14 +5,11 @@ module AreSearch
 
         # AreSearch が使用するPostgreSQL固有処理。
 
-        REQUEST_SEQUENCE_SQL =
-            "SELECT nextval('are_search_sequences_for_sync_requests_id_seq'::regclass)"
+        REQUEST_SEQUENCE_SQL = "SELECT nextval('are_search_sequences_for_sync_requests_id_seq'::regclass)"
 
         # PostgreSQL sequence から次の同期要求世代番号を取得する。
         def self.next_request_sequence
-            ActiveRecord::Base.with_connection do |connection|
-                connection.select_value(REQUEST_SEQUENCE_SQL).to_i
-            end
+            ActiveRecord::Base.with_connection{|connection| connection.select_value(REQUEST_SEQUENCE_SQL).to_i }
         end
 
         # 同期要求をPostgreSQLへ登録または更新する。
