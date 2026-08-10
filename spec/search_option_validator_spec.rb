@@ -49,360 +49,6 @@ RSpec.describe AreSearch::SearchOptionValidator do
         }
     end
 
-    describe ".validate! のオプション定義Map処理" do
-        it "Symbolのオプション名を扱い、nilをそのまま残す" do
-            definitions = {
-                query_string: {
-                    type: "any",
-                },
-            }
-
-            result = described_class.validate!(
-                {
-                    query_string: nil,
-                },
-                definitions,
-                nil,
-            )
-
-            expect(result).to eq(
-                query_string: nil,
-            )
-        end
-
-        it "typeというオプション名も定義Mapとして扱う" do
-            definitions = {
-                type: scalar_definition("positive_integer"),
-            }
-
-            result = described_class.validate!(
-                {
-                    type: 1,
-                },
-                definitions,
-                nil,
-            )
-
-            expect(result).to eq(
-                type: 1,
-            )
-        end
-
-        it "未知のオプションを拒否する" do
-            definitions = {
-                page: scalar_definition("positive_integer"),
-            }
-
-            expect do
-                described_class.validate!(
-                    {
-                        unknown: 1,
-                    },
-                    definitions,
-                    nil,
-                )
-            end.to raise_error(
-                ArgumentError,
-                "未知の検索オプションが指定されています: :unknown",
-            )
-        end
-
-        it "Stringのオプション名をSymbolへ変換せず拒否する" do
-            definitions = {
-                page: scalar_definition("positive_integer"),
-            }
-
-            expect do
-                described_class.validate!(
-                    {
-                        "page" => 1,
-                    },
-                    definitions,
-                    nil,
-                )
-            end.to raise_error(
-                ArgumentError,
-                'opts[:page] は Symbol で指定してください: "page"',
-            )
-        end
-    end
-
-    describe ".validate! の候補定義処理" do
-        it "nodeの実体型に対応する定義を選択する" do
-            definition = {
-                scalar: {
-                    type: "string",
-                },
-                array: {
-                    children: scalar_definition("str_or_sym"),
-                },
-            }
-
-            scalar_result = validate_node("title", definition)
-            array_result = validate_node([:title, "body"], definition)
-
-            expect(scalar_result).to eq("title")
-            expect(array_result).to eq([:title, "body"])
-        end
-
-        it "対応するnode_type定義が無ければ拒否する" do
-            expect do
-                validate_node(
-                    "title",
-                    {},
-                )
-            end.to raise_error(
-                ArgumentError,
-                /node_type :scalar は定義されていません/,
-            )
-
-            expect do
-                validate_node(
-                    :title,
-                    {
-                        array: {
-                            children: scalar_definition("string"),
-                        },
-                    },
-                )
-            end.to raise_error(
-                ArgumentError,
-                /node_type :scalar は定義されていません/,
-            )
-        end
-    end
-
-    describe ".validate! のerror_class処理" do
-        it "オプション全体の検査エラーを指定例外へ付け替える" do
-            definition = scalar_definition("positive_integer")
-            definition[:error_class] = AreSearch::InvalidSearchOption
-
-            expect do
-                validate_node("1", definition)
-            end.to raise_error(
-                AreSearch::InvalidSearchOption,
-                /正の整数/,
-            )
-        end
-
-        it "Arrayのchildren以下の検査エラーだけを指定例外へ付け替える" do
-            definition = {
-                array: {
-                    children: {
-                        error_class: AreSearch::InvalidSearchOption,
-                        scalar: {
-                            type: "positive_integer",
-                        },
-                    },
-                },
-            }
-
-            expect do
-                validate_node([1, "2"], definition)
-            end.to raise_error(
-                AreSearch::InvalidSearchOption,
-                /正の整数/,
-            )
-
-            expect do
-                validate_node("2", definition)
-            end.to raise_error(ArgumentError, /node_type :scalar/)
-        end
-
-        it "Hashのvalue以下の検査エラーだけを指定例外へ付け替える" do
-            definition = {
-                hash: {
-                    key_values: [
-                        {
-                            key: {
-                                key_name: :query_string,
-                            },
-                            value: {
-                                error_class: AreSearch::InvalidSearchOption,
-                                scalar: {
-                                    type: "string",
-                                },
-                            },
-                        },
-                    ],
-                },
-            }
-
-            expect do
-                validate_node(
-                    {
-                        query_string: nil,
-                    },
-                    definition,
-                )
-            end.to raise_error(
-                AreSearch::InvalidSearchOption,
-                /String/,
-            )
-
-            expect do
-                validate_node(
-                    {
-                        fields: [:title],
-                    },
-                    definition,
-                )
-            end.to raise_error(ArgumentError, /未知のキー/)
-        end
-    end
-
-    describe ".validate! の名前付きtype処理" do
-        it "anyはHashとArrayを再帰的に複製する" do
-            value = {
-                "query" => [
-                    {
-                        "match_all" => {},
-                    },
-                ],
-            }
-
-            result = validate_node(
-                value,
-                {
-                    type: "any",
-                },
-            )
-
-            expect(result).to eq(value)
-            expect(result).not_to equal(value)
-            expect(result["query"]).not_to equal(value["query"])
-            expect(result["query"][0]).not_to equal(value["query"][0])
-        end
-
-        it "anyはnilもそのまま許可する" do
-            result = validate_node(
-                nil,
-                {
-                    type: "any",
-                },
-            )
-
-            expect(result).to eq(nil)
-        end
-
-        it "not_nilは型を限定せずnilだけを拒否する" do
-            value = {
-                "includes" => [:user, :tags],
-            }
-            definition = {
-                type: "not_nil",
-            }
-
-            result = validate_node(value, definition)
-
-            expect(result).to eq(value)
-            expect(result).not_to equal(value)
-            expect(result["includes"]).not_to equal(value["includes"])
-            expect(validate_node(false, definition)).to eq(false)
-
-            expect do
-                validate_node(nil, definition)
-            end.to raise_error(ArgumentError)
-        end
-
-        it "boolean、文字列系、数値系の独自型を検査する" do
-            expect(
-                validate_node(
-                    false,
-                    scalar_definition("boolean"),
-                ),
-            ).to eq(false)
-
-            expect(
-                validate_node(
-                    :desc,
-                    scalar_definition("str_or_sym"),
-                ),
-            ).to eq(:desc)
-
-            expect(
-                validate_node(
-                    10,
-                    scalar_definition("str_or_int"),
-                ),
-            ).to eq(10)
-
-            expect(
-                validate_node(
-                    true,
-                    scalar_definition("str_or_int_or_bool"),
-                ),
-            ).to eq(true)
-
-            expect(
-                validate_node(
-                    1.5,
-                    scalar_definition("str_or_int_or_float_or_bool"),
-                ),
-            ).to eq(1.5)
-
-            expect(
-                validate_node(
-                    2.5,
-                    scalar_definition("positive_number"),
-                ),
-            ).to eq(2.5)
-
-            expect(
-                validate_node(
-                    2,
-                    scalar_definition("positive_integer"),
-                ),
-            ).to eq(2)
-        end
-
-        it "独自型が許可しない値を拒否する" do
-            invalid_values = [
-                ["boolean", 1, /true または false/],
-                ["str_or_sym", 1, /String または Symbol/],
-                ["str_or_int", false, /String または Integer/],
-                ["str_or_int_or_bool", 1.5, /String、Integer、true、false/],
-                ["str_or_int_or_float_or_bool", :invalid, /String、Integer、Float、true、false/],
-                ["positive_number", 0, /正の数/],
-                ["positive_integer", 1.5, /正の整数/],
-            ]
-
-            invalid_values.each do |definition_type, value, expected_message|
-                expect do
-                    validate_node(
-                        value,
-                        scalar_definition(definition_type),
-                    )
-                end.to raise_error(ArgumentError, expected_message)
-            end
-        end
-
-        it "symbol_keyは形式に合うSymbolだけを許可する" do
-            expect(
-                validate_node(
-                    :title,
-                    scalar_definition("symbol_key"),
-                ),
-            ).to eq(:title)
-
-            [
-                "title",
-                :_title,
-                :title_,
-                :"title.keyword",
-                :are_search_reserved_ar_instance_key,
-                1,
-            ].each do |value|
-                expect do
-                    validate_node(
-                        value,
-                        scalar_definition("symbol_key"),
-                    )
-                end.to raise_error(ArgumentError)
-            end
-        end
-    end
-
     describe ".validate! のArray処理" do
         it "各要素をchildren定義で検査する" do
             definition = {
@@ -785,6 +431,55 @@ RSpec.describe AreSearch::SearchOptionValidator do
                 "opts[:value] に必要なキーがありません: [:fields]",
             )
         end
+    end
+
+end
+
+RSpec.describe AreSearch::SearchOptionValidator do
+    def build_context(**overrides)
+        context_values = {
+            models: [],
+            any_fields: [],
+            all_fields: [],
+            any_text_without_non_text_fields: [],
+            all_valid_text_fields: [],
+            any_text_or_keyword_without_other_type_fields: [],
+            all_valid_text_or_keyword_fields: [],
+            any_non_text_without_text_fields: [],
+            all_valid_non_text_fields: [],
+        }
+
+        context = AreSearch::SearchOptionContext.new([], [], {})
+
+        context_values.merge(overrides).each do |name, value|
+            context.instance_variable_set("@#{name}", value)
+        end
+
+        context
+    end
+
+    # 単一nodeをトップレベルオプションとして検査し、nodeの結果だけを返す。
+    def validate_node(value, definition, context: nil)
+        result = described_class.validate!(
+            {
+                value: value,
+            },
+            {
+                value: definition,
+            },
+            context,
+        )
+
+        result[:value]
+    end
+
+    # scalar node用の定義を作る。
+    def scalar_definition(type)
+        {
+            scalar: {
+                type: type,
+            },
+        }
     end
 
     describe ".validate! のcontext参照型処理" do

@@ -2,6 +2,417 @@
 
 require "spec_helper"
 
+RSpec.describe AreSearch::SearchParamValidator do
+    let(:article_model) do
+        Class.new do
+            def self.name
+                "Article"
+            end
+        end
+    end
+
+    let(:document_model) do
+        Class.new do
+            def self.name
+                "Document"
+            end
+        end
+    end
+
+    let(:max_result_window) { 2_000 }
+
+    let(:article_index_target) do
+        double(
+            "article_index_target",
+            are_search_index_mappings: {
+                properties: {
+                    title:        { type: "text" },
+                    body:         { type: "text" },
+                    status:       { type: "keyword" },
+                    count:        { type: "integer" },
+                    score:        { type: "double" },
+                    published_at: { type: "date" },
+                },
+            },
+        )
+    end
+
+
+    let(:mlt_index_target) do
+        index_target = AreSearch::IndexTarget.allocate
+
+        allow(index_target)
+            .to receive(:index_target_name)
+            .and_return(:default)
+        allow(index_target)
+            .to receive(:are_search_index_alias_name)
+            .and_return("test__articles__default")
+        allow(index_target)
+            .to receive(:are_search_index_mappings)
+            .and_return(
+                properties: {
+                    title:  { type: "text" },
+                    body:   { type: "text" },
+                    status: { type: "keyword", store: true },
+                    count:  { type: "integer" },
+                },
+            )
+        allow(index_target)
+            .to receive(:are_search_index_mappings_for_index)
+            .and_return(
+                _source: {
+                    includes: [:title],
+                },
+                properties: {
+                    title:  { type: "text" },
+                    body:   { type: "text" },
+                    status: { type: "keyword", store: true },
+                    count:  { type: "integer" },
+                },
+            )
+
+        index_target
+    end
+
+    let(:mlt_instance) do
+        model = Class.new do
+            def self.include?(mod)
+                return true if mod == AreSearch::Searchable
+
+                super
+            end
+        end
+
+        allow(model)
+            .to receive(:are_search_index_target)
+            .with(:default)
+            .and_return(mlt_index_target)
+
+        model.new
+    end
+    let(:document_index_target) do
+        double(
+            "document_index_target",
+            are_search_index_mappings: {
+                properties: {
+                    title:  { type: "text" },
+                    status: { type: "keyword" },
+                    count:  { type: "integer" },
+                },
+            },
+        )
+    end
+
+
+    # 成功した検証結果を返す。
+    def validate_options(index_targets, models, **options)
+        described_class.validate!(
+            index_targets,
+            models,
+            max_result_window,
+            **options,
+        )
+    end
+
+    describe ".validate!" do
+        it "pageとper_pageは正のIntegerだけを受け付ける" do
+            result = validate_options(
+                [article_index_target],
+                [article_model],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:title],
+                    },
+                ],
+                page: 2,
+                per_page: 25,
+            )
+
+            expect(result[:page]).to eq(2)
+            expect(result[:per_page]).to eq(25)
+        end
+
+        it "pageとper_pageから算出した開始位置がmax_result_window以上なら拒否する" do
+            expect do
+                described_class.validate!(
+                    [article_index_target],
+                    [article_model],
+                    30,
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
+                    page: 3,
+                    per_page: 20,
+                )
+            end.to raise_error(AreSearch::InvalidSearchOption, /max_result_window/)
+
+            expect do
+                described_class.validate!(
+                    [article_index_target],
+                    [article_model],
+                    30,
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
+                    page: 2,
+                    per_page: 20,
+                )
+            end.not_to raise_error
+        end
+
+        it "不正なpageはInvalidSearchOptionを送出し不正なper_pageはArgumentErrorにする" do
+            [0, -1, 1.5, "1"].each do |value|
+                expect do
+                    described_class.validate!(
+                        [article_index_target],
+                        [article_model],
+                        max_result_window,
+                        queries: [
+                            {
+                                query_string: "",
+                                fields: [:title],
+                            },
+                        ],
+                        page: value,
+                    )
+                end.to raise_error(AreSearch::InvalidSearchOption, /正の整数/)
+            end
+
+            [0, -1, 1.5, "1"].each do |value|
+                expect do
+                    described_class.validate!(
+                        [article_index_target],
+                        [article_model],
+                        max_result_window,
+                        queries: [
+                            {
+                                query_string: "",
+                                fields: [:title],
+                            },
+                        ],
+                        per_page: value,
+                    )
+                end.to raise_error(ArgumentError, /正の整数/)
+            end
+        end
+
+        it "model_relationsは対象モデルと同じklassのActiveRecord::Relationだけを許可する" do
+            model = AreSearch::SyncRequest
+            relation = model.where(last_error: nil)
+
+            result = validate_options(
+                [article_index_target],
+                [model],
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:title],
+                    },
+                ],
+                model_relations: {
+                    model => relation,
+                },
+            )
+
+            expect(result[:model_relations][model]).to equal(relation)
+
+            expect do
+                described_class.validate!(
+                    [article_index_target],
+                    [model],
+                    max_result_window,
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
+                    model_relations: {
+                        document_model => relation,
+                    },
+                )
+            end.to raise_error(
+                ArgumentError,
+                /opts\[:model_relations\] に未知のキーがあります/,
+            )
+
+            expect do
+                described_class.validate!(
+                    [article_index_target],
+                    [model],
+                    max_result_window,
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
+                    model_relations: {
+                        model => nil,
+                    },
+                )
+            end.to raise_error(ArgumentError, /ActiveRecord::Relation/)
+
+            expect do
+                described_class.validate!(
+                    [article_index_target],
+                    [model],
+                    max_result_window,
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
+                    model_relations: {
+                        model => Object.new,
+                    },
+                )
+            end.to raise_error(ArgumentError, /ActiveRecord::Relation/)
+
+            expect do
+                described_class.validate!(
+                    [article_index_target],
+                    [model],
+                    max_result_window,
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
+                    model_relations: {
+                        model => AreSearch::IndexMarker.all,
+                    },
+                )
+            end.to raise_error(
+                ArgumentError,
+                /モデルと Relation の klass が一致していません/,
+            )
+        end
+
+        it "raw_bodyとbuild_model_boolの型を検査する" do
+            result = validate_options(
+                [article_index_target],
+                [article_model],
+                raw_body: {
+                    query: {
+                        bool: {},
+                    },
+                },
+                build_model_bool: true,
+            )
+
+            expect(result[:build_model_bool]).to eq(true)
+
+            expect do
+                described_class.validate!(
+                    [article_index_target],
+                    [article_model],
+                    max_result_window,
+                    raw_body: [],
+                )
+            end.to raise_error(ArgumentError)
+
+            expect do
+                described_class.validate!(
+                    [article_index_target],
+                    [article_model],
+                    max_result_window,
+                    raw_body: {
+                        query: {
+                            bool: {},
+                        },
+                    },
+                    build_model_bool: "true",
+                )
+            end.to raise_error(ArgumentError)
+        end
+
+        it "複数targetで同名フィールドの型が混在する場合はany_valid集合から除外する" do
+            mixed_target = double(
+                "mixed_target",
+                are_search_index_mappings: {
+                    properties: {
+                        title:  { type: "keyword" },
+                        status: { type: "text" },
+                    },
+                },
+            )
+
+            expect do
+                described_class.validate!(
+                    [article_index_target, mixed_target],
+                    [article_model, document_model],
+                    max_result_window,
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
+                )
+            end.to raise_error(ArgumentError, /any_text_without_non_text_fields/)
+
+            expect do
+                described_class.validate!(
+                    [article_index_target, mixed_target],
+                    [article_model, document_model],
+                    max_result_window,
+                    where: {
+                        status: {
+                            term: "published",
+                        },
+                    },
+                )
+            end.to raise_error(
+                ArgumentError,
+                /opts\[:where\] に未知のキーがあります: :status/,
+            )
+        end
+    end
+end
+
+RSpec.describe AreSearch::SearcherUtils do
+    describe ".build_model_filter_clause" do
+        it "index targetのモデル名を重複させずterms条件を返す" do
+            article_model = Class.new do
+                def self.name
+                    "Article"
+                end
+            end
+            document_model = Class.new do
+                def self.name
+                    "Document"
+                end
+            end
+            index_targets = [
+                double("article_default", model_class: article_model),
+                double("article_archive", model_class: article_model),
+                double("document_default", model_class: document_model),
+            ]
+
+            result = described_class.build_model_filter_clause(index_targets)
+
+            expect(result).to eq(
+                terms: {
+                    AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME => [
+                        "Article",
+                        "Document",
+                    ],
+                },
+            )
+        end
+    end
+end
+
 RSpec.describe "search option flow" do
     let(:article_model) do
         Class.new do

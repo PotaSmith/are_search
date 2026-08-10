@@ -2,8 +2,314 @@
 
 require "rails_helper"
 require "rake"
+require "stringio"
 require "tmpdir"
 require_relative "../support/integration_support"
+
+RSpec.describe "AreSearch index guard integration", type: :model do
+    include AreSearchIntegrationSupport
+
+    self.use_transactional_tests = false
+
+    around do |example|
+        original_after_commit_mode = AreSearch.after_commit_mode
+        original_index_operation_enabled = AreSearch.index_operation_enabled
+        original_lock_dir = AreSearch.lock_dir
+
+        AreSearch.after_commit_mode = :none
+        AreSearch.index_operation_enabled = true
+
+        clear_are_search_integration_records
+        rebuild_empty_document_first_index
+
+        Dir.mktmpdir("are_search_index_guard_integration") do |dir|
+            AreSearch.lock_dir = dir
+            example.run
+        end
+    ensure
+        clear_are_search_integration_records
+        AreSearch.after_commit_mode = original_after_commit_mode
+        AreSearch.index_operation_enabled = original_index_operation_enabled
+        AreSearch.lock_dir = original_lock_dir
+    end
+
+    it "別プロセスがindex flockを保持中はskipし解放後はmarker付きで実行する" do
+        index_alias_name = document_first_index_target.are_search_index_alias_name
+        lock_file_path = AreSearch.index_lock_file_path(index_alias_name)
+        FileUtils.mkdir_p(File.dirname(lock_file_path))
+
+        ready_reader, ready_writer = IO.pipe
+        release_reader, release_writer = IO.pipe
+
+        child_pid = fork do
+            ready_reader.close
+            release_writer.close
+
+            File.open(lock_file_path, File::RDWR | File::CREAT) do |lock_file|
+                lock_file.flock(File::LOCK_EX)
+                ready_writer.write("1")
+                ready_writer.flush
+                ready_writer.close
+                release_reader.read(1)
+            end
+
+            release_reader.close
+            exit! 0
+        end
+
+        ready_writer.close
+        release_reader.close
+        ready_reader.read(1)
+        ready_reader.close
+
+        block_called = false
+        locked_result = document_first_index_target.are_search_with_index_guard(operation: "integration") do
+            block_called = true
+        end
+
+        expect(block_called).to eq(false)
+        expect(locked_result[:result]).to eq(:not_success)
+        expect(locked_result[:stop_phase]).to eq(:lock_index)
+        expect(locked_result[:message]).to match(/別プロセスが実行中/)
+        expect(AreSearch::IndexMarker.count).to eq(0)
+
+        release_writer.write("1")
+        release_writer.close
+        Process.wait(child_pid)
+
+        marker_seen_in_block = false
+        unlocked_result = document_first_index_target.are_search_with_index_guard(operation: "integration") do
+            marker_seen_in_block = document_first_index_target.are_search_index_marked?
+        end
+
+        expect(marker_seen_in_block).to eq(true)
+        expect(unlocked_result[:result]).to eq(:success)
+        expect(unlocked_result[:stop_phase]).to eq(nil)
+        expect(unlocked_result[:done_phases]).to eq([:lock_index, :create_marker])
+        expect(document_first_index_target.are_search_index_marked?).to eq(false)
+        expect(AreSearch::IndexMarker.count).to eq(0)
+    end
+end
+
+RSpec.describe "AreSearch create index integration", type: :model do
+    self.use_transactional_tests = false
+
+    around do |example|
+        original_after_commit_mode = AreSearch.after_commit_mode
+        original_index_operation_enabled = AreSearch.index_operation_enabled
+
+        AreSearch.after_commit_mode = :none
+        AreSearch.index_operation_enabled = true
+
+        DocumentSecond.delete_all
+        AreSearch::SyncRequest.delete_all
+        delete_document_second_physical_indexes
+
+        example.run
+    ensure
+        DocumentSecond.delete_all
+        AreSearch::SyncRequest.delete_all
+        delete_document_second_physical_indexes
+
+        AreSearch.after_commit_mode = original_after_commit_mode
+        AreSearch.index_operation_enabled = original_index_operation_enabled
+    end
+
+    # DocumentSecondのaliasから生成された物理indexを削除する。
+    def delete_document_second_physical_indexes
+        index_target = DocumentSecond.are_search_index_target(:default)
+        response = AreSearch::EsAdapter.physical_indices_for_alias(
+            index_alias_name: index_target.are_search_index_alias_name,
+        )
+
+        response.keys.each do |physical_index_name|
+            AreSearch::EsAdapter.delete_physical_index(
+                physical_index_name: physical_index_name,
+            )
+        end
+    end
+
+    it "DBにレコードがあっても空indexを作成してaliasを接続する" do
+        document = DocumentSecond.create!(
+            title:   "createindextoken",
+            body:    "create index body",
+            status:  "published",
+            user_id: 501,
+        )
+
+        index_target = DocumentSecond.are_search_index_target(:default)
+
+        expect(index_target.are_search_index_alias_exists?).to eq(false)
+
+        result = index_target.are_search_create_index
+
+        expect(result[:result]).to eq(:success)
+        expect(index_target.are_search_index_alias_exists?).to eq(true)
+
+        physical_index_names = AreSearch::IndexManager.physical_index_names_by_alias(
+            index_target.are_search_index_alias_name,
+        )
+        expect(physical_index_names.length).to eq(1)
+
+        count_response = AreSearch.client.count(
+            index: index_target.are_search_index_alias_name,
+        )
+
+        expect(count_response["count"]).to eq(0)
+        expect(DocumentSecond.exists?(document.id)).to eq(true)
+    end
+end
+
+RSpec.describe "AreSearch reindex integration", type: :model do
+    include AreSearchIntegrationSupport
+
+    self.use_transactional_tests = false
+
+    around do |example|
+        original_after_commit_mode = AreSearch.after_commit_mode
+        original_index_operation_enabled = AreSearch.index_operation_enabled
+
+        AreSearch.after_commit_mode = :none
+        AreSearch.index_operation_enabled = true
+
+        clear_are_search_integration_records
+        delete_document_first_physical_indexes
+        example.run
+    ensure
+        clear_are_search_integration_records
+        delete_document_first_physical_indexes
+
+        AreSearch.after_commit_mode = original_after_commit_mode
+        AreSearch.index_operation_enabled = original_index_operation_enabled
+    end
+
+    # DocumentFirstのaliasから生成された物理indexをすべて削除する。
+    def delete_document_first_physical_indexes
+        response = AreSearch::EsAdapter.physical_indices_for_alias(
+            index_alias_name: document_first_index_target.are_search_index_alias_name,
+        )
+
+        response.keys.each do |physical_index_name|
+            AreSearch::EsAdapter.delete_physical_index(
+                physical_index_name: physical_index_name,
+            )
+        end
+    end
+
+    it "reindexを2回実行した後clean_upで旧物理indexだけを削除する" do
+        first_result = rebuild_empty_document_first_index
+        expect(first_result[:result]).to eq(:success)
+
+        first_physical_names = AreSearch::IndexManager.physical_index_names_by_alias(
+            document_first_index_target.are_search_index_alias_name,
+        )
+        expect(first_physical_names.length).to eq(1)
+
+        DocumentFirst.create!(
+            title:   "reindexlifecycletoken",
+            body:    "second reindex body",
+            status:  "published",
+            user_id: 1001,
+        )
+
+        second_result = document_first_index_target.are_search_reindex(
+            stage_position: :first,
+        )
+        expect(second_result[:result]).to eq(:success)
+
+        second_physical_names = AreSearch::IndexManager.physical_index_names_by_alias(
+            document_first_index_target.are_search_index_alias_name,
+        )
+        expect(second_physical_names.length).to eq(1)
+        expect(second_physical_names).not_to eq(first_physical_names)
+
+        all_physical_names = AreSearch::EsAdapter.physical_indices_for_alias(
+            index_alias_name: document_first_index_target.are_search_index_alias_name,
+        ).keys
+        expect(all_physical_names.sort).to eq(
+            (first_physical_names + second_physical_names).sort,
+        )
+
+        clean_up_result = AreSearch::IndexManager.index_clean_up(
+            document_first_index_target.are_search_index_alias_name,
+        )
+
+        expect(clean_up_result[:result]).to eq(:success)
+        expect(clean_up_result[:delete_index_names]).to eq(first_physical_names)
+        expect(
+            AreSearch::EsAdapter.physical_indices_for_alias(
+                index_alias_name: document_first_index_target.are_search_index_alias_name,
+            ).keys,
+        ).to eq(second_physical_names)
+    end
+
+    it "実Elasticsearchのbulk部分失敗時はfailed_idsを返してaliasを切り替えない" do
+        first_result = rebuild_empty_document_first_index
+        expect(first_result[:result]).to eq(:success)
+
+        old_physical_names = AreSearch::IndexManager.physical_index_names_by_alias(
+            document_first_index_target.are_search_index_alias_name,
+        )
+        expect(old_physical_names.length).to eq(1)
+
+        success_document = DocumentFirst.create!(
+            title:   "reindexfailuretoken success",
+            body:    "valid document",
+            status:  "published",
+            user_id: 1002,
+        )
+        failed_document = DocumentFirst.create!(
+            title:   "reindexfailuretoken failed",
+            body:    "invalid long document",
+            status:  "published",
+            user_id: 1003,
+        )
+
+        allow_any_instance_of(DocumentFirst)
+            .to receive(:are_search_index_data)
+            .and_wrap_original do |original_method, *args|
+                data = original_method.call(*args)
+                record = original_method.receiver
+
+                if record.id == failed_document.id
+                    data[:user_id] = 10 ** 30
+                end
+
+                data
+            end
+
+        result = document_first_index_target.are_search_reindex(
+            stage_position: :first,
+        )
+
+        expect(result[:result]).to eq(:not_success)
+        expect(result[:failed_ids]).to eq([failed_document.id])
+        expect(result[:stop_phase]).to eq(:index_to_new_index)
+        expect(result[:done_phases]).to include(
+            :lock_index,
+            :create_marker,
+            :create_new_index,
+        )
+        expect(result[:done_phases]).not_to include(:switch_alias)
+
+        current_physical_names = AreSearch::IndexManager.physical_index_names_by_alias(
+            document_first_index_target.are_search_index_alias_name,
+        )
+        expect(current_physical_names).to eq(old_physical_names)
+
+        all_physical_names = AreSearch::EsAdapter.physical_indices_for_alias(
+            index_alias_name: document_first_index_target.are_search_index_alias_name,
+        ).keys
+        expect(all_physical_names.length).to eq(2)
+
+        refresh_document_first_index
+        search_result = search_document_first("reindexfailuretoken")
+        expect(search_result.records).to eq([])
+
+        expect(DocumentFirst.exists?(success_document.id)).to eq(true)
+        expect(DocumentFirst.exists?(failed_document.id)).to eq(true)
+    end
+end
 
 RSpec.describe "AreSearch large reindex migration integration", type: :model do
     include AreSearchIntegrationSupport
@@ -525,5 +831,138 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
             index_target: new_version_index_target,
         )
         expect(after_old_index_delete.records.map(&:id)).to eq([second.id])
+    end
+end
+
+RSpec.describe "AreSearch rake index operations integration", type: :model do
+    include AreSearchIntegrationSupport
+
+    self.use_transactional_tests = false
+
+    around do |example|
+        original_after_commit_mode = AreSearch.after_commit_mode
+        original_index_operation_enabled = AreSearch.index_operation_enabled
+        original_rake_operation_enabled = AreSearch.rake_operation_enabled
+        original_rake_application = Rake.application
+        original_stdin = $stdin
+
+        AreSearch.after_commit_mode = :none
+        AreSearch.index_operation_enabled = true
+        AreSearch.rake_operation_enabled = true
+
+        clear_are_search_integration_records([DocumentFirst, DocumentSecond])
+        prepare_all_indexes
+        example.run
+    ensure
+        $stdin = original_stdin
+        Rake.application = original_rake_application
+        clear_are_search_integration_records([DocumentFirst, DocumentSecond])
+
+        AreSearch.after_commit_mode = original_after_commit_mode
+        AreSearch.index_operation_enabled = original_index_operation_enabled
+        AreSearch.rake_operation_enabled = original_rake_operation_enabled
+    end
+
+    # Rake対象になる全root modelのindexを作成し、古い物理indexを残さない。
+    def prepare_all_indexes
+        [DocumentFirst, DocumentSecond].each do |model_class|
+            index_target = model_class.are_search_index_target(:default)
+            result = index_target.are_search_reindex(stage_position: :first)
+            expect(result[:result]).to eq(:success)
+
+            clean_result = index_target.are_search_clean_up
+            expect(clean_result[:result]).to eq(:success)
+        end
+
+        AreSearch::SyncRequest.delete_all
+    end
+
+    # gem本体のindex運用Rake taskを独立したRake applicationへ読み込む。
+    def load_index_rake_tasks
+        Rake.application = Rake::Application.new
+        Rake::Task.define_task(:environment)
+
+        gem_root = Gem.loaded_specs.fetch("are_search").full_gem_path
+        load File.join(gem_root, "lib", "tasks", "are_search.rake")
+    end
+
+    # 現在aliasが指す物理index名を返す。
+    def current_physical_index_name(index_target)
+        names = AreSearch::IndexManager.physical_index_names_by_alias(
+            index_target.are_search_index_alias_name,
+        )
+        expect(names.length).to eq(1)
+
+        names.first
+    end
+
+    it "reindex_all_for_es_version_upで全root modelを実Elasticsearchへreindexする" do
+        first = DocumentFirst.create!(
+            title:   "rakeversionuptoken first",
+            body:    "first model",
+            status:  "published",
+            user_id: 1501,
+        )
+        second = DocumentSecond.create!(
+            title:   "rakeversionuptoken second",
+            body:    "second model",
+            status:  "published",
+            user_id: 1502,
+        )
+        AreSearch::SyncRequest.delete_all
+
+        first_target = DocumentFirst.are_search_index_target(:default)
+        second_target = DocumentSecond.are_search_index_target(:default)
+        before_names = [
+            current_physical_index_name(first_target),
+            current_physical_index_name(second_target),
+        ]
+
+        load_index_rake_tasks
+        $stdin = StringIO.new("y\n")
+        Rake::Task["are_search:reindex_all_for_es_version_up"].invoke
+
+        after_names = [
+            current_physical_index_name(first_target),
+            current_physical_index_name(second_target),
+        ]
+        expect(after_names).not_to eq(before_names)
+
+        refresh_integration_indexes([first_target, second_target])
+        result = search_integration_indexes(
+            [first_target, second_target],
+            "rakeversionuptoken",
+        )
+        expect(result.records.map(&:id).sort).to eq([first.id, second.id].sort)
+    end
+
+    it "clean_up_allで全root modelのcurrent以外の物理indexを削除する" do
+        first_target = DocumentFirst.are_search_index_target(:default)
+        second_target = DocumentSecond.are_search_index_target(:default)
+
+        [first_target, second_target].each do |index_target|
+            result = index_target.are_search_reindex(stage_position: :first)
+            expect(result[:result]).to eq(:success)
+
+            all_physical_names = AreSearch::EsAdapter.physical_indices_for_alias(
+                index_alias_name: index_target.are_search_index_alias_name,
+            ).keys
+            expect(all_physical_names.length).to be >= 2
+        end
+
+        load_index_rake_tasks
+        Rake::Task["are_search:clean_up_all"].invoke
+
+        [first_target, second_target].each do |index_target|
+            current_names = AreSearch::IndexManager.physical_index_names_by_alias(
+                index_target.are_search_index_alias_name,
+            )
+            all_physical_names = AreSearch::EsAdapter.physical_indices_for_alias(
+                index_alias_name: index_target.are_search_index_alias_name,
+            ).keys
+
+            expect(current_names.length).to eq(1)
+            expect(all_physical_names).to eq(current_names)
+        end
     end
 end

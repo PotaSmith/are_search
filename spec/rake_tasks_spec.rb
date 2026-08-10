@@ -1,10 +1,14 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require_relative "../lib/are_search/rake_utils"
 require "rake"
 require "active_support/core_ext/numeric/time"
 require "tmpdir"
 require "fileutils"
+require "action_mailer"
+require "rails/generators"
+require "generators/are_search/sample_generator"
 
 RSpec.describe "are_search rake tasks" do
     let(:article_index_target) do

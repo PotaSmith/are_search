@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "tmpdir"
+require "fileutils"
 
 RSpec.describe AreSearch::SyncRequest do
     let(:base_attrs) do
@@ -583,6 +585,105 @@ RSpec.describe AreSearch::SyncRequest do
                 expect(reloaded.processing_token).to eq(nil)
             end
 
+            it "sync試行回数更新前に要求が削除された場合は同期本体を実行せず成功扱いにする" do
+                sync_request = create_sync_request
+
+                allow(model)
+                    .to receive(:are_search_before_sync_check) do
+                        AreSearch::SyncRequest.where(id: sync_request.id).delete_all
+                        true
+                    end
+
+                expect(model).not_to receive(:find_by)
+                expect(record).not_to receive(:are_search_index_or_delete!)
+
+                result = sync_request.are_search_try_sync(
+                    processing_token,
+                    on_rake: true,
+                )
+
+                expect(result).to eq(true)
+                expect(AreSearch::SyncRequest.find_by(id: sync_request.id)).to eq(nil)
+            end
+
+            it "callback試行回数更新前に要求が削除された場合はcallbackを実行せず成功扱いにする" do
+                sync_request = create_sync_request
+
+                allow(model)
+                    .to receive(:find_by)
+                    .with(id: ar_instance_key)
+                    .and_return(record)
+
+                expect(record)
+                    .to receive(:are_search_index_or_delete!) do
+                        AreSearch::SyncRequest.where(id: sync_request.id).delete_all
+                    end
+
+                expect(model).not_to receive(:are_search_after_sync_callback)
+
+                result = sync_request.are_search_try_sync(
+                    processing_token,
+                    on_rake: true,
+                )
+
+                expect(result).to eq(true)
+                expect(AreSearch::SyncRequest.find_by(id: sync_request.id)).to eq(nil)
+            end
+
+            it "rake同期中にrequest_sequenceが更新された場合は新世代要求を残して完了状態へリセットする" do
+                sync_request = create_sync_request(request_sequence: 10)
+
+                allow(model)
+                    .to receive(:find_by)
+                    .with(id: ar_instance_key)
+                    .and_return(record)
+
+                expect(record)
+                    .to receive(:are_search_index_or_delete!) do
+                        AreSearch::SyncRequest.where(id: sync_request.id).update_all(request_sequence: 11)
+                    end
+
+                result = sync_request.are_search_try_sync(
+                    processing_token,
+                    on_rake: true,
+                )
+
+                reloaded = AreSearch::SyncRequest.find(sync_request.id)
+                expect(result).to eq(true)
+                expect(reloaded.request_sequence).to eq(11)
+                expect(reloaded.sync_try_count).to eq(0)
+                expect(reloaded.callback_try_count).to eq(0)
+                expect(reloaded.last_completed_at).not_to eq(nil)
+                expect(reloaded.processing_token).to eq(nil)
+            end
+
+            it "job/direct同期中にrequest_sequenceが更新された場合は新世代要求を残して完了状態へリセットする" do
+                sync_request = create_sync_request(request_sequence: 10)
+
+                allow(model)
+                    .to receive(:find_by)
+                    .with(id: ar_instance_key)
+                    .and_return(record)
+
+                expect(record)
+                    .to receive(:are_search_index_or_delete!) do
+                        AreSearch::SyncRequest.where(id: sync_request.id).update_all(request_sequence: 11)
+                    end
+
+                result = sync_request.are_search_try_sync(
+                    processing_token,
+                    on_rake: false,
+                )
+
+                reloaded = AreSearch::SyncRequest.find(sync_request.id)
+                expect(result).to eq(true)
+                expect(reloaded.request_sequence).to eq(11)
+                expect(reloaded.sync_try_count).to eq(0)
+                expect(reloaded.callback_try_count).to eq(0)
+                expect(reloaded.last_completed_at).not_to eq(nil)
+                expect(reloaded.processing_token).to eq(nil)
+            end
+
             it "rakeではforce_attemptedがtrueでも成功時に要求を削除する" do
                 sync_request = create_sync_request(
                     force_attempted:     true,
@@ -734,6 +835,53 @@ RSpec.describe AreSearch::SyncRequest do
         end
 
         describe "#are_search_try_force_sync" do
+            it "index_targetが存在しない場合はforce同期せずエラーを残す" do
+                sync_request = create_sync_request(
+                    processing_token: "token-1",
+                    processing_at:    1.hour.ago,
+                )
+
+                allow(model)
+                    .to receive(:are_search_index_target)
+                    .with(request_index_target_name)
+                    .and_return(nil)
+
+                expect(model).not_to receive(:find_by)
+                expect(record).not_to receive(:are_search_index_or_delete!)
+
+                result = sync_request.are_search_try_force_sync
+                reloaded = AreSearch::SyncRequest.find(sync_request.id)
+
+                expect(result).to eq(false)
+                expect(reloaded.force_attempted).to eq(false)
+                expect(reloaded.force_try_count).to eq(0)
+                expect(reloaded.last_error).to eq("index_target not found")
+                expect(reloaded.processing_token).to eq("token-1")
+            end
+
+            it "index_alias_nameが現在のindex_targetと違う場合はforce同期せずエラーを残す" do
+                sync_request = create_sync_request(
+                    processing_token: "token-1",
+                    processing_at:    1.hour.ago,
+                )
+
+                allow(index_target)
+                    .to receive(:are_search_index_alias_name)
+                    .and_return("test__articles__v2_default")
+
+                expect(model).not_to receive(:find_by)
+                expect(record).not_to receive(:are_search_index_or_delete!)
+
+                result = sync_request.are_search_try_force_sync
+                reloaded = AreSearch::SyncRequest.find(sync_request.id)
+
+                expect(result).to eq(false)
+                expect(reloaded.force_attempted).to eq(false)
+                expect(reloaded.force_try_count).to eq(0)
+                expect(reloaded.last_error).to eq("index_alias_name not match")
+                expect(reloaded.processing_token).to eq("token-1")
+            end
+
             it "sync_stage_nameが現在のindex_targetに存在しない場合はforce同期せずエラーを残す" do
                 sync_request = create_sync_request(
                     processing_token: "token-1",
@@ -760,6 +908,122 @@ RSpec.describe AreSearch::SyncRequest do
                 expect(reloaded.last_error).to eq("sync_stage_name not found")
                 expect(reloaded.last_error_at).not_to eq(nil)
                 expect(reloaded.processing_token).to eq("token-1")
+            end
+
+            it "index操作中の場合はforce同期せずindex markedを残す" do
+                sync_request = create_sync_request(
+                    processing_token: "token-1",
+                    processing_at:    1.hour.ago,
+                )
+
+                allow(index_target)
+                    .to receive(:are_search_index_marked?)
+                    .and_return(true)
+
+                expect(model).not_to receive(:find_by)
+                expect(record).not_to receive(:are_search_index_or_delete!)
+
+                result = sync_request.are_search_try_force_sync
+                reloaded = AreSearch::SyncRequest.find(sync_request.id)
+
+                expect(result).to eq(false)
+                expect(reloaded.force_attempted).to eq(false)
+                expect(reloaded.force_try_count).to eq(0)
+                expect(reloaded.last_error).to eq("index marked")
+                expect(reloaded.processing_token).to eq("token-1")
+            end
+
+            it "indexが存在しない場合はforce同期せずindex not foundを残す" do
+                sync_request = create_sync_request(
+                    processing_token: "token-1",
+                    processing_at:    1.hour.ago,
+                )
+
+                allow(index_target)
+                    .to receive(:are_search_index_alias_exists?)
+                    .and_return(false)
+
+                expect(model).not_to receive(:find_by)
+                expect(record).not_to receive(:are_search_index_or_delete!)
+
+                result = sync_request.are_search_try_force_sync
+                reloaded = AreSearch::SyncRequest.find(sync_request.id)
+
+                expect(result).to eq(false)
+                expect(reloaded.force_attempted).to eq(false)
+                expect(reloaded.force_try_count).to eq(0)
+                expect(reloaded.last_error).to eq("index not found")
+                expect(reloaded.processing_token).to eq("token-1")
+            end
+
+            it "before sync checkがfalseならforce同期せずforce試行回数を増やさない" do
+                sync_request = create_sync_request(
+                    processing_token: "token-1",
+                    processing_at:    1.hour.ago,
+                )
+
+                allow(model)
+                    .to receive(:are_search_before_sync_check)
+                    .with(ar_instance_key, index_target, sync_request)
+                    .and_return(false)
+
+                expect(model).not_to receive(:find_by)
+                expect(record).not_to receive(:are_search_index_or_delete!)
+
+                result = sync_request.are_search_try_force_sync
+                reloaded = AreSearch::SyncRequest.find(sync_request.id)
+
+                expect(result).to eq(false)
+                expect(reloaded.force_attempted).to eq(false)
+                expect(reloaded.force_try_count).to eq(0)
+                expect(reloaded.last_error).to eq(nil)
+                expect(reloaded.processing_token).to eq("token-1")
+            end
+
+            it "force処理開始前にprocessing_tokenが変わった場合は同期本体を実行せず成功扱いにする" do
+                sync_request = create_sync_request(
+                    processing_token: "token-1",
+                    processing_at:    1.hour.ago,
+                )
+                stale_sync_request = AreSearch::SyncRequest.find(sync_request.id)
+
+                sync_request.update_columns(processing_token: "other-token")
+
+                expect(model).not_to receive(:find_by)
+                expect(record).not_to receive(:are_search_index_or_delete!)
+
+                result = stale_sync_request.are_search_try_force_sync
+                reloaded = AreSearch::SyncRequest.find(sync_request.id)
+
+                expect(result).to eq(true)
+                expect(reloaded.force_attempted).to eq(false)
+                expect(reloaded.force_try_count).to eq(0)
+                expect(reloaded.processing_token).to eq("other-token")
+            end
+
+            it "DBにレコードが無い場合はforce同期でElasticsearchから削除する" do
+                sync_request = create_sync_request(
+                    processing_token: "token-1",
+                    processing_at:    1.hour.ago,
+                )
+
+                allow(model)
+                    .to receive(:find_by)
+                    .with(id: ar_instance_key)
+                    .and_return(nil)
+
+                expect(index_target)
+                    .to receive(:are_search_delete!)
+                    .with(ar_instance_key)
+
+                result = sync_request.are_search_try_force_sync
+                reloaded = AreSearch::SyncRequest.find(sync_request.id)
+
+                expect(result).to eq(true)
+                expect(reloaded.force_attempted).to eq(true)
+                expect(reloaded.force_try_count).to eq(1)
+                expect(reloaded.sync_try_count).to eq(0)
+                expect(reloaded.callback_try_count).to eq(0)
             end
 
             it "processing中の要求を強制同期しforce系カラムだけ更新する" do

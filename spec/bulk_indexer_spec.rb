@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 require "spec_helper"
-require "json"
 require "tmpdir"
+require "json"
 require "fileutils"
 
 RSpec.describe AreSearch::BulkIndexer do
@@ -776,6 +776,28 @@ RSpec.describe AreSearch::BulkIndexer do
             )
         end
 
+        it "max_fail_countはrecover上限の半分と一致する値を受け付ける" do
+            relation = double("relation")
+            boundary_indexer = described_class.new(
+                index_target,
+                sync_stage_name,
+                result_dir:      result_dir,
+                max_bulk_bytes:  100,
+                max_bulk_count:  10,
+                max_fail_count:  1000,
+            )
+
+            allow(model_class)
+                .to receive(:all)
+                .and_return(relation)
+            expect(relation)
+                .to receive(:find_each)
+
+            expect do
+                boundary_indexer.bulk_index_index_target
+            end.not_to raise_error
+        end
+
         it "max_fail_countはrecover上限の半分以下だけを受け付ける" do
             invalid_indexer = described_class.new(
                 index_target,
@@ -792,6 +814,28 @@ RSpec.describe AreSearch::BulkIndexer do
                 ArgumentError,
                 "max_fail_count は 1000 以下で指定してください",
             )
+        end
+
+        it "max_bulk_countはmax_fail_countと一致する値を受け付ける" do
+            relation = double("relation")
+            boundary_indexer = described_class.new(
+                index_target,
+                sync_stage_name,
+                result_dir:      result_dir,
+                max_bulk_bytes:  100,
+                max_bulk_count:  10,
+                max_fail_count:  10,
+            )
+
+            allow(model_class)
+                .to receive(:all)
+                .and_return(relation)
+            expect(relation)
+                .to receive(:find_each)
+
+            expect do
+                boundary_indexer.bulk_index_index_target
+            end.not_to raise_error
         end
 
         it "max_bulk_countはmax_fail_count以下だけを受け付ける" do
@@ -873,5 +917,15 @@ RSpec.describe AreSearch::IndexTarget, "#are_search_bulk_index" do
         )
 
         expect(result).to eq(:recovered)
+    end
+end
+
+RSpec.describe "BulkIndexer loading" do
+
+    it "are_searchの読み込みでBulkIndexerとIndexTargetの入口を使用できる" do
+        expect(defined?(AreSearch::BulkIndexer)).to eq("constant")
+        expect(AreSearch::IndexTarget.instance_methods).to include(
+            :are_search_bulk_index,
+        )
     end
 end

@@ -121,31 +121,37 @@ RSpec.describe AreSearch::IndexManager do
     end
 
     describe ".index_status" do
+        # index_statusが参照するElasticsearch状態をEsAdapter境界で固定する。
+        def stub_index_status_sources(
+            current_physical_names:,
+            physical_names:,
+            alias_named_physical_index_exists:
+        )
+            allow(AreSearch::EsAdapter)
+                .to receive(:indices_get_alias)
+                .with(index_alias_name: index_alias_name)
+                .and_return(alias_response_for(*current_physical_names))
+            allow(AreSearch::EsAdapter)
+                .to receive(:physical_indices_for_alias)
+                .with(index_alias_name: index_alias_name)
+                .and_return(alias_response_for(*physical_names))
+            allow(AreSearch::EsAdapter)
+                .to receive(:alias_named_physical_index_exists?)
+                .with(index_alias_name: index_alias_name)
+                .and_return(alias_named_physical_index_exists)
+        end
+
         it "別 target の物理 index を状態確認から除外する" do
             current_physical_name =
                 "test__articles__default__2026_07_14_00_00_00_000000"
             other_target_physical_name =
                 "test__articles__archive__2026_07_15_00_00_00_000000"
 
-            allow(indices)
-                .to receive(:get_alias)
-                .with(name: index_alias_name)
-                .and_return(alias_response_for(current_physical_name))
-
-            allow(indices)
-                .to receive(:get)
-                .with(index: "#{index_alias_name}__*")
-                .and_return(
-                    {
-                        current_physical_name      => {},
-                        other_target_physical_name => {},
-                    },
-                )
-
-            allow(indices)
-                .to receive(:exists)
-                .with(index: index_alias_name)
-                .and_return(false)
+            stub_index_status_sources(
+                current_physical_names: [current_physical_name],
+                physical_names: [current_physical_name, other_target_physical_name],
+                alias_named_physical_index_exists: false,
+            )
 
             status = described_class.index_status(index_alias_name)
 
@@ -156,6 +162,82 @@ RSpec.describe AreSearch::IndexManager do
                 },
             ])
             expect(status[:newest_physical_name]).to eq(current_physical_name)
+            expect(status[:warnings]).to eq([])
+        end
+
+        it "aliasが無く物理indexだけ存在する場合はalias missingだけを警告する" do
+            physical_name = "test__articles__default__2026_07_14_00_00_00_000000"
+
+            stub_index_status_sources(
+                current_physical_names: [],
+                physical_names: [physical_name],
+                alias_named_physical_index_exists: false,
+            )
+
+            status = described_class.index_status(index_alias_name)
+
+            expect(status[:warnings]).to eq(["alias missing"])
+        end
+
+        it "aliasも物理indexも無い場合は両方のmissingを警告する" do
+            stub_index_status_sources(
+                current_physical_names: [],
+                physical_names: [],
+                alias_named_physical_index_exists: false,
+            )
+
+            status = described_class.index_status(index_alias_name)
+
+            expect(status[:warnings]).to eq([
+                "alias missing",
+                "physical index missing",
+            ])
+        end
+
+        it "alias名と同名の物理indexがある場合は重複を警告する" do
+            stub_index_status_sources(
+                current_physical_names: [],
+                physical_names: [],
+                alias_named_physical_index_exists: true,
+            )
+
+            status = described_class.index_status(index_alias_name)
+
+            expect(status[:warnings]).to eq([
+                "alias missing",
+                "physical index with alias name exists",
+            ])
+        end
+
+        it "aliasが最新ではない物理indexを指す場合は警告する" do
+            current_physical_name = "test__articles__default__2026_07_14_00_00_00_000000"
+            newest_physical_name = "test__articles__default__2026_07_15_00_00_00_000000"
+
+            stub_index_status_sources(
+                current_physical_names: [current_physical_name],
+                physical_names: [current_physical_name, newest_physical_name],
+                alias_named_physical_index_exists: false,
+            )
+
+            status = described_class.index_status(index_alias_name)
+
+            expect(status[:newest_physical_name]).to eq(newest_physical_name)
+            expect(status[:warnings]).to eq(["newest physical index is not current"])
+        end
+
+        it "複数のcurrentに最新物理indexを含む場合は最新警告を出さない" do
+            old_physical_name = "test__articles__default__2026_07_14_00_00_00_000000"
+            newest_physical_name = "test__articles__default__2026_07_15_00_00_00_000000"
+
+            stub_index_status_sources(
+                current_physical_names: [old_physical_name, newest_physical_name],
+                physical_names: [old_physical_name, newest_physical_name],
+                alias_named_physical_index_exists: false,
+            )
+
+            status = described_class.index_status(index_alias_name)
+
+            expect(status[:current_physical_names]).to eq([old_physical_name, newest_physical_name])
             expect(status[:warnings]).to eq([])
         end
     end
@@ -577,6 +659,94 @@ RSpec.describe AreSearch::IndexManager do
                 done_phases: [],
             )
         end
+    end
+
+end
+
+RSpec.describe AreSearch::IndexManager do
+    let(:index_alias_name) { "test__articles__default" }
+    let(:mappings) do
+        {
+            properties: {
+                title: { type: "text" },
+            },
+        }
+    end
+    let(:index_settings) { { max_result_window: 50_000 } }
+    let(:indices) { double("indices") }
+    let(:client)  { double("client", indices: indices) }
+    let(:logger)  { double("logger") }
+
+    around do |example|
+        Dir.mktmpdir("are_search_index_manager") do |dir|
+            original_lock_dir = AreSearch.lock_dir
+            original_index_operation_enabled = AreSearch.index_operation_enabled
+            AreSearch.lock_dir = dir
+
+            example.run
+        ensure
+            AreSearch.lock_dir = original_lock_dir
+            AreSearch.index_operation_enabled = original_index_operation_enabled
+        end
+    end
+
+    def alias_response_for(*physical_names)
+        response = {}
+
+        physical_names.each do |physical_name|
+            response[physical_name] = {}
+        end
+
+        response
+    end
+
+    def create_index_marker(index_alias_name, operation: "reindex", message: nil)
+        AreSearch::IndexMarker.create!(
+            index_alias_name: index_alias_name,
+            operation:     operation,
+            owner_token:   SecureRandom.uuid,
+            owner_host:    "test-host",
+            owner_pid:     12345,
+            started_at:    Time.zone.now,
+            message:       message,
+        )
+    end
+
+    def build_reindex_result
+        {
+            result: :not_success,
+            message: '',
+            failed_ids: [],
+            stop_phase: nil,
+            done_phases: [],
+        }
+    end
+
+    def build_guard_result
+        {
+            result: :not_success,
+            message: '',
+            stop_phase: nil,
+            done_phases: [],
+        }
+    end
+
+    before do
+        AreSearch.index_operation_enabled = true
+
+        allow(AreSearch).to receive(:client).and_return(client)
+        allow(AreSearch)
+            .to receive(:analyzer_settings)
+            .and_return(analysis: {})
+        allow(indices)
+            .to receive(:exists_alias)
+            .with(name: index_alias_name)
+            .and_return(false)
+
+        allow(logger).to receive(:warn)
+        allow(logger).to receive(:info)
+        allow(logger).to receive(:error)
+        allow(Rails).to receive(:logger).and_return(logger)
     end
 
     describe ".index_clean_up" do
