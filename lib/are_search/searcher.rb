@@ -23,8 +23,6 @@ module AreSearch
                 AreSearch.search_param_policy.validate!(valid_options)
             rescue AreSearch::InvalidSearchOption => error
                 return search_failure_result(
-                    1,
-                    25,
                     status: SearchResult::STATUS_PARAMS_INVALID,
                     error_class: AreSearch::InvalidSearchOption,
                     error_message: error.message,
@@ -66,17 +64,12 @@ module AreSearch
                 model_relations = model_relations_opts
             end
 
-            page     = AreSearch::SearcherUtils.resolve_default_option(page_opts, 1)
-            per_page = AreSearch::SearcherUtils.resolve_default_option(per_page_opts, 25)
-
             body_for_policy = body.dup
             body_for_policy.delete(:runtime_mappings)
             body_for_policy.delete("runtime_mappings")
 
             if AreSearch.search_body_policy.valid?(body_for_policy) == false
                 return search_failure_result(
-                    page,
-                    per_page,
                     status: SearchResult::STATUS_PARAMS_INVALID,
                     error_class: AreSearch::InvalidSearchBody,
                     error_message: "検索bodyがsearch_body_policyに拒否されました",
@@ -86,8 +79,6 @@ module AreSearch
             index_targets_for_exists_check = collect_index_targets_for_exists_check(index_targets, valid_options)
             if check_index_exists?(index_targets_for_exists_check) == false
                 return search_failure_result(
-                    page,
-                    per_page,
                     status: SearchResult::STATUS_INDEX_NOT_FOUND,
                     error_class: AreSearch::SearchIndexNotFound,
                     error_message: "検索に必要なElasticsearch aliasが存在しません",
@@ -97,6 +88,9 @@ module AreSearch
             index = index_targets.map(&:are_search_index_alias_name).join(",")
             # 検索
             response = AreSearch::EsAdapter.no_validation_search(index: index, body: body)
+
+            page     = AreSearch::SearcherUtils.resolve_default_option(page_opts, 1)
+            per_page = AreSearch::SearcherUtils.resolve_default_option(per_page_opts, 25)
 
             build_result(
                 response,
@@ -193,12 +187,12 @@ module AreSearch
         end
 
         # 検索を実行できない場合に、設定に従って例外または空結果を返す。
-        def search_failure_result(page, per_page, status:, error_class:, error_message:)
+        def search_failure_result(status:, error_class:, error_message:)
             if AreSearch.search_failure_mode == :raise
                 raise error_class, error_message
             end
 
-            empty_search_result(page, per_page, status: status)
+            empty_search_result(1, 25, status: status)
         end
 
         # 検索を実行せず返す空結果を、終了理由の status 付きで作る。

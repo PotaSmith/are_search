@@ -109,10 +109,16 @@ module AreSearch
                 log_file_path:       File.join(@result_dir, 'bulk.log'),
             )
 
+            if get_recover_keys.empty?
+                raise AreSearch::Error, "recover対象がありません"
+            end
+
             relation = build_recover_relation
             index_records(relation)
 
-            @logger.rename_all([@bulk_failure_target_file, @data_fail_target_file])
+            if get_recover_keys.empty?
+                @logger.rename_all([@bulk_failure_target_file, @data_fail_target_file])
+            end
         end
 
         private
@@ -319,11 +325,7 @@ module AreSearch
                 raise AreSearch::Error, "recover対象が多すぎます: #{target_keys.length} / 上限 #{MAX_RECOVER_COUNT}"
             end
 
-            recover_keys = target_keys - @logger.get_all_keys
-
-            if recover_keys.empty?
-                raise AreSearch::Error, "recover対象がありません"
-            end
+            recover_keys = target_keys - @logger.get_not_fail_keys
 
             recover_keys
         end
@@ -585,6 +587,12 @@ module AreSearch
                 read_result_keys(@failure_file_path,   FAILURE_RESULT) +
                 read_result_keys(@data_skip_file_path, DATA_SKIP_RESULT) +
                 read_result_keys(@data_fail_file_path, DATA_FAIL_RESULT)
+            end
+
+            # 成功扱いの結果ファイルに記録済みの全IDを返す。
+            def get_not_fail_keys
+                read_result_keys(@success_file_path,   SUCCESS_RESULT) +
+                read_result_keys(@data_skip_file_path, DATA_SKIP_RESULT)
             end
 
             # 指定ファイルの全IDを返す。

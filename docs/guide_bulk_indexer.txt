@@ -2,11 +2,11 @@
 AreSearch BulkIndexer 利用ガイド
 ================================================================
 
-このガイドは、BulkIndexer の実行準備、通常実行、再開、recover、結果確認を扱う。
+このガイドは、BulkIndexer の準備、実行、再開、recover、結果確認、巨大データを含む新IndexTargetへの切り替えを扱う。
 BulkIndexer の内部構造は扱わない。
 
 
-# 1. 実行前の確認
+# 1. 使用前に確認する
 ================================================================
 
 以下を確認する。
@@ -18,31 +18,29 @@ BulkIndexer の内部構造は扱わない。
     結果保存先として、削除されない書き込み可能なディレクトリを用意できる
 
 BulkIndexer は対象 IndexTarget の alias が存在しない場合、bulk投入を開始しない。
-BulkIndexer は通常同期や別のbulk実行を自動停止しない。
-同時更新を避ける必要がある場合は、利用側の運用で停止または排他を行う。
+通常同期や別のbulk実行を自動停止しないため、同時更新を避ける必要がある場合は利用側で停止または排他を行う。
 
 
-# 2. サンプルの生成
+# 2. サンプルを生成する
 ================================================================
 
-Railsアプリケーションのルートで、任意generatorを実行する。
+Railsアプリケーションのルートで実行する。
 
     bin/rails generate are_search:sample
 
-SampleGenerator が生成するファイルのうち、このガイドで使用するのは以下の2つ。
+BulkIndexer で使用するサンプル。
 
     tmp/are_search/sample/are_search_bulk_index.rb.sample
     tmp/are_search/sample/are_search_bulk_index.sh.sample
 
-生成先の tmp/are_search/sample はサンプルの受け渡し場所として使用する。
-実際に編集して使うファイルと結果保存先は、Rails.root/tmp の外へ置く。
+生成先の `tmp/are_search/sample` はサンプルの受け渡し場所として使用する。
+実際に編集して使うファイルと結果保存先は `Rails.root/tmp` の外へ置く。
 
 
-# 3. 実行用ファイルの準備
+# 3. 実行用ファイルを準備する
 ================================================================
 
 作業用ディレクトリを用意し、2つのサンプルをコピーする。
-以下は配置例。
 
     mkdir -p /var/lib/example/are_search/bulk/article_new_version
 
@@ -55,10 +53,10 @@ SampleGenerator が生成するファイルのうち、このガイドで使用�
 Rubyファイルとshellファイルは同じディレクトリへ置く。
 
 
-# 4. Rubyファイルの変更
+# 4. Rubyファイルを設定する
 ================================================================
 
-are_search_bulk_index.rb の「変更箇所」を、実行対象に合わせて変更する。
+`are_search_bulk_index.rb` の「変更箇所」を実行対象に合わせて変更する。
 
 対象モデルと IndexTarget。
 
@@ -87,10 +85,10 @@ max_fail_count
     1000以下で指定する。
 
 
-# 5. shellファイルの変更
+# 5. shellファイルを設定する
 ================================================================
 
-are_search_bulk_index.sh の「変更箇所」を、実行環境に合わせて変更する。
+`are_search_bulk_index.sh` の「変更箇所」を実行環境に合わせて変更する。
 
 Railsアプリケーションの絶対パス。
 
@@ -104,14 +102,14 @@ Rails環境。
 
     RAILS_ENV_NAME="production"
 
-RESULT_DIR は実行単位で分ける。
-別のIndexTarget、別のstage、別の作り直し処理で、過去のRESULT_DIRを使い回さない。
+`RESULT_DIR` は実行単位で分ける。
+別のIndexTarget、別のstage、別の作り直し処理で過去の `RESULT_DIR` を使い回さない。
 
 
-# 6. 通常実行
+# 6. 通常実行と再開
 ================================================================
 
-shellファイルへ index を指定して実行する。
+shellファイルへ `index` を指定して実行する。
 
     /var/lib/example/are_search/bulk/article_new_version/are_search_bulk_index.sh index
 
@@ -119,89 +117,67 @@ shellファイルへ index を指定して実行する。
 
     /var/lib/example/are_search/bulk/article_new_version/are_search_bulk_index.sh
 
-処理が中断した場合は、同じRubyファイル、同じshellファイル、同じRESULT_DIRで、
-再度 index を実行する。
+処理が中断した場合は、同じRubyファイル、同じshellファイル、同じRESULT_DIRで再度 index を実行する。
 
     /var/lib/example/are_search/bulk/article_new_version/are_search_bulk_index.sh index
 
 
-# 7. recover
+# 7. 失敗レコードを recover する
 ================================================================
 
-通常実行で失敗したレコードをrecoverする場合は、同じRESULT_DIRを使用して recover を実行する。
+通常実行で失敗したレコードを再処理する場合は、同じRESULT_DIRを使用して recover を実行する。
 
     /var/lib/example/are_search/bulk/article_new_version/are_search_bulk_index.sh recover
 
-recover用に別のRESULT_DIRを指定しない。
-
-recover対象のIDが通常実行後にDBから削除されている場合は、
-recover側のdata_skipとして記録し、そのIDを処理済みにする。
-
-recoverが正常終了すると、そのrecoverで使用した通常実行側の失敗結果とrecover側の結果を、
-RESULT_DIR直下の同じ世代ディレクトリへ移動する。
+recover が完了すると、使用した結果が `RESULT_DIR` 直下の世代ディレクトリへ移動する。
 
     recover_YYYY_MM_DD_HH_MM_SS_UUUUUU/
 
-退避対象は、存在している以下の結果ファイル。
-
-    data/bulk_failure.log
-    data/data_fail.log
-    recover/recover_bulk_success.log
-    recover/recover_bulk_failure.log
-    recover/recover_data_skip.log
-    recover/recover_data_fail.log
-
-退避済みの世代ディレクトリは、次回の通常実行やrecoverでは読み込まない。
-recoverが途中で失敗した場合は退避せず、同じRESULT_DIRでrecoverを再実行する。
+移動しない場合は recover が完了していない。
 
 
-# 8. 結果の確認
+# 8. 結果を確認する
 ================================================================
 
-利用者が確認するログは、RESULT_DIR直下のbulk.log。
+利用者が確認するログは `RESULT_DIR` 直下の `bulk.log`。
 
     /path/to/persistent/are_search/bulk/article_new_version/bulk.log
 
-処理中も追記されるため、必要に応じてtailで確認できる。
+処理中も追記される。
 
     tail -f /path/to/persistent/are_search/bulk/article_new_version/bulk.log
 
-RESULT_DIRには、bulk.logのほかに以下のディレクトリが作成される。
+RESULT_DIR には以下のディレクトリも作成される。
 
     data/
     recover/
     recover_YYYY_MM_DD_HH_MM_SS_UUUUUU/
 
-data/ と recover/ のファイルは、通常再開とrecoverで使用する。
-recover_YYYY_MM_DD_HH_MM_SS_UUUUUU/ は、正常終了したrecoverの結果を世代単位で退避した履歴。
-内容を確認するために読み取ることはできるが、編集、追記、削除、移動、改名、並べ替えを行わない。
-利用者の結果確認にはbulk.logだけを使用する。
+`data/` と `recover/` は再開とrecoverで使用するため編集しない。
+`recover_YYYY_MM_DD_HH_MM_SS_UUUUUU/` も履歴として保持し、編集、追記、削除、移動、改名、並べ替えを行わない。
+利用者の結果確認には `bulk.log` を使用する。
 
 
-# 9. 別の実行を開始する場合
+# 9. 別の投入を開始する
 ================================================================
 
-別の投入処理を開始する場合は、新しい空のRESULT_DIRを指定する。
-既存のdata/またはrecover/だけを削除して、同じRESULT_DIRを初期化しない。
+別の投入処理を開始する場合は、新しい空の `RESULT_DIR` を指定する。
+既存の `data/` または `recover/` だけを削除して同じRESULT_DIRを初期化しない。
 
-対象index自体を作り直す場合は、index、stage設定、SyncRequestの処理を先に整理し、
-その作り直し専用の新しいRESULT_DIRで通常実行を開始する。
+対象index自体を作り直す場合も、新しいRESULT_DIRを用意して通常実行を開始する。
 
 
-# 10. 巨大データを含む新IndexTargetへの切り替え
+# 10. 巨大データを含む新IndexTargetへ切り替える
 ================================================================
 
-BulkIndexerを使って、通常のreindexでは長時間かかるIndexTargetを新しく構築し、
-検索入口を新IndexTargetへ切り替える場合の運用例。
-
-以下の例では、現在使用中のtargetを default、新しく構築するtargetを new_version、
-bulk中の差分回収用stageを for_version_up、通常同期stageを default とする。
+ここでは、現在使用中のtargetを `default`、新しく構築するtargetを `new_version`、
+bulk中の差分回収用stageを `for_version_up`、通常同期stageを `default` とする。
 
 
 ## 10-1. 新IndexTargetとbulk用stageを追加する
 ----------------------------------------------------------------
 
-新しいIndexTargetと、bulk中の差分を残すためのstageをモデルへ追加する。
+新しいIndexTargetと、bulk中の差分を残すstageをモデルへ追加する。
 
     are_search_all_sync_stage_names
         default:     ["default"]
@@ -214,11 +190,11 @@ bulk中の差分回収用stageを for_version_up、通常同期stageを default 
     are_search_sync_stage_names_on_after_commit
         default: ["default"]
 
-new_version の for_version_up は enqueue するが、after_commit では処理しない。
-定期実行している run_sync_requests にも for_version_up を含めない。
+`new_version` の `for_version_up` は enqueue するが after_commit では処理しない。
+定期実行している `run_sync_requests` にも `for_version_up` を含めない。
 
 この設定をデプロイすると、新IndexTarget用のSyncRequestが蓄積され始める。
-旧IndexTargetの通常同期はそのまま継続する。
+旧IndexTargetの通常同期は継続する。
 
 複数Webサーバがある場合は、この設定が全サーバへ反映されたことを確認してから次へ進む。
 
@@ -226,8 +202,7 @@ new_version の for_version_up は enqueue するが、after_commit では処理
 ## 10-2. 新IndexTargetの空indexを作成する
 ----------------------------------------------------------------
 
-新IndexTargetのElasticsearch indexを作成する。
-この操作を実行する環境では `AreSearch.index_operation_enabled = true` が必要。
+`AreSearch.index_operation_enabled` の詳細は guide_reference.txt を参照する。
 
     index_target = Article.are_search_index_target(:new_version)
     result = index_target.are_search_create_index
@@ -235,32 +210,28 @@ new_version の for_version_up は enqueue するが、after_commit では処理
 `result[:result]` が `:success` であることを確認する。
 既にaliasが存在するIndexTargetには `are_search_create_index` を実行できない。
 
-bulkを開始する前に、対象のaliasが新しく作成した空indexを指していることを確認する。
+bulk開始前に、対象aliasが新しく作成した空indexを指していることを確認する。
 
-作り直す場合は、bulkを停止したうえで対象indexを削除して作成し直す。
-その場合は、以前のbulk実行で使用したRESULT_DIRを再利用せず、新しいRESULT_DIRを用意する。
+作り直す場合はbulkを停止し、対象indexを削除して作成し直す。
+以前のbulk実行で使用したRESULT_DIRは再利用しない。
 
 
 ## 10-3. BulkIndexerを実行する
 ----------------------------------------------------------------
 
-new_version と for_version_up を指定した実行用ファイルを用意し、BulkIndexerを開始する。
-
     index_target = Article.are_search_index_target(:new_version)
     sync_stage_name = "for_version_up"
 
-実行中は、通常同期用の run_sync_requests で for_version_up を処理しない。
-
-中断した場合は、同じRESULT_DIRで index を再実行する。
-失敗レコードを再処理する場合は、同じRESULT_DIRで recover を実行する。
-
-進行状況と失敗内容は bulk.log で確認する。
+実行中は通常同期用の `run_sync_requests` で `for_version_up` を処理しない。
+中断した場合は同じRESULT_DIRで index を再実行する。
+失敗レコードを再処理する場合は同じRESULT_DIRで recover を実行する。
+進行状況と失敗内容は `bulk.log` で確認する。
 
 
 ## 10-4. bulk完了後に通常stageを追加する
 ----------------------------------------------------------------
 
-BulkIndexerが完了したら、新IndexTargetへ通常同期stageの default を追加する。
+BulkIndexerが完了したら、新IndexTargetへ通常同期stageの `default` を追加する。
 
 複数Webサーバをローリングデプロイする場合は、最初に両stageをenqueueする中間設定を全サーバへ反映する。
 
@@ -276,10 +247,7 @@ BulkIndexerが完了したら、新IndexTargetへ通常同期stageの default �
         default:     ["default"]
         new_version: ["default"]
 
-この時点では、new_version の新しい更新は default で通常同期される。
-for_version_up のSyncRequestも引き続き作成されるため、まだ削除しない。
-
-全サーバへの反映が完了したら、for_version_up の新規enqueueを停止する設定へ変更する。
+全サーバへの反映後、`for_version_up` の新規enqueueを停止する。
 
     are_search_all_sync_stage_names
         default:     ["default"]
@@ -299,15 +267,11 @@ for_version_up のSyncRequestも引き続き作成されるため、まだ削除
 ## 10-5. bulk中に蓄積した差分を回収する
 ----------------------------------------------------------------
 
-for_version_up の新規SyncRequestが作成されなくなった後、
-run_sync_requests で for_version_up を処理する。
+`for_version_up` の新規SyncRequestが作成されなくなった後、`run_sync_requests` で回収する。
 
     bundle exec rake 'are_search:run_sync_requests[for_version_up]'
 
-残っている for_version_up のSyncRequestがなくなるまで処理する。
-
-for_version_up のSyncRequestが残っている間は、are_search_all_sync_stage_names から
-for_version_up を削除しない。
+残っている `for_version_up` のSyncRequestがなくなるまで処理する。
 
 回収完了後、new_version を通常stageだけにする。
 
@@ -330,10 +294,9 @@ for_version_up を削除しない。
 ----------------------------------------------------------------
 
 新IndexTargetのbulk投入と差分回収が完了したことを確認した後、
-アプリケーションの検索入口を default から new_version へ切り替えてデプロイする。
+アプリケーションの検索入口を `default` から `new_version` へ切り替えてデプロイする。
 
-旧IndexTargetはこの時点では削除せず、通常同期を継続する。
-問題がある場合に検索入口を旧IndexTargetへ戻せる状態を維持して様子を見る。
+旧IndexTargetは削除せず通常同期を継続し、問題がある場合に検索入口を戻せる状態を維持する。
 
 
 ## 10-7. 旧IndexTargetを停止する
@@ -342,19 +305,14 @@ for_version_up を削除しない。
 新IndexTargetで問題がないことを確認した後、旧IndexTargetへの新しいSyncRequest作成を停止する。
 
 複数Webサーバがある場合は、旧IndexTargetの定義をすぐ削除せず、
-まず旧IndexTargetを are_search_sync_stage_names_on_enqueue と
-are_search_sync_stage_names_on_after_commit の対象から外した設定を全サーバへ反映する。
+まず `are_search_sync_stage_names_on_enqueue` と `are_search_sync_stage_names_on_after_commit` の対象から外した設定を全サーバへ反映する。
 
 旧IndexTarget用のSyncRequestが残っている場合は、定義を残したまま処理または削除方針を決める。
-
-旧IndexTargetへの新しい要求が作成されない状態を全サーバへ反映した後、
-旧IndexTargetをモデル定義と検索対象から削除してデプロイする。
+新しい要求が作成されない状態を確認した後、旧IndexTargetをモデル定義と検索対象から削除してデプロイする。
 
 
 ## 10-8. 旧Elasticsearch indexを削除する
 ----------------------------------------------------------------
 
-旧IndexTargetを削除したデプロイ後もすぐにはElasticsearch indexを削除せず、
-アプリケーションの状態を確認する。
-
+旧IndexTargetを削除したデプロイ後もすぐにはElasticsearch indexを削除せず、アプリケーションの状態を確認する。
 問題がないことを確認した後、旧IndexTargetの物理indexを削除する。

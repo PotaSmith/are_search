@@ -151,7 +151,7 @@ namespace :are_search do
                     puts "      warning:    none"
                 else
                     warnings.each do |warning|
-                        puts "    warning:    #{warning}"
+                        puts "      warning:    #{warning}"
                     end
                 end
             rescue StandardError => e

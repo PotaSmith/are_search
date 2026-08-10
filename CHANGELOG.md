@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+- 検索時のパラメーターエラーでのページの扱いの統一
+- jobのretry条件の例外の修正
+- ガイドの整理
 - 外部入力として扱う検索値を検査する `search_param_policy` を追加。`SearchParamPolicy` 継承クラスへ差し替え可能に変更
 - BulkIndexer の recover 正常終了時に、通常実行側の失敗結果とrecover側の結果を世代ディレクトリへ退避し、次回recoverで過去の結果ファイルを再読込しないよう変更
 - More Like This の基準情報を mlt.like にまとめ、instance と index_target を指定する形へ整理。

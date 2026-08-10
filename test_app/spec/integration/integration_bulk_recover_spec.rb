@@ -135,4 +135,83 @@ RSpec.describe "AreSearch BulkIndexer recover integration", type: :model do
             )
         end
     end
+
+    it "recoverで再失敗したIDを退避せず次のrecoverで再処理する" do
+        reindex_result = rebuild_empty_document_first_index
+        expect(reindex_result[:result]).to eq(:success)
+
+        failed_document = DocumentFirst.create!(
+            title:   "bulkrecoverretrytoken failed",
+            body:    "recover retry target",
+            status:  "published",
+            user_id: 604,
+        )
+
+        failed_count = 0
+
+        allow_any_instance_of(DocumentFirst)
+            .to receive(:are_search_index_data_for_index!)
+            .and_wrap_original do |original_method, *args|
+                record = original_method.receiver
+
+                if record.id == failed_document.id && failed_count < 2
+                    failed_count += 1
+                    raise RuntimeError, "intentional bulk recover retry test failure"
+                end
+
+                original_method.call(*args)
+            end
+
+        Dir.mktmpdir("are_search_bulk_recover_retry_integration") do |result_dir|
+            document_first_index_target.are_search_bulk_index(
+                "default",
+                result_dir:      result_dir,
+                max_bulk_bytes:  1024 * 1024,
+                max_bulk_count:  10,
+                max_fail_count:  10,
+            )
+
+            data_fail_file = File.join(result_dir, "data", "data_fail.log")
+            expect(File.read(data_fail_file)).to include("#{failed_document.id} data_fail")
+
+            document_first_index_target.are_search_bulk_index(
+                "default",
+                result_dir:      result_dir,
+                max_bulk_bytes:  1024 * 1024,
+                max_bulk_count:  10,
+                max_fail_count:  10,
+                recover:         true,
+            )
+
+            recover_data_fail_file = File.join(result_dir, "recover", "recover_data_fail.log")
+            expect(File.read(recover_data_fail_file)).to include("#{failed_document.id} data_fail")
+            expect(Dir.glob(File.join(result_dir, "recover_*")).length).to eq(0)
+            expect(File.exist?(data_fail_file)).to eq(true)
+
+            document_first_index_target.are_search_bulk_index(
+                "default",
+                result_dir:      result_dir,
+                max_bulk_bytes:  1024 * 1024,
+                max_bulk_count:  10,
+                max_fail_count:  10,
+                recover:         true,
+            )
+
+            expect(failed_count).to eq(2)
+
+            archive_dirs = Dir.glob(File.join(result_dir, "recover_*"))
+            expect(archive_dirs.length).to eq(1)
+            expect(File.read(File.join(archive_dirs.first, "data_fail.log"))).to include(
+                "#{failed_document.id} data_fail",
+            )
+            expect(File.read(File.join(archive_dirs.first, "recover_data_fail.log"))).to include(
+                "#{failed_document.id} data_fail",
+            )
+            expect(File.read(File.join(archive_dirs.first, "recover_bulk_success.log"))).to include(
+                "#{failed_document.id} success",
+            )
+            expect(File.exist?(data_fail_file)).to eq(false)
+            expect(File.exist?(recover_data_fail_file)).to eq(false)
+        end
+    end
 end

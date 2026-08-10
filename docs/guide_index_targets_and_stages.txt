@@ -1,25 +1,21 @@
 ================================================================
-================================================================
 AreSearch IndexTarget・sync stage ガイド
 ================================================================
 
-このファイルは、IndexTarget と sync stage の役割、設定、同期・reindex・rakeとの関係を扱う。
-導入手順は guide_setup.txt、運用操作は guide_operations.txt、設定と内部動作は guide_reference.txt を参照する。
+このガイドは、IndexTarget と sync stage をどう分け、どの stage を保存時・after_commit・reindex・rake で使うかを扱う。
+導入は guide_setup.txt、検索は guide_usage.txt、運用操作は guide_operations.txt、設定一覧は guide_reference.txt を参照する。
 
 
-# 1. IndexTarget と sync stage の関係
+# 1. IndexTarget と sync stage の使い分け
 ================================================================
 
-AreSearch では、同期先を次の2段階で識別する。
+AreSearch では同期先とデータ生成経路を分けて考える。
 
     IndexTarget
         Elasticsearch の alias、mappings、index_settings、検索用途を表す。
 
     sync stage
         同じ IndexTarget へ投入する完成ドキュメントの生成経路を表す。
-
-IndexTarget を変えると、別の Elasticsearch index へ同期する。
-sync stage を変えても Elasticsearch index は変わらず、同じ IndexTarget の同じドキュメントIDへ index する。
 
 判断基準。
 
@@ -30,17 +26,13 @@ sync stage を変えても Elasticsearch index は変わらず、同じ IndexTar
         sync stage を分ける。
 
 stage は部分更新のフィールド集合ではない。
-各stageの are_search_index_data は、そのstageで Elasticsearch へ保存するドキュメント全体を返す。
-後続stageが一部のフィールドだけを返すと、それ以前のstageが保存した他のフィールドは消える。
+各stageの `are_search_index_data` は、そのstageで保存するドキュメント全体を返す。
 
 
-# 2. IndexTarget
+# 2. IndexTarget を定義する
 ================================================================
 
-IndexTarget は、are_search_index_mappings の index_target_name ごとに作成される。
-
-index_target_name は Symbol で定義する。
-名前は guide_reference.txt の「利用側定義名」にある共通形式に従う。
+IndexTarget は `are_search_index_mappings` の `index_target_name` ごとに作成される。
 
     def self.are_search_index_mappings
         {
@@ -70,14 +62,6 @@ IndexTarget を取得する。
     default_index = Article.are_search_index_target(:default)
     autocomplete_index = Article.are_search_index_target(:autocomplete)
 
-alias 名は次の形式になる。
-
-    {index_prefix}__{are_search_ar_table_name}__{index_target_name}
-
-独立した Searchable 継承系統で同じ alias 名を使用することはできない。
-`are_search:check_all_models` と全reindexの対象作成時に重複を検出した場合はエラーにする。
-同じ継承系統のSTI親子・兄弟は、上位モデルが定義した同じIndexTargetを共有する。
-
 1つのモデルに複数targetを定義すると、targetごとに次が分かれる。
 
     mappings
@@ -87,24 +71,20 @@ alias 名は次の形式になる。
     sync request
     検索入口
 
-モデル更新時に同期要求を作るtargetが増えるため、必要な用途だけ定義する。
+検索改善のために mappings や analyzer を変更する場合は、使用中targetを直接変更するだけでなく、
+新しいtargetを追加して新旧indexを並行同期し、検索入口を切り替える方法を選べる。
 
-検索改善のためにmappingsやanalyzerを変更する場合、使用中targetを直接変更せず、
-新しいtargetを追加して新旧indexを並行同期できる。
-検索入口を新targetへ切り替え、問題があれば同期され続けている旧targetへ戻せる。
+STI では同じ Searchable 継承系統の上位モデルが定義した IndexTarget を使用する。
+Searchable を継承した子クラスから reindex や BulkIndexer を実行しない。
 
 
-# 3. sync stage
+# 3. sync stage を定義する
 ================================================================
 
-sync stage は、IndexTarget 内のデータ生成経路を String で識別する。
-sync_stage_name は guide_reference.txt の「利用側定義名」にある共通形式に従う。
+sync stage は、同じ IndexTarget へ投入するデータ生成経路を識別する。
 
     "default"
     "with_external_file"
-
-sync_stage_name は Elasticsearch index 名には含まれない。
-同じIndexTarget・同じレコードの各stageは、同じaliasとドキュメントIDへ index する。
 
 例えば、通常のDBカラムだけで作るstageと、外部ファイルを読み込むstageを分けられる。
 
@@ -127,17 +107,14 @@ sync_stage_name は Elasticsearch index 名には含まれない。
         end
     end
 
-どちらのstageも、mappingsのpropertiesに対応する完成ドキュメント全体を返している。
-
-stage名はtarget内で重複できない。
+どちらのstageも完成ドキュメント全体を返す。
 同じstage名を複数targetで使うことはできる。
 
 
-# 4. stage の基本設定
+# 4. 使用可能な全stageを指定する
 ================================================================
 
-全stageを `are_search_all_sync_stage_names` で定義する。
-このメソッドは必須。
+全stageを `are_search_all_sync_stage_names` で定義する。このメソッドは必須。
 
     def self.are_search_all_sync_stage_names
         {
@@ -146,32 +123,19 @@ stage名はtarget内で重複できない。
         }
     end
 
-制約。
+Array の順序は reindex で `:first` または `:last` を選ぶときに使用する。
+stage間の実行順を必要とする場合は、後述する before check / after callback または rake のstage分離を使用する。
 
-    戻り値は Hash
-    key は are_search_index_mappings に存在する index_target_name
-    are_search_index_mappings の全targetを定義する
-    value は sync_stage_name の Array
-    各targetに1件以上のstageを定義する
-    sync_stage_name は利用側定義名の共通形式に従う String
-    同じtarget内でsync_stage_nameを重複させない
-
-Arrayの順序は、stageを列挙するときと、reindexでfirstまたはlastを選ぶときに使用する。
-この順序だけで、前stageの完了待ちや自動的なstage連鎖が行われるわけではない。
-
-運用中にstageを削除しても、そのstageの既存SyncRequestは自動削除しない。
-同期時に現在の設定へ存在しないstageを検出した場合は実行せず、`sync_stage_name not found` を記録して要求を残す。
-stage廃止時に残存要求を削除または別stageへ移行するかは、利用側で判断する。
+運用中にstageを削除する場合は、そのstageの既存SyncRequestが残っていないことを確認してから行う。
 
 
-# 5. 保存時に作成する要求
+# 5. 保存時にSyncRequestを作るstageを選ぶ
 ================================================================
 
-保存・touch・削除時にsync requestを作成するstageを、`are_search_sync_stage_names_on_enqueue` で指定する。
+保存・touch・削除時に sync request を作成するstageを `are_search_sync_stage_names_on_enqueue` で指定する。
 省略した場合は `are_search_all_sync_stage_names` と同じ設定を使用する。
 
 全stageの要求を作る場合は定義不要。
-
 一部だけ作る場合。
 
     def self.are_search_sync_stage_names_on_enqueue
@@ -187,21 +151,11 @@ stage廃止時に残存要求を削除または別stageへ移行するかは、�
     targetを省略した場合、そのtargetでは保存時に要求を作らない
     空Arrayを指定した場合も、そのtargetでは要求を作らない
 
-保存callbackでは、対象となる `IndexTarget × sync_stage_name` ごとに独立したSyncRequestをupsertする。
-SyncRequestの同期キーは次の組み合わせ。
 
-    ar_model_class_name
-    ar_instance_key
-    index_alias_name
-    sync_stage_name
-
-同じindex・モデル・レコードでも、stageごとに別のSyncRequestを保持する。
-
-
-# 6. after_commit で開始するstage
+# 6. after_commit で開始するstageを選ぶ
 ================================================================
 
-commit後に直接同期またはJob登録を開始するstageを、`are_search_sync_stage_names_on_after_commit` で指定する。
+commit後に直接同期またはJob登録を開始するstageを `are_search_sync_stage_names_on_after_commit` で指定する。
 省略した場合は `are_search_all_sync_stage_names` と同じ設定を使用する。
 
     def self.are_search_sync_stage_names_on_after_commit
@@ -217,25 +171,16 @@ commit後に直接同期またはJob登録を開始するstageを、`are_search_
     targetを省略した場合、そのtargetではafter_commitから同期を開始しない
     空Arrayを指定した場合も、そのtargetでは同期を開始しない
 
-実際の開始方法は `AreSearch.after_commit_mode` に従う。
+開始方法は `AreSearch.after_commit_mode` に従う。詳細は guide_reference.txt を参照する。
 
-    :direct
-        指定stageをその場で同期する。
-
-    :job
-        指定stageのSyncJobを登録する。
-
-    :none
-        after_commitでは開始しない。sync requestはrake回収まで残る。
-
-保存時に要求を作るstageと、commit直後に開始するstageを分けられる。
-例えば、軽いstageだけをafter_commitで処理し、重いstageをrakeへ残せる。
+重いstageをrakeへ残したい場合は、enqueue対象には含め、after_commit対象から外す。
 
 
-# 7. are_search_index_data と are_search_indexable?
+# 7. stage ごとの投入データを定義する
 ================================================================
 
-`are_search_index_data` は index_target_name と sync_stage_name を受け取る。
+`are_search_index_data` の基本仕様は guide_reference.txt を参照する。
+stage ごとにデータ生成を分ける例。
 
     def are_search_index_data(index_target_name, sync_stage_name)
         case [index_target_name, sync_stage_name]
@@ -256,12 +201,8 @@ commit後に直接同期またはJob登録を開始するstageを、`are_search_
         end
     end
 
-各組み合わせの戻り値は Hash。
-トップレベルキーはSymbolとし、そのIndexTargetのpropertiesと揃える。
-予約フィールドはAreSearchが追加するため、利用側dataには含めない。
 
-targetやstageが増えて分岐が多くなる場合、`are_search_index_data` は組み合わせの分岐だけを担当し、
-実際のデータ生成は通常のモデルメソッドへ分けてもよい。
+分岐が多くなる場合は、`are_search_index_data` を分岐だけにしてデータ生成を通常のモデルメソッドへ分けられる。
 
     def are_search_index_data(index_target_name, sync_stage_name)
         case [index_target_name, sync_stage_name]
@@ -291,31 +232,20 @@ targetやstageが増えて分岐が多くなる場合、`are_search_index_data` 
         }
     end
 
-`std_data` や `huge_data` は AreSearch のAPIではない。
-委譲先のメソッド名や分け方は利用側で自由に決められる。
-
-`are_search_indexable?` も index_target_name と sync_stage_name を受け取る。
-デフォルトは true。
-
-    def are_search_indexable?(index_target_name, sync_stage_name)
-        case [index_target_name, sync_stage_name]
-        when [:default, "default"]
-            published?
-        when [:default, "with_external_file"]
-            published? && external_file_attached?
-        else
-            true
-        end
-    end
-
-trueではない場合、そのstageの同期時にドキュメントをdeleteする。
-同じIndexTargetの別stageが後からindexすれば、そのstageの判定とdataで再作成される。
+`std_data` や `huge_data` は AreSearch のAPIではない。利用側で自由に命名できる。
 
 
-# 8. stage の前後処理
+# 8. target・stage ごとに index 対象を制御する
 ================================================================
 
-stage間の待機条件は `are_search_before_sync_check` で指定できる。
+対象レコードを target・stage ごとに index するか切り替える場合は `are_search_indexable?` を使用する。
+詳細は guide_reference.txt を参照する。
+
+
+# 9. stage の前後条件を指定できる
+================================================================
+
+stage間の待機条件が必要な場合は `are_search_before_sync_check` を使用する。
 デフォルトは true。
 
     def self.are_search_before_sync_check(ar_instance_key, index_target, sync_request)
@@ -330,10 +260,9 @@ stage間の待機条件は `are_search_before_sync_check` で指定できる。
         true
     end
 
-falseを返した場合、その要求は削除されず、ES同期回数とcallback回数も増えない。
-後続のrake回収で再度判定される。
+一時的に同期を待機させたい場合は false を返す。後続の `run_sync_requests` で再判定されるため、待機条件として利用できる。
 
-同期後に次の要求を作る場合は `are_search_after_sync_callback` を使用できる。
+同期完了後に別stageの要求を作る場合は `are_search_after_sync_callback` を使用する。
 デフォルトは何もしない。
 
     def self.are_search_after_sync_callback(record, index_target, sync_request)
@@ -346,74 +275,35 @@ falseを返した場合、その要求は削除されず、ES同期回数とcall
         )
     end
 
-このcallbackはElasticsearch同期後、現在のSyncRequestを完了させる前に実行される。
-callbackで例外が発生した場合、現在のSyncRequestは残り、次回はES同期から再実行される。
-
-`are_search_upsert_sync_request` は要求を作るだけで、その場でJob登録や直接同期は開始しない。
-作成したstageは `are_search:run_sync_requests` などで回収する。
-
-force同期は補助処理のため、ES同期だけを行い、`are_search_after_sync_callback` は実行しない。
-
-stageのArray順だけでは実行完了順は保証されない。
-順序が必要な場合は、before check、after callback、rakeのstage分離を組み合わせる。
+`are_search_upsert_sync_request` で作成したstageは `are_search:run_sync_requests` などで回収する。
+force同期は異常中断時の補助処理として使用し、stage連鎖を進める用途には使用しない。
 
 
-# 9. reindex で使用するstage
+# 10. reindex で使用するstageを選ぶ
 ================================================================
 
-reindexは、1つのIndexTargetに対して1つのstageを使用する。
-全stageを順番に実行する処理ではない。
-Searchable を継承した子クラスからは実行できないため、継承系統の最上位モデルの IndexTarget で実行する。
+reindex は1つの IndexTarget に対して1つのstageを使用する。
+`stage_position: :first` は先頭stage、`:last` は末尾stageを使用する。
 
-`are_search_all_sync_stage_names` の先頭stageを使う。
+`are_search:reindex_all_for_es_version_up` は各IndexTargetの末尾stageを使用するため、
+最終状態を作るstageを `are_search_all_sync_stage_names` の末尾に置く。
 
-    result = Article
-        .are_search_index_target(:default)
-        .are_search_reindex(stage_position: :first)
-
-末尾stageを使う。
-
-    result = Article
-        .are_search_index_target(:default)
-        .are_search_reindex(stage_position: :last)
-
-選択したstageの `are_search_index_data` で全レコードの完成ドキュメントを作成する。
-
-`are_search:reindex_all_for_es_version_up` は、各IndexTargetの `:last` stageを使用する。
-そのため、最終状態を作るstageを `are_search_all_sync_stage_names` の末尾に置く。
+reindex の実行方法は guide_operations.txt を参照する。
 
 
-# 10. rake でstageを回収する
+# 11. rake でstageを分けて回収する
 ================================================================
 
-生成される `lib/tasks/are_search_run_sync_requests.rake` は、処理するstageを引数で指定する。
+`are_search:run_sync_requests` は指定したstage名で要求を回収する。
+同じstage名を複数モデル・targetで使用している場合、それらは同じ実行で回収される。
 
-単一stage。
-
-    bundle exec rake 'are_search:run_sync_requests[default]'
-
-複数stage。
-
-    bundle exec rake 'are_search:run_sync_requests[default,with_external_file]'
-
-引数を省略すると実行しない。
-指定したstage名が、どのSearchableモデルにも定義されていない場合は `ArgumentError` を送出する。
-
-stage指定は、モデルやIndexTargetを限定せず、SyncRequestのsync_stage_nameで絞り込む。
-同じstage名を複数モデル・targetで使用している場合、それらをまとめて回収する。
-
-重いstageを別の時間帯に処理する場合は、stageごとに定期実行を分ける。
-
-    bundle exec rake 'are_search:run_sync_requests[default]'
-    bundle exec rake 'are_search:run_sync_requests[with_external_file]'
-
-通常同期とforce同期の対象scopeは、生成されたrakeファイルで利用側の運用に合わせて変更できる。
+stageごとの回収実行方法は guide_operations.txt を参照する。
 
 
-# 11. 最小構成
+# 12. 最小構成
 ================================================================
 
-単一target・単一stageなら、次の定義だけでよい。
+単一target・単一stageなら次の定義だけでよい。
 
     def self.are_search_index_mappings
         {

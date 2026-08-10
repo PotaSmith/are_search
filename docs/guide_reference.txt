@@ -1,13 +1,16 @@
+================================================================
 AreSearch リファレンス
+================================================================
 
-このファイルは、設定、データ定義、同期の内部動作を扱う。
+このガイドは、利用側で指定する設定値、mappings/dataの定義、名前制約、公開APIをまとめる。
 導入手順は guide_setup.txt、検索方法は guide_usage.txt、IndexTargetとsync stageは guide_index_targets_and_stages.txt、
-管理操作は guide_operations.txt を参照する。
+運用操作と障害対応は guide_operations.txt を参照する。
 
 
 # 1. 任意設定
+================================================================
 
-config/initializers/are_search.rb の AreSearch.setup 後に指定する。
+`config/initializers/are_search.rb` の `AreSearch.setup` 後に指定できる。
 
     AreSearch.sync_request_delay             = 120
     AreSearch.max_sync_try_count             = 100
@@ -26,14 +29,14 @@ config/initializers/are_search.rb の AreSearch.setup 後に指定する。
 ## 1-1. sync_request_delay
 ----------------------------------------------------------------
 
-run_sync_requests が通常の再同期対象にするまでの待機秒数。
+`run_sync_requests` が通常の再同期対象にするまでの待機秒数。
 デフォルトは120秒。
 
 
 ## 1-2. max_sync_try_count
 ----------------------------------------------------------------
 
-run_sync_requests が通常同期を試す上限。
+`run_sync_requests` が通常同期を試す上限。
 デフォルトは100回。
 
 
@@ -47,7 +50,7 @@ run_sync_requests が通常同期を試す上限。
 ## 1-4. max_force_try_count
 ----------------------------------------------------------------
 
-run_sync_requests が強制同期を試す上限。
+`run_sync_requests` が強制同期を試す上限。
 デフォルトは5回。
 
 
@@ -55,7 +58,6 @@ run_sync_requests が強制同期を試す上限。
 ----------------------------------------------------------------
 
 flock ファイルの保存先。
-デフォルトは以下。
 
     Rails.root.join("tmp", "are_search", "locks").to_s
 
@@ -63,6 +65,8 @@ flock ファイルの保存先。
 
     sync/sync.lock
     index/{index_alias_name}.lock
+
+複数プロセスで同じ排他を使用する場合は同じ `lock_dir` を参照できるようにする。
 
 
 ## 1-6. index_operation_enabled
@@ -73,7 +77,7 @@ reindex、clean up、manual marker、物理 index の手動削除などを許可
 
     AreSearch.index_operation_enabled = true
 
-index 操作を行うプロセスだけ true にする。
+index操作を行うプロセスだけ true にする。
 
 
 ## 1-7. rake_operation_enabled
@@ -84,18 +88,14 @@ sync request を回収する `are_search:run_sync_requests` の実行を許可�
 
     AreSearch.rake_operation_enabled = true
 
-`run_sync_requests` を定期実行する単一の環境だけ true にする。
-AreSearch は、共有されていない lock_dir を使用する複数環境から、このタスクを同時実行する構成を想定しない。
-false の環境で実行すると `AreSearch::RakeOperationViolation` を送出し、同期処理を開始しない。
-
-flock は同じ lock_dir を参照できるプロセス間の多重起動防止として残る。
-`processing_token` は分散実行環境を選定するためのロックではない。
+定期実行を担当する単一の環境だけ true にする。
+共有されていない `lock_dir` を使用する複数環境からの同時実行は想定しない。
 
 
 ## 1-8. after_commit_mode
 ----------------------------------------------------------------
 
-DB commit 後の同期方法。
+DB commit 後の同期開始方法。
 
     :direct
         after_commit で直接同期する。デフォルト。
@@ -106,11 +106,8 @@ DB commit 後の同期方法。
     :none
         after_commit では同期せず、run_sync_requests に任せる。
 
-after_commit で開始した同期またはJob登録が false を返すか例外を送出した場合はエラーログを残す。
-失敗したstageだけを終了し、残りのIndexTarget・stageは継続する。例外は保存処理の呼び出し元へ伝播させない。
-対応する sync request は残り、run_sync_requests で再処理できる。
-
-どのモードでも、保存・削除時には sync request が記録される。
+どのモードでも通常の保存・削除時には sync request が記録される。
+失敗した要求は `run_sync_requests` で再処理できる。
 
 
 ## 1-9. batch_size
@@ -129,20 +126,19 @@ reindex 時に DB から一度に読み込む件数。
 ----------------------------------------------------------------
 
 index 作成時に Elasticsearch の settings へ渡す analyzer 設定。
-デフォルトでは以下のアナライザーが定義される。
+デフォルトでは以下が定義される。
 
     cjk_index_analyzer
     cjk_search_analyzer
 
-変更する場合は、are_search_index_mappings から参照する analyzer をすべて定義する。
-変更後は対象 target の reindex が必要。
+変更する場合は `are_search_index_mappings` から参照する analyzer をすべて定義する。
+変更後は対象targetの reindex が必要。
 
 
 ## 1-11. search_failure_mode
 ----------------------------------------------------------------
 
-外部入力として使用する queries.query_string、where / where_not / where_or の条件値、page の不正、
-検索body policyによる拒否、index不存在で検索を実行できない場合の扱い。
+検索パラメータ不正、検索body policyによる拒否、index不存在を検索時にどう扱うか指定できる。
 
     :empty_result
         status付きの空結果を返す。ライブラリ側のデフォルト。
@@ -161,20 +157,18 @@ index 作成時に Elasticsearch の settings へ渡す analyzer 設定。
     index不存在
         AreSearch::SearchIndexNotFound
 
-生成される initializer は、development環境で :raise、それ以外で :empty_result を設定する。
+生成される initializer は development 環境で `:raise`、それ以外で `:empty_result` を設定する。
 
 
 ## 1-12. search_body_policy
 ----------------------------------------------------------------
 
-Elasticsearchへ送信する検索bodyと、mappingのフィールド名を検査するpolicy。
+Elasticsearchへ送信する検索bodyと mapping のフィールド名を検査する policy。
 デフォルトは `AreSearch::ScriptDenySearchBodyPolicy`。
 
-標準policyは、`script`、`script_*`、`*_script` に一致するキーを拒否する。
-検索bodyは Elasticsearch serializer でJSON化した後に全階層を検査する。
-mappingの properties にあるフィールド名も同じpolicyで検査する。
+標準policyは `script`、`script_*`、`*_script` に一致するキーを拒否する。
 
-差し替える場合は `AreSearch::SearchBodyPolicy` を継承し、次のクラスメソッドを実装する。
+差し替える場合は `AreSearch::SearchBodyPolicy` を継承する。
 
     class ApplicationSearchBodyPolicy < AreSearch::SearchBodyPolicy
         def self.valid?(es_params)
@@ -188,22 +182,16 @@ mappingの properties にあるフィールド名も同じpolicyで検査する�
 
     AreSearch.search_body_policy = ApplicationSearchBodyPolicy
 
-`valid?` は検索body全体を受け取り、許可する場合に true を返す。
-`invalid_key?` はmappingのフィールド名を受け取り、拒否する場合に true を返す。
-基底クラス自体や、継承関係のないクラス・オブジェクトは設定できない。
-
-Elasticsearch clientはスレッド単位でキャッシュする。
-キャッシュ時のPIDも保持し、fork後にPIDが変わっている場合は `AreSearch.setup` のブロックを再実行してclientを作り直す。
-親プロセスで生成された接続を子プロセスがそのまま再利用することはない。
+`valid?` は検索body全体、`invalid_key?` は mapping のフィールド名を検査する。
 
 
 ## 1-13. search_param_policy
 ----------------------------------------------------------------
 
-外部入力として扱う検索パラメータの値を検査するpolicy。
+外部入力として扱う検索パラメータの値を検査する policy。
 デフォルトは `AreSearch::ParamLengthSearchParamPolicy`。
 
-標準policyでは以下の上限を使用する。
+標準policyの上限。
 
     queries.query_string
         2048文字
@@ -217,10 +205,7 @@ Elasticsearch clientはスレッド単位でキャッシュする。
     where / where_not / where_or の range の Hash 全体
         256文字
 
-term の値、terms の Array 全体、range の Hash 全体を文字列化した長さで検査する。
-
-差し替える場合は `AreSearch::SearchParamPolicy` の継承クラスを指定する。
-既定の制限を一部だけ変更する場合は `AreSearch::ParamLengthSearchParamPolicy` を継承できる。
+既定の制限を一部変更する場合。
 
     class ApplicationSearchParamPolicy < AreSearch::ParamLengthSearchParamPolicy
         def self.valid?(name, value)
@@ -232,55 +217,31 @@ term の値、terms の Array 全体、range の Hash 全体を文字列化し�
 
     AreSearch.search_param_policy = ApplicationSearchParamPolicy
 
-`valid?` は検査対象名と値を受け取り、許可する場合に true、拒否する場合に false を返す。
-name には `query_string`、`where.term`、`where.terms`、`where.range` と、
-同じ形式の `where_not.*`、`where_or.*` が渡される。
-false の場合は AreSearch::InvalidSearchOption として扱う。
-基底クラス自体や、継承関係のないクラス・オブジェクトは設定できない。
+false を返した値は `AreSearch::InvalidSearchOption` として扱う。
 
 
 # 2. index_settings
+================================================================
 
-index_settings は are_search_index_mappings の target ごとに指定する。
-
-    def self.are_search_index_mappings
-        {
-            default: {
-                index_settings: {
-                    max_result_window: 2_000,
-                },
-                properties: {
-                    title: { type: "text" },
-                },
-            },
-        }
-    end
-
-各 target で index_settings と properties が必要。
-max_result_window は正の整数で指定する。
-
-index_settings には、max_result_window 以外の Elasticsearch index 設定も指定できる。
-Hash のキーは Symbol を使う。
+`index_settings` は `are_search_index_mappings` の target ごとに指定する。
+定義例は「3. are_search_index_mappings」を参照する。
+Elasticsearch の index 設定を指定できる。
 
 
 ## 2-1. max_result_window
 ----------------------------------------------------------------
 
-page / per_page から作る取得範囲の上限。
-複数 target 検索では、対象 target の最小値を使う。
+page / per_page で取得できる範囲の上限。
+複数target検索では対象targetの最小値を使用する。
 
-page と per_page から算出した開始位置が max_result_window 以上の場合は検索パラメータ不正になる。
-開始位置が上限未満で、要求件数が上限を超える最後のページでは size が縮小される。
-
-設定変更は既存の物理 index には反映されないため、reindex が必要。
+page と per_page から算出した開始位置が `max_result_window` 以上の場合は検索パラメータ不正になる。
+設定変更後は reindex が必要。
 
 
-# 3. mappings と data
+# 3. are_search_index_mappings
+================================================================
 
-## 3-1. are_search_index_mappings
-----------------------------------------------------------------
-
-クラスメソッドで、index_target_name ごとの定義を返す。
+クラスメソッドで `index_target_name` ごとの定義を返す。
 
     def self.are_search_index_mappings
         {
@@ -299,46 +260,23 @@ page と per_page から算出した開始位置が max_result_window 以上の�
         }
     end
 
-主な制約。
+注意点。
 
-    戻り値は1件以上の target を持つ Hash
-    are_search_index_mappings 内の全Hash keyは Symbol
-    index_target_name は利用側定義名の共通形式に従う Symbol
-    各 target は Hash
-    index_settings と properties が必要
-    index_settings は Hash
-    max_result_window は正の整数
-    _source を指定する場合は Hash
     _source.enabled に false は指定できない
-    properties は Hash
-    field_name は利用側定義名の共通形式に従う Symbol
     field_name は検索body policyでも検査する
-    各フィールド定義は Hash
-    各フィールド定義には type が必要
 
-AreSearch は Elasticsearch に渡す mapping の _source.includes へ、検索結果の復元に必要な
-以下の予約フィールドを自動的に追加する。
-
-    are_search_reserved_ar_model_class_name
-    are_search_reserved_ar_instance_key
-
-利用側が _source.includes を指定していない場合、AreSearch は予約フィールドだけを includes に設定する。
-利用側が指定した includes と excludes は維持される。
-excludes で予約フィールドを除外すると検索結果を ActiveRecord へ復元できないため、予約フィールドは除外しない。
-
-_source に含まれない通常フィールドも、mapping 上で対応していれば検索、絞り込み、sort、aggregation に使用できる。
-元のフィールド値を必要とする機能で使用するフィールドは、properties に store: true を指定する。
+元のフィールド値を `_source` 以外から取得する機能で使用する場合は `store: true` を指定できる。
 
     body: {
         type:  "text",
         store: true,
     }
 
-STI では、Searchable を持つ継承系統の上位モデルで are_search_index_mappings を定義する。
+STIでは Searchable を持つ継承系統の上位モデルで定義する。
 
 
-## 3-2. are_search_index_data
-----------------------------------------------------------------
+# 4. are_search_index_data
+================================================================
 
 インスタンスメソッドで、targetとstageの組み合わせに投入する完成ドキュメントを返す。
 
@@ -354,26 +292,13 @@ STI では、Searchable を持つ継承系統の上位モデルで are_search_in
         end
     end
 
-データのトップレベルキーは Symbol を使い、対象IndexTargetのpropertiesと揃える。
-各stageは部分更新ではなく、Elasticsearchへ保存するドキュメント全体を返す。
-
-`are_search_index_data_validate` では、`are_search_all_sync_stage_names` にある全target・stageの組み合わせについて主に以下を確認する。
-
-    mappings と data のフィールド差分
-    text / keyword の String
-    整数型の Integer
-    浮動小数点型の Integer または Float
-    boolean の true または false
-    date の Date / Time / DateTime / String / Integer
-
-対応外の Elasticsearch 型は Elasticsearch 側の検査に任せる。
-IndexTargetとstageの定義方法は guide_index_targets_and_stages.txt を参照する。
+各stageは部分更新ではなく完成ドキュメント全体を返す。
 
 
-## 3-3. are_search_indexable?
-----------------------------------------------------------------
+# 5. are_search_indexable?
+================================================================
 
-レコードをtarget・stageごとにindexするか指定する。
+レコードをtarget・stageごとに index するか指定できる。
 デフォルトは true。
 
     def are_search_indexable?(index_target_name, sync_stage_name)
@@ -385,19 +310,18 @@ IndexTargetとstageの定義方法は guide_index_targets_and_stages.txt を参�
         end
     end
 
-true ではない場合、そのstageの同期時に対象IndexTargetのドキュメントを削除する。
+同期対象にしない場合は false を返す。
+その target の検索対象から外す用途で使用する。
 
 
-# 4. IndexTarget と sync stage
+# 6. IndexTarget の主な公開API
+================================================================
 
-IndexTargetとsync stageの設計、設定、同期・reindex・rakeとの関係は、
-`guide_index_targets_and_stages.txt` でまとめて説明する。
-
-IndexTargetを取得する。
+IndexTarget を取得する。
 
     article_index = Article.are_search_index_target(:default)
 
-主なIndexTarget操作。
+主な操作。
 
     article_index.are_search_search("Rails", fields: [:title, :body])
     article_index.are_search_index_marked?
@@ -409,12 +333,7 @@ IndexTargetを取得する。
     end
     article_index.are_search_delete!(article.id)
 
-stageを使用する操作。
-
-    article_index.are_search_sync(
-        article.id,
-        "default",
-    )
+stageを使用する直接操作。
 
     article.are_search_index_or_delete!(
         article_index,
@@ -422,55 +341,11 @@ stageを使用する操作。
     )
 
 
-# 5. 同期
+# 7. コールバックを通らない更新用API
+================================================================
 
-AreSearch::Searchable は保存・touch・削除を検出し、enqueue設定の `IndexTarget × sync_stage_name` ごとに sync request を記録する。
-commit 後の処理は after_commit_mode に従う。
-
-同期時はDBから現在のレコードを取得し直す。
-
-    レコードが存在し、indexable の場合
-        Elasticsearch へ index
-
-    レコードが存在しない、または indexable ではない場合
-        Elasticsearch から delete
-
-失敗した sync request は残り、run_sync_requests で再処理できる。
-
-
-## 5-1. DB更新とsync requestのトランザクション保証
-----------------------------------------------------------------
-
-標準のDB固有処理はPostgreSQL向け実装を使用し、`AreSearch.database_specific` で差し替え可能。
-通常の保存・touch・削除では、検索対象レコードの変更と sync request の作成を、同じデータベースの同一トランザクション内で行う。
-
-    トランザクション内
-        検索対象レコードを変更
-        are_search_sync_requests を作成または更新
-
-    commit後
-        after_commit_mode に従って同期を開始
-
-検索対象モデルと are_search_sync_requests が同じデータベースに存在する限り、次の状態は、Rails または使用するデータベースのトランザクション機能自体に不具合がない限り、ありえない。
-
-    検索対象レコードの変更だけが commit されている
-    その変更に対応する sync request が存在しない
-
-after_commit は sync request を作成する場所ではない。
-sync request は commit 前に作成済みであり、after_commit は直接同期または Job 登録を開始する。
-そのため、after_commit、Job 登録、Elasticsearch 同期のいずれかが失敗しても sync request は残る。
-
-この保証の対象は、AreSearch::Searchable の ActiveRecord コールバックを通る保存・touch・削除。
-update_columns、update_all、delete_all、insert_all、upsert_all、SQLの直接実行などは、利用側で同期要求を作成する必要がある。
-
-
-## 5-2. コールバックを通らない更新を通常同期に乗せる
-----------------------------------------------------------------
-
-update_columns などで ActiveRecord コールバックを通さずに更新した場合でも、are_search_enqueue_sync_request と are_search_after_commit を呼ぶことで、通常の save と同じ同期経路へ乗せられる。
-
-DB更新と sync request の作成は、必ず同じトランザクション内で行う。
-are_search_after_commit は、そのトランザクションが commit した後に呼ぶ。
+通常saveと同じ同期経路へ乗せる場合は、DB更新と `are_search_enqueue_sync_request` を同じトランザクション内で行い、
+commit後に `are_search_after_commit` を呼ぶ。
 
     article = Article.find(id)
 
@@ -485,70 +360,14 @@ are_search_after_commit は、そのトランザクションが commit した後
 
     article.are_search_after_commit
 
-これにより、通常の save と同じ順序になる。
-
-    トランザクション内
-        DBレコードを更新
-        sync requestを作成
-
-    commit後
-        are_search_after_commit
-
-are_search_after_commit の動作は after_commit_mode に従う。
-
-    :direct
-        その場で同期する。
-
-    :job
-        AreSearch::SyncJob を登録する。
-
-    :none
-        何もしない。
-        sync request は残り、run_sync_requests が後から処理する。
-
-after_commit_mode = :none の場合も、DB更新と are_search_enqueue_sync_request のトランザクション構造は同じ。
-are_search_after_commit を呼んでも同期処理は開始せず、sync request の回収は run_sync_requests に任せる。
-
-are_search_enqueue_sync_request を DB更新とは別のトランザクションで呼ぶと、その間に処理が停止した場合、DB更新だけが確定して同期要求が作成されない可能性がある。
-通常 save と同じ保証が必要な場合は、必ず上記の構造にする。
-外側のトランザクションがある場合、are_search_after_commit は最外トランザクションの commit 後に呼ぶ。
-
-update_all、delete_all、insert_all、upsert_all など複数件を変更する処理では、対象レコードごとに同期要求を作成するか、件数に応じて reindex を使用する。
+`update_all`、`delete_all`、`insert_all`、`upsert_all` など複数件を変更する場合は、対象レコードごとに同期要求を作成するか、
+件数に応じて reindex を使用する。
 
 
-## 5-3. are_search_sync
-----------------------------------------------------------------
+# 8. are_search_with_index_guard
+================================================================
 
-既存の sync request 1件を処理するためのメソッド。
-
-    Article
-        .are_search_index_target(:default)
-        .are_search_sync(
-            id,
-            "default",
-        )
-
-指定したstageの sync request が存在しないレコードを新たに直接反映する用途ではない。
-通常は SyncJob または run_sync_requests から使用される。
-
-
-# 6. index 管理
-
-AreSearch は、アプリが参照する alias と、実データを持つ物理 index を分ける。
-reindex が成功した場合だけ alias を新しい物理 index へ切り替える。
-
-index 操作の競合防止には flock と DB の marker を使用する。
-marker が残っている間は、sync、reindex、clean up が実行されない。
-検索は marker では自動停止しない。
-
-状態確認と復旧方法は guide_operations.txt を参照する。
-
-
-## 6-1. are_search_with_index_guard
-----------------------------------------------------------------
-
-利用側の処理を、対象 index target の flock と marker でガードする。
-reindex / clean up と同じ排他制御を使用する。
+対象 IndexTarget の index 操作と競合させたくない直接更新を guard 内で実行する。
 
     index_target = Article.are_search_index_target(:default)
 
@@ -560,32 +379,18 @@ reindex / clean up と同じ排他制御を使用する。
         :done
     end
 
-戻り値は処理結果の Hash。
+実行後は `result[:result]` を確認する。
 
-    {
-        result:      :success または :not_success,
-        message:     "失敗理由。成功時は空文字列",
-        stop_phase:  nil または停止した処理段階,
-        done_phases: 完了した処理段階の Array,
-    }
-
-flock と marker を取得して block を完了した場合は `result: :success` になる。
-block の戻り値は処理結果に使用しない。
-他の index 操作中、または marker が残っている場合は block を実行せず、`result: :not_success` と停止段階を返す。
-alias が存在しない場合は `ArgumentError` を送出する。
-block 内の例外は、marker の削除を試みた後に呼び出し元へ伝播する。
-
-operation は check_index_status などで表示する処理名。空にはできない。
-この処理には AreSearch.index_operation_enabled = true が必要。
-
-block の実行中は通常 sync が marker を検出して停止し、sync request を残す。
-一方、are_search_index_or_delete! / are_search_delete! は marker を確認しないため、guard 内から直接実行できる。
-詳細とバッチ更新例は guide_operations.txt を参照する。
+`operation` は状態確認時に処理を識別するための名前として指定する。
+この処理には `AreSearch.index_operation_enabled = true` が必要。
+詳細な運用例は guide_operations.txt を参照する。
 
 
-# 7. 低レベル操作
+# 9. 低レベル操作
+================================================================
 
-## 7-1. are_search_index_or_delete!
+
+## 9-1. are_search_index_or_delete!
 ----------------------------------------------------------------
 
 レコードの現在状態を直接 Elasticsearch へ反映する。
@@ -596,12 +401,10 @@ block の実行中は通常 sync が marker を検出して停止し、sync requ
         article.are_search_index_or_delete!(index_target, "default")
     end
 
-sync request を経由せず、index marker と alias の存在も確認しない。
-guard 外から直接実行する場合は、`are_search_index_alias_exists?` で事前に確認する。
-Elasticsearch の例外は呼び出し元へ伝播する。
+sync request を経由しないため、通常の再試行経路が必要な処理では使用しない。
 
 
-## 7-2. are_search_delete!
+## 9-2. are_search_delete!
 ----------------------------------------------------------------
 
 ドキュメントを直接削除する。
@@ -613,289 +416,21 @@ Elasticsearch の例外は呼び出し元へ伝播する。
     end
 
 対象が存在しない場合は無視する。
-sync request を経由せず、index marker と alias の存在も確認しない。
 
 
-## 7-3. 物理 index の手動削除
+## 9-3. 物理 index の手動削除
 ----------------------------------------------------------------
 
     AreSearch.delete_physical_index!(physical_index_name)
 
-AreSearch.index_operation_enabled = true が必要。
-lock や marker を取得しないため、通常は clean up を使用する。
+`AreSearch.index_operation_enabled = true` が必要。
+通常は clean up を使用し、手動削除は状態を確認したうえで行う。
 
-# 8. SyncRequest のライフサイクル
 
-SyncRequest は、Elasticsearch への反映が完了していない同期要求を保持する。
-同期キーごとに基本1行だけ存在し、処理の進行に応じて同じ行を更新する。
+# 10. 利用側定義名
+================================================================
 
-この行は長期間維持する処理状態ではない。
-正常な処理経路が完了した場合は SyncRequest 自体を削除する。
-processing_token や force_attempted などは、削除までの途中経過を扱うための値。
-
-SyncRequest の処理には、次のフェーズがある。
-
-    1. Active Record callback で同期要求を作成・更新する
-    2. after_commit で直接同期または Job 登録を行う
-    3. rake で未処理要求を通常同期する
-    4. rake で異常中断した Job の要求を force 同期する
-    5. 解消しない要求をメール通知する
-
-各フェーズは独立した機能ではなく、前のフェーズで完了しなかった要求を次のフェーズが扱う。
-
-
-## 8-1. callback で同期要求を作成する
-----------------------------------------------------------------
-
-保存・touch・削除の callback で、`are_search_sync_stage_names_on_enqueue` にある `IndexTarget × sync_stage_name` ごとの SyncRequest を作成または更新する。
-検索対象レコードの変更と SyncRequest の記録は、同じデータベーストランザクション内で行う。
-
-同じ同期キーへの要求は新しい行を追加せず、既存の1行へ upsert する。
-
-    ar_model_class_name
-    ar_instance_key
-    index_alias_name
-    sync_stage_name
-
-upsert 時は、新しい request_sequence と request_sequence_at を設定する。
-processing_token、force_attempted、試行回数、エラー情報など、既に行にある処理状態はこのupsertでは変更しない。
-新しい要求は request_sequence_at が更新されるため、通常同期scopeの `last_sync_try_at < request_sequence_at` 条件でも再度対象になる。
-
-request_sequence が必要になるのは、同期中に同じレコードが再更新された場合への対応。
-
-同期開始時に取得した request_sequence は、同期成功時の削除条件に含める。
-同期中の callback により同じ行の request_sequence が変わっていれば、その同期処理は行を削除しない。
-失敗時の last_error と last_error_at は request_sequence を条件にせず、同じSyncRequest行が残っていれば現在行の診断情報として記録する。
-
-request_sequence は処理主体やロック所有者を表す値ではない。
-同期中に同じ行へ新しい要求が追加されたかを確認するための条件。
-
-
-## 8-2. after_commit で処理する
-----------------------------------------------------------------
-
-commit 後は `are_search_sync_stage_names_on_after_commit` にあるtarget・stageを、AreSearch.after_commit_mode に従って開始する。
-
-    :direct
-        after_commit から直接同期する。
-
-    :job
-        AreSearch::SyncJob を登録する。
-
-    :none
-        何も開始せず、rake の通常同期に任せる。
-
-どのモードでも SyncRequest は callback で作成済み。
-after_commit から開始した同期またはJob登録の失敗はstage単位でエラーログへ残し、残りのIndexTarget・stageを継続する。
-after_commit、Job 登録、Elasticsearch 同期のいずれかが失敗しても、未完了要求はデータベースに残る。
-
-通常同期の開始時は、現在のIndexTargetとSyncRequestのtarget名・index名・stage設定が一致することを確認し、
-その後に processing_token と processing_at を設定する。
-削除済みstageなどの設定不一致では同期せず、試行回数を増やさずに理由を残す。
-processing_token が boolean の処理中フラグではなく token なのは、Job の再処理に対応するため。
-
-Job は登録時に生成した processing_token を引数として保持し、リトライ時にも同じ token を使用する。
-Job が processing_token を設定した後にプロセスごと異常中断すると、DB 上の token は残る。
-再実行された同じ Job は同じ token を持つため、処理中状態を維持したまま自分の処理を再開できる。
-別の通常同期は異なる token になるため、その間は同じ要求を処理できない。
-
-通常同期が例外処理まで戻った場合は processing 状態を解除し、Job の対象例外であれば Active Job が再試行する。
-プロセス停止などで例外処理まで戻らなかった場合だけ、processing 状態が残留する。
-
-通常同期が成功した場合、処理開始時の request_sequence が一致していれば SyncRequest を削除する。
-direct と Job は、force_attempted が false の場合だけ削除する。
-force が介入済みの場合の後処理は、rake の通常同期へ渡す。
-
-
-## 8-3. rake で通常同期する
-----------------------------------------------------------------
-
-`are_search:run_sync_requests` は、引数で指定したstageのうち、一定時間以上残っている要求を通常同期する。
-
-    bundle exec rake 'are_search:run_sync_requests[default]'
-    bundle exec rake 'are_search:run_sync_requests[default,with_external_file]'
-
-stageを指定しない場合は実行しない。
-実行には `AreSearch.rake_operation_enabled = true` が必要で、定期実行を担当する単一の環境だけで有効にする。
-同じ lock_dir を共有しない複数環境からの同時実行は想定しない。
-
-対象になる processing_token は次の2種類。
-
-    nil
-        まだ通常同期を取得していない要求。
-
-    "rake task"
-        前回の rake が通常同期中に異常中断した要求。
-        rake は同じ固定 token を使用するため、次回実行で処理を再開できる。
-
-Job / direct が使用する UUID の processing_token は、rake の通常同期では取得しない。
-
-processing_token は通常同期の排他に使用する処理主体tokenだが、
-同期結果の順序を厳密に保証するロックではない。
-同じ要求を処理中のプロセスが停止し、DBから作成済みの古い Elasticsearch データをメモリ上に保持したまま、
-別の同期が現在のDB状態を反映した後で古い処理が再開すると、一時的に古いデータで上書きする可能性がある。
-
-その間に新しいDB更新が発生していれば request_sequence は更新される。
-古い処理は開始時の request_sequence と一致する SyncRequest を削除できないため、新しい要求が残る。
-残った要求を後続の `run_sync_requests` が現在のDB状態から再同期し、Elasticsearch を補正する。
-この再回収まで含めて同期を成立させる設計であり、processing_token 単独で処理順序を保証する設計ではない。
-
-rake の通常同期は、1件ごとに次の3ブロックで処理する。
-
-### 8-3-1. 同期条件の確認と processing の取得
-
-次を確認した後、processing_token と processing_at を設定する。
-
-    現在の IndexTarget と SyncRequest のtarget名・index名が一致する
-    SyncRequest の sync_stage_name が現在の IndexTarget に定義されている
-    index marker が存在しない
-    alias が存在する
-    processing_token が nil または "rake task" である
-    request_sequence が取得時点から変わっていない
-
-target・stage設定不一致、index操作中、alias未作成、別tokenによる処理中、request_sequence変更は、
-同期対象にできない条件として false を返す。
-この段階では sync_try_count と callback_try_count は増えない。
-target・stage設定不一致、index操作中、alias未作成では last_error と last_error_at を更新する。
-
-現在の設定から削除されたstageのSyncRequestは実行せず、`sync_stage_name not found` を記録して残す。
-stage廃止時に残存要求を削除または別stageへ移行するかは、利用側で判断する。
-
-このブロック内でDB例外などが発生した場合も、同じSyncRequest行が残っていれば、
-現在行の診断情報として last_error と last_error_at を記録する。試行回数は増やさない。
-
-### 8-3-2. Elasticsearch への同期
-
-DBから対象レコードの現在状態を取得し直し、存在すれば index、存在しなければ delete する。
-
-同期開始直前に sync_try_count と last_sync_try_at を更新する。
-Elasticsearch同期で例外が発生した場合は、同じSyncRequest行が残っていれば、
-現在行の診断情報として last_error と last_error_at を記録する。
-
-処理の終了時には processing_token と processing_at の解除を試みる。
-解除に失敗した場合は例外が伝播し、processing状態が残る可能性がある。
-そのprocessing_tokenが "rake task" なら、次回の rake 通常同期が同じtokenで再開できる。
-
-### 8-3-3. SyncRequest の削除と processing の解除
-
-Elasticsearch同期と同期後callbackが成功した後、SyncRequestの削除判定と、
-残った行の試行回数・エラー情報・processing状態のリセットを同じDBトランザクション内で行う。
-
-rake は残留要求を回収する正規の復旧経路なので、force_attempted の有無にかかわらず、
-request_sequence が取得時点と一致する行を削除する。
-同期中に同じ行が更新されてrequest_sequenceが変わっていれば削除しない。
-
-このトランザクションで例外が発生した場合は、同じSyncRequest行が残っていれば、
-現在行の診断情報として last_error と last_error_at を記録する。
-処理の終了時には、現在行に残るprocessing状態を解除する。
-解除に失敗した場合は例外が伝播し、processing状態が残る可能性がある。
-"rake task" は次回の rake が再取得できるため、rake自身の異常中断をforce同期へ回さず通常同期で復旧できる。
-
-### 8-3-4. ES同期回数とcallback回数
-
-Elasticsearch同期を開始する直前に、次を更新する。
-
-    sync_try_count を1増やす
-    last_sync_try_at を現在時刻にする
-
-Elasticsearch同期が成功した後、同期後callbackを開始する直前に、次を更新する。
-
-    callback_try_count を1増やす
-    last_callback_try_at を現在時刻にする
-
-同期条件不一致、index marker、alias不存在、before sync checkがfalseの場合は、
-ES同期開始前に戻るため、これらの回数は増えない。
-
-ES同期またはcallbackで例外が発生した場合、対応する開始回数は残り、last_errorとlast_error_atを更新する。
-新しい同期要求がupsertされても試行回数はそのまま残るが、request_sequence_atが更新されるため、
-`last_sync_try_at < request_sequence_at` の要求は通常同期scopeへ再度入る。
-
-同期要求全体が正常終了し、削除判定後もSyncRequest行が残っている場合は、次を更新する。
-
-    sync_try_count = 0
-    last_sync_try_at = nil
-    callback_try_count = 0
-    last_callback_try_at = nil
-    last_completed_at = 現在時刻
-    last_error = nil
-    last_error_at = nil
-
-通常は削除判定でSyncRequest自体が削除されるため、リセット対象の行は残らない。
-force介入済みのJob/direct処理、または同期中にrequest_sequenceが更新された処理では行が残るため、この完了時刻とリセット結果が後続の回収まで残る。
-
-
-## 8-4. rake で force 同期する
-----------------------------------------------------------------
-
-force 同期は、Job / direct が UUID の processing_token を保持したまま異常中断した場合に、
-Elasticsearch の同期だけを強制的に行う補助機能。
-
-`processing_token = "rake task"` の要求は force 対象にしない。
-rakeの異常中断は、次回のrake通常同期が同じ固定tokenで再開する。
-
-`are_search:run_sync_requests` は、指定stageのうちUUIDの processing_token が残り、processing_at が一定時間以上古い要求を検出する。
-force同期でも、現在のIndexTargetとSyncRequestのtarget名・index名・stage設定が一致することを確認する。
-取得時と同じ id・processing_token が現在も残っている場合だけ、次を更新して force 同期を実行する。
-
-    force_attempted
-    last_force_try_at
-    force_try_count
-
-force は request_sequence を開始条件にしない。
-確認するのは、同期中に新しい要求が入ったかではなく、同じ Job の processing_token が残ったまま
-処理が停止しているかどうか。
-同期本体では Active Record の現在状態を取得し直して Elasticsearch へ反映する。
-
-force 同期の成功後は、SyncRequest の削除や processing 状態の解除を行わない。
-force は異常中断した Job の所有状態を引き継いで要求を完了させる処理ではなく、
-Job が停止している間の Elasticsearch を補正する処理だから。
-
-元の Job が復旧して通常同期を完了した場合、force が介入していなければ Job が SyncRequest を削除する。
-force が介入済みの場合、Job は processing 状態を解除するが行を削除せず、次の rake 通常同期へ渡す。
-その rake 通常同期が正常終了すると SyncRequest 自体が削除される。
-
-元の Job が復旧しない場合は processing 状態が残り、force 同期を上限まで再試行する。
-force_try_count が上限に達した要求や、エラーを持ったまま残る要求はメール通知の対象になる。
-
-
-## 8-5. メール通知する
-----------------------------------------------------------------
-
-`are_search:sync_limit_alert` は、通常同期や force 同期だけでは解消しなかった要求を検出する。
-
-主な通知対象。
-
-    sync_try_count が閾値に到達した要求
-    force_try_count が閾値に到達した要求
-    last_error があるまま長時間残っている要求
-
-メール通知は同期処理を変更しない。
-`last_error` は通知対象の判定に使用するが、エラー本文はメールへ含めない。詳細はDBのSyncRequestを確認する。
-SyncRequest が正常経路で削除されずに残っていることを、運用者へ知らせる最終フェーズ。
-
-
-## 8-6. 見落としやすい点
-----------------------------------------------------------------
-
-    SyncRequest は同期キーごとに基本1行だけ存在する。
-    request_sequence は、その1行が同期中に更新されたかを確認する条件。
-    processing_token は、異常中断後に同じ処理主体が再開できるようにする tokenで、厳密な順序保証ロックではない。
-    Job / direct は UUID、rake は固定値 "rake task" を使用する。
-    sync_stage_name ごとに独立したSyncRequestを持つ。
-    force 同期は、異常中断した Job / direct の代わりに SyncRequest を完了させる処理ではない。
-    force 成功後に削除や解除をしないのは、Job 異常中断時の補助機能だから。
-
-Job が通常経路で完了した場合、または force 介入後に rake の通常同期が完了した場合は、
-SyncRequest 自体が削除される。
-そのため、processing_token、force_attempted、force_try_count などを正常終了後も個別に整合させ続ける
-状態機械ではない。
-
-これらの値が残っている場合は、まだ正常な終了経路へ到達していないことを表す。
-最終的には rake の通常同期による行削除、またはメール通知を受けた運用者の確認へ進む。
-
-# 9. 利用側定義名
-
-AreSearch は、利用側が定義する次の名前を共通形式で検査する。
+AreSearch は次の名前を共通形式で検査する。
 
     index_prefix
     are_search_ar_table_name
@@ -925,7 +460,7 @@ AreSearch は、利用側が定義する次の名前を共通形式で検査す�
     article__body
     article-body
 
-型は定義箇所ごとに異なる。
+型。
 
     index_prefix
         String。空文字列は使用できない。
@@ -934,13 +469,13 @@ AreSearch は、利用側が定義する次の名前を共通形式で検査す�
         String。
 
     index_target_name
-        Symbol。名前形式はSymbolを文字列化して検査する。
+        Symbol。
 
     field_name
-        Symbol。名前形式はSymbolを文字列化して検査する。
+        Symbol。
 
     sync_stage_name
         String。
 
-Searchableモデルの静的定義は、最初に `are_search_index_targets` を取得するときに検査する。
+Searchableモデルの静的定義は最初に `are_search_index_targets` を取得するときに検査する。
 `are_search:check_all_models` でも同じ定義検査を行う。

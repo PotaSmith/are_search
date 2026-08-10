@@ -2,9 +2,9 @@
 AreSearch セットアップガイド
 ================================================================
 
-このファイルは、AreSearch を Rails アプリへ導入し、最初の検索を実行するまでを扱う。
-検索方法は guide_usage.txt、IndexTargetとsync stageは guide_index_targets_and_stages.txt、
-管理操作は guide_operations.txt、設定一覧は guide_reference.txt を参照する。
+このガイドは、AreSearch を Rails アプリへ導入し、最初の index を作成して検索するまでを扱う。
+IndexTarget と sync stage の設計は guide_index_targets_and_stages.txt、検索オプションは guide_usage.txt、
+運用操作は guide_operations.txt、設定と公開APIの一覧は guide_reference.txt を参照する。
 
 
 # 1. インストール
@@ -25,21 +25,18 @@ Gemfile に追加する。
     config/initializers/are_search.rb
     db/migrate/xxxxxxxxxxxxxx_create_are_search_tables.rb
 
------- 注意 ------
-AreSearch は、標準のDB固有処理としてPostgreSQL向け実装を使用する。
+AreSearch は標準のDB固有処理として PostgreSQL 向け実装を使用する。
 DB固有処理は `AreSearch.database_specific` で差し替え可能。
 
-are_search_sync_requests と are_search_index_markers は、検索対象モデルと同じデータベースに作成する。
-検索対象レコードの変更と sync request の作成を同一トランザクションに含めるため、are_search_sync_requests を別データベースへ分離しない。
-同一データベースにある限り、検索対象レコードの変更だけが commit され、対応する sync request が存在しない状態は、Rails または使用するデータベースのトランザクション機能自体に不具合がない限り、ありえない。
-
-are_search_index_markers も同じデータベースに置き、すべてのアプリケーションプロセスから同じ index 操作状態を参照できるようにする。
+`are_search_sync_requests` と `are_search_index_markers` は検索対象モデルと同じデータベースに作成する。
+通常の保存・touch・削除でDB更新と同期要求を同じトランザクションに含めるため、
+`are_search_sync_requests` を別データベースへ分離しない。
 
 
 # 2. イニシャライザ
 ================================================================
 
-config/initializers/are_search.rb で Elasticsearch クライアントと index_prefix を設定する。
+`config/initializers/are_search.rb` で Elasticsearch クライアントと `index_prefix` を設定する。
 
     AreSearch.setup(
         index_prefix: "#{ConfVars.get(:are_search, :index_prefix)}_#{Rails.env}"
@@ -62,23 +59,23 @@ config/initializers/are_search.rb で Elasticsearch クライアントと index_
         )
     end
 
-index_prefix は環境間で重複しない値にする。
+`index_prefix` は環境間で重複しない値にする。
+
 index target の alias 名は以下の形式になる。
 
     {index_prefix}__{are_search_ar_table_name}__{index_target_name}
 
-物理 index 名は alias 名の後ろへ同じ区切り文字で timestamp を追加する。
+物理 index 名は alias 名の後ろへ timestamp を追加する。
 
     {index_prefix}__{are_search_ar_table_name}__{index_target_name}__{timestamp}
 
-index_prefix、are_search_ar_table_name、index_target_name は、
-guide_reference.txt の「利用側定義名」にある共通形式に従う。
-index_prefix に空文字列は指定できない。
+`index_prefix`、`are_search_ar_table_name`、`index_target_name` の名前制約は guide_reference.txt を参照する。
+`index_prefix` に空文字列は指定できない。
 
 旧形式の index 名から変更する場合は、未処理 sync request を空にしてから新形式の alias へ reindex する。
 旧形式の alias と物理 index は新形式の clean up 対象にならないため、切り替え確認後に手動で削除する。
 
-setup ブロックは Elasticsearch::Client のインスタンスを返す。
+setup ブロックは `Elasticsearch::Client` のインスタンスを返す。
 任意設定は guide_reference.txt を参照する。
 
 Elasticsearch::Client.new の設定:
@@ -90,12 +87,7 @@ Elasticsearch::Client.new の設定:
 # 3. モデル定義
 ================================================================
 
-検索対象モデルへ AreSearch::Searchable を include し、mappings、sync stage、投入データを定義する。
-
-index 名に使う Active Record 側の識別名は `are_search_ar_table_name` で取得する。
-既定では `table_name` を返す。変更する場合は、Searchable を include した継承系統の上位モデルでオーバーライドする。
-STI の子クラスではオーバーライドできない。
-戻り値は、guide_reference.txt の「利用側定義名」にある共通形式に従う String とする。
+検索対象モデルへ `AreSearch::Searchable` を include し、mappings、sync stage、投入データを定義する。
 
     class Article < ApplicationRecord
         include AreSearch::Searchable
@@ -153,23 +145,33 @@ STI の子クラスではオーバーライドできない。
         end
     end
 
-are_search_index_mappings は index_target_name ごとの定義を返す。
-index_target_name は、利用側定義名の共通形式に従う Symbol とする。
-各 target には index_settings と max_result_window が必要。
+`are_search_ar_table_name` は index 名に使用する Active Record 側の識別名。
+既定では `table_name` を返す。
+変更する場合は Searchable を include した継承系統の上位モデルでオーバーライドする。
+STI の子クラスではオーバーライドできない。
 
-are_search_all_sync_stage_names は、各targetで使用するsync_stage_nameを実行順のArrayで返す。
-sync_stage_name は、利用側定義名の共通形式に従う String とする。
-
-are_search_index_data は index_target_name と sync_stage_name を受け取り、その組み合わせで投入する完成ドキュメントのHashを返す。
-properties と data のトップレベルキーは揃える。
-
-IndexTargetとsync stageの詳細は guide_index_targets_and_stages.txt を参照する。
+モデル定義の各APIの詳細は guide_reference.txt、IndexTarget と sync stage の使い分けは
+guide_index_targets_and_stages.txt を参照する。
 
 
-# 4. 初回 reindex
+# 4. モデル設定を確認する
 ================================================================
 
-index 操作を実行するプロセスでは、以下を有効にする。
+Searchable を include している全モデルを確認する。
+
+    bundle exec rake are_search:check_all_models
+
+正常な場合は以下を出力する。
+
+    全モデル正常
+
+初回 reindex 前にこの確認を行う。
+
+
+# 5. 初回 reindex
+================================================================
+
+index 操作を実行するプロセスでは以下を有効にする。
 
     AreSearch.index_operation_enabled = true
 
@@ -179,16 +181,14 @@ index 操作を実行するプロセスでは、以下を有効にする。
         .are_search_index_target(:default)
         .are_search_reindex(stage_position: :first)
 
-`stage_position` は `are_search_all_sync_stage_names` の先頭または末尾を選ぶ。
-単一stageでは `:first` と `:last` は同じstageになる。
+初回 reindex 前の検索結果は search_failure_mode に依存する。
+複数 target がある場合は target ごとに実行する。
 
-初回 reindex 前の検索結果は空になる。
-複数 target がある場合は、target ごとに実行する。
-
-index 操作を行わないプロセスでは、index_operation_enabled を false にする。
+`index_operation_enabled` と reindex の詳細は guide_reference.txt と guide_operations.txt、
+stage の選択方法は guide_index_targets_and_stages.txt を参照する。
 
 
-# 5. 検索
+# 6. 最初の検索
 ================================================================
 
     article_index = Article.are_search_index_target(:default)
@@ -224,22 +224,10 @@ index 操作を行わないプロセスでは、index_operation_enabled を fals
     @articles = result.records
     @total = result.records.total_count
 
-検索オプションと検索結果の詳細は guide_usage.txt を参照する。
+検索オプションと検索結果は guide_usage.txt を参照する。
 
 
-# 6. モデル設定の確認
-================================================================
-
-Searchable を include している全モデルを確認する。
-
-    bundle exec rake are_search:check_all_models
-
-正常な場合は以下を出力する。
-
-    全モデル正常
-
-
-# 7. サンプルファイル生成
+# 7. 運用サンプルを生成する
 ================================================================
 
 利用側で編集して使用する運用ファイルのサンプルを生成する。
@@ -270,4 +258,5 @@ BulkIndexer サンプルの配置、設定、実行方法は guide_bulk_indexer.
     guide_usage.txt                     検索方法と検索結果
     guide_index_targets_and_stages.txt  IndexTargetとsync stage
     guide_operations.txt                reindex、同期、clean up、障害対応
-    guide_reference.txt                 設定、データ定義、内部動作
+    guide_bulk_indexer.txt              大規模データの投入と切り替え
+    guide_reference.txt                 設定、データ定義、公開API

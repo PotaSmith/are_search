@@ -215,6 +215,26 @@ RSpec.describe AreSearch::BulkIndexer::Logger do
 
             expect(logger.get_all_keys).to eq(["1", "2", "3", "4"])
         end
+        it "recoverで解決済みのsuccessとdata_skipのkeyだけを返す" do
+            File.write(
+                success_file_path,
+                logger_result_line("1", "success"),
+            )
+            File.write(
+                failure_file_path,
+                logger_result_line("2", "fail"),
+            )
+            File.write(
+                data_skip_file_path,
+                logger_result_line("3", "data_skip"),
+            )
+            File.write(
+                data_fail_file_path,
+                logger_result_line("4", "data_fail"),
+            )
+
+            expect(logger.get_not_fail_keys).to eq(["1", "3"])
+        end
     end
 
     describe "#rename_all" do
@@ -290,4 +310,3 @@ RSpec.describe AreSearch::BulkIndexer::Logger do
         end
     end
 end
-

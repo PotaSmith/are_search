@@ -40,8 +40,7 @@ module AreSearch
             when :last
                 sync_stage_name = sync_stage_names.last
             else
-                raise ArgumentError,
-                    "stage_position は :first または :last を指定してください"
+                raise ArgumentError, "stage_position は :first または :last を指定してください"
             end
 
             AreSearch::Reindexer.reindex_index_target(self, sync_stage_name)
@@ -107,12 +106,12 @@ module AreSearch
             failed_ids = []
 
             if total != 0 && defined?(::ProgressBar)
-                bar = ::ProgressBar.new(total)
+                bar = ::ProgressBar.new(total) if ::ProgressBar.respond_to?(:new)
             end
 
             index_target.model_class.find_in_batches(batch_size: AreSearch.batch_size) do |batch|
                 body, ids = build_bulk_body(index_target, sync_stage_name, batch, physical_index_name)
-                bar&.increment!(batch.size)
+                bar.increment!(batch.size) if bar.respond_to?(:increment!)
 
                 next if body.empty?
 

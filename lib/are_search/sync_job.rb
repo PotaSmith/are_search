@@ -5,16 +5,17 @@ module AreSearch
 
         queue_as :are_search
 
-        # 一時的失敗（ESサーバ起因の 5xx・タイムアウト系、および接続・通信系）のみ
-        # リトライする。ServerError は HTTP 5xx 等のサーバエラーを、Faraday::Error は
-        # 接続失敗・通信タイムアウト等をそれぞれまとめて捕捉する。
         # データ起因の永続的失敗（are_search_index_data の不整合等）はここにマッチせず、
         # 1回の失敗で are_search_sync_requests に記録され、rake タスク
         # （run_sync_requests）のフォールバックに委ねる。
         # attempts: 3 は初回実行を含む総試行回数（= リトライ2回）。
         retry_on(
-            Elastic::Transport::Transport::ServerError,
-            Faraday::Error,
+            Elastic::Transport::Transport::Errors::RequestTimeout,
+            Elastic::Transport::Transport::Errors::TooManyRequests,
+            Elastic::Transport::Transport::Errors::InternalServerError,
+            Elastic::Transport::Transport::Errors::BadGateway,
+            Elastic::Transport::Transport::Errors::ServiceUnavailable,
+            Elastic::Transport::Transport::Errors::GatewayTimeout,
             wait: :polynomially_longer,
             attempts: 3,
         )
