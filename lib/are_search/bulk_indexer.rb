@@ -116,7 +116,11 @@ module AreSearch
             )
 
             if get_recover_keys.empty?
-                raise AreSearch::Error, "recover対象がありません"
+                if get_recover_target_keys.size > 0
+                    @logger.rename_all([@bulk_failure_target_file, @data_fail_target_file])
+                else
+                    raise AreSearch::Error, "recover対象がありません"
+                end
             end
 
             relation = build_recover_relation
@@ -322,10 +326,7 @@ module AreSearch
 
         # 前回の失敗IDから、今回の結果ファイルに記録済みのIDを除いたものを対象にする。
         def get_recover_keys
-            failure_keys = @logger.read_result_keys(@bulk_failure_target_file, Logger::FAILURE_RESULT)
-            data_fail_keys = @logger.read_result_keys(@data_fail_target_file,  Logger::DATA_FAIL_RESULT)
-
-            target_keys = (failure_keys + data_fail_keys).uniq
+            target_keys = get_recover_target_keys
 
             if target_keys.length > MAX_RECOVER_COUNT
                 raise AreSearch::Error, "recover対象が多すぎます: #{target_keys.length} / 上限 #{MAX_RECOVER_COUNT}"
@@ -334,6 +335,13 @@ module AreSearch
             recover_keys = target_keys - @logger.get_not_fail_keys
 
             recover_keys
+        end
+
+        def get_recover_target_keys
+            failure_keys = @logger.read_result_keys(@bulk_failure_target_file, Logger::FAILURE_RESULT)
+            data_fail_keys = @logger.read_result_keys(@data_fail_target_file,  Logger::DATA_FAIL_RESULT)
+
+            (failure_keys + data_fail_keys).uniq
         end
 
         class Buffer
