@@ -92,7 +92,7 @@ module AreSearch
             processed_count = 0
 
             requests.find_each do |sync_request|
-                # processing のまま返ってこない同期を force で回収する。
+                # processing のまま返ってこない同期を force で強制同期する。ただし、復旧はしない。
                 # request_sequence は条件に入れない。
                 # 詰まり中に同じ行が upsert されると request_sequence は更新されるが、
                 # force の対象は「現在この sync request 行が詰まっていること」だから。

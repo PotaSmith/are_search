@@ -26,17 +26,17 @@ Gemfile に追加する。
     db/migrate/xxxxxxxxxxxxxx_create_are_search_tables.rb
 
 AreSearch は標準のDB固有処理として PostgreSQL 向け実装を使用する。
-DB固有処理は `AreSearch.database_specific` で差し替え可能。
+DB固有処理は AreSearch.database_specific で差し替え可能。
 
-`are_search_sync_requests` と `are_search_index_markers` は検索対象モデルと同じデータベースに作成する。
+are_search_sync_requests と are_search_index_markers は検索対象モデルと同じデータベースに作成する。
 通常の保存・touch・削除でDB更新と同期要求を同じトランザクションに含めるため、
-`are_search_sync_requests` を別データベースへ分離しない。
+are_search_sync_requests を別データベースへ分離しない。
 
 
 # 2. イニシャライザ
 ================================================================
 
-`config/initializers/are_search.rb` で Elasticsearch クライアントと `index_prefix` を設定する。
+config/initializers/are_search.rb で Elasticsearch クライアントと index_prefix を設定する。
 
     AreSearch.setup(
         index_prefix: "#{ConfVars.get(:are_search, :index_prefix)}_#{Rails.env}"
@@ -59,7 +59,7 @@ DB固有処理は `AreSearch.database_specific` で差し替え可能。
         )
     end
 
-`index_prefix` は環境間で重複しない値にする。
+index_prefix は環境間で重複しない値にする。
 
 index target の alias 名は以下の形式になる。
 
@@ -69,13 +69,13 @@ index target の alias 名は以下の形式になる。
 
     {index_prefix}__{are_search_ar_table_name}__{index_target_name}__{timestamp}
 
-`index_prefix`、`are_search_ar_table_name`、`index_target_name` の名前制約は guide_reference.txt を参照する。
-`index_prefix` に空文字列は指定できない。
+index_prefix、are_search_ar_table_name、index_target_name の名前制約は guide_reference.txt を参照する。
+index_prefix に空文字列は指定できない。
 
 旧形式の index 名から変更する場合は、未処理 sync request を空にしてから新形式の alias へ reindex する。
 旧形式の alias と物理 index は新形式の clean up 対象にならないため、切り替え確認後に手動で削除する。
 
-setup ブロックは `Elasticsearch::Client` のインスタンスを返す。
+setup ブロックは Elasticsearch::Client のインスタンスを返す。
 任意設定は guide_reference.txt を参照する。
 
 Elasticsearch::Client.new の設定:
@@ -87,7 +87,7 @@ Elasticsearch::Client.new の設定:
 # 3. モデル定義
 ================================================================
 
-検索対象モデルへ `AreSearch::Searchable` を include し、mappings、sync stage、投入データを定義する。
+検索対象モデルへ AreSearch::Searchable を include し、mappings、sync stage、投入データを定義する。
 
     class Article < ApplicationRecord
         include AreSearch::Searchable
@@ -145,8 +145,8 @@ Elasticsearch::Client.new の設定:
         end
     end
 
-`are_search_ar_table_name` は index 名に使用する Active Record 側の識別名。
-既定では `table_name` を返す。
+are_search_ar_table_name は index 名に使用する Active Record 側の識別名。
+既定では table_name を返す。
 変更する場合は Searchable を include した継承系統の上位モデルでオーバーライドする。
 STI の子クラスではオーバーライドできない。
 
@@ -184,7 +184,7 @@ index 操作を実行するプロセスでは以下を有効にする。
 初回 reindex 前の検索結果は search_failure_mode に依存する。
 複数 target がある場合は target ごとに実行する。
 
-`index_operation_enabled` と reindex の詳細は guide_reference.txt と guide_operations.txt、
+index_operation_enabled と reindex の詳細は guide_reference.txt と guide_operations.txt、
 stage の選択方法は guide_index_targets_and_stages.txt を参照する。
 
 

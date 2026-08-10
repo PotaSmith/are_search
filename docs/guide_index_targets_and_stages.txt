@@ -26,13 +26,13 @@ AreSearch では同期先とデータ生成経路を分けて考える。
         sync stage を分ける。
 
 stage は部分更新のフィールド集合ではない。
-各stageの `are_search_index_data` は、そのstageで保存するドキュメント全体を返す。
+各stageの are_search_index_data は、そのstageで保存するドキュメント全体を返す。
 
 
 # 2. IndexTarget を定義する
 ================================================================
 
-IndexTarget は `are_search_index_mappings` の `index_target_name` ごとに作成される。
+IndexTarget は are_search_index_mappings の index_target_name ごとに作成される。
 
     def self.are_search_index_mappings
         {
@@ -114,7 +114,7 @@ sync stage は、同じ IndexTarget へ投入するデータ生成経路を識�
 # 4. 使用可能な全stageを指定する
 ================================================================
 
-全stageを `are_search_all_sync_stage_names` で定義する。このメソッドは必須。
+全stageを are_search_all_sync_stage_names で定義する。このメソッドは必須。
 
     def self.are_search_all_sync_stage_names
         {
@@ -123,7 +123,7 @@ sync stage は、同じ IndexTarget へ投入するデータ生成経路を識�
         }
     end
 
-Array の順序は reindex で `:first` または `:last` を選ぶときに使用する。
+Array の順序は reindex で :first または :last を選ぶときに使用する。
 stage間の実行順を必要とする場合は、後述する before check / after callback または rake のstage分離を使用する。
 
 運用中にstageを削除する場合は、そのstageの既存SyncRequestが残っていないことを確認してから行う。
@@ -132,8 +132,8 @@ stage間の実行順を必要とする場合は、後述する before check / af
 # 5. 保存時にSyncRequestを作るstageを選ぶ
 ================================================================
 
-保存・touch・削除時に sync request を作成するstageを `are_search_sync_stage_names_on_enqueue` で指定する。
-省略した場合は `are_search_all_sync_stage_names` と同じ設定を使用する。
+保存・touch・削除時に sync request を作成するstageを are_search_sync_stage_names_on_enqueue で指定する。
+省略した場合は are_search_all_sync_stage_names と同じ設定を使用する。
 
 全stageの要求を作る場合は定義不要。
 一部だけ作る場合。
@@ -155,8 +155,8 @@ stage間の実行順を必要とする場合は、後述する before check / af
 # 6. after_commit で開始するstageを選ぶ
 ================================================================
 
-commit後に直接同期またはJob登録を開始するstageを `are_search_sync_stage_names_on_after_commit` で指定する。
-省略した場合は `are_search_all_sync_stage_names` と同じ設定を使用する。
+commit後に直接同期またはJob登録を開始するstageを are_search_sync_stage_names_on_after_commit で指定する。
+省略した場合は are_search_all_sync_stage_names と同じ設定を使用する。
 
     def self.are_search_sync_stage_names_on_after_commit
         {
@@ -171,7 +171,7 @@ commit後に直接同期またはJob登録を開始するstageを `are_search_sy
     targetを省略した場合、そのtargetではafter_commitから同期を開始しない
     空Arrayを指定した場合も、そのtargetでは同期を開始しない
 
-開始方法は `AreSearch.after_commit_mode` に従う。詳細は guide_reference.txt を参照する。
+開始方法は AreSearch.after_commit_mode に従う。詳細は guide_reference.txt を参照する。
 
 重いstageをrakeへ残したい場合は、enqueue対象には含め、after_commit対象から外す。
 
@@ -179,7 +179,7 @@ commit後に直接同期またはJob登録を開始するstageを `are_search_sy
 # 7. stage ごとの投入データを定義する
 ================================================================
 
-`are_search_index_data` の基本仕様は guide_reference.txt を参照する。
+are_search_index_data の基本仕様は guide_reference.txt を参照する。
 stage ごとにデータ生成を分ける例。
 
     def are_search_index_data(index_target_name, sync_stage_name)
@@ -202,7 +202,7 @@ stage ごとにデータ生成を分ける例。
     end
 
 
-分岐が多くなる場合は、`are_search_index_data` を分岐だけにしてデータ生成を通常のモデルメソッドへ分けられる。
+分岐が多くなる場合は、are_search_index_data を分岐だけにしてデータ生成を通常のモデルメソッドへ分けられる。
 
     def are_search_index_data(index_target_name, sync_stage_name)
         case [index_target_name, sync_stage_name]
@@ -232,20 +232,20 @@ stage ごとにデータ生成を分ける例。
         }
     end
 
-`std_data` や `huge_data` は AreSearch のAPIではない。利用側で自由に命名できる。
+std_data や huge_data は AreSearch のAPIではない。利用側で自由に命名できる。
 
 
 # 8. target・stage ごとに index 対象を制御する
 ================================================================
 
-対象レコードを target・stage ごとに index するか切り替える場合は `are_search_indexable?` を使用する。
+対象レコードを target・stage ごとに index するか切り替える場合は are_search_indexable? を使用する。
 詳細は guide_reference.txt を参照する。
 
 
 # 9. stage の前後条件を指定できる
 ================================================================
 
-stage間の待機条件が必要な場合は `are_search_before_sync_check` を使用する。
+stage間の待機条件が必要な場合は are_search_before_sync_check を使用する。
 デフォルトは true。
 
     def self.are_search_before_sync_check(ar_instance_key, index_target, sync_request)
@@ -260,9 +260,9 @@ stage間の待機条件が必要な場合は `are_search_before_sync_check` を�
         true
     end
 
-一時的に同期を待機させたい場合は false を返す。後続の `run_sync_requests` で再判定されるため、待機条件として利用できる。
+一時的に同期を待機させたい場合は false を返す。後続の run_sync_requests で再判定されるため、待機条件として利用できる。
 
-同期完了後に別stageの要求を作る場合は `are_search_after_sync_callback` を使用する。
+同期完了後に別stageの要求を作る場合は are_search_after_sync_callback を使用する。
 デフォルトは何もしない。
 
     def self.are_search_after_sync_callback(record, index_target, sync_request)
@@ -275,7 +275,7 @@ stage間の待機条件が必要な場合は `are_search_before_sync_check` を�
         )
     end
 
-`are_search_upsert_sync_request` で作成したstageは `are_search:run_sync_requests` などで回収する。
+are_search_upsert_sync_request で作成したstageは are_search:run_sync_requests などで回収する。
 force同期は異常中断時の補助処理として使用し、stage連鎖を進める用途には使用しない。
 
 
@@ -283,10 +283,10 @@ force同期は異常中断時の補助処理として使用し、stage連鎖を�
 ================================================================
 
 reindex は1つの IndexTarget に対して1つのstageを使用する。
-`stage_position: :first` は先頭stage、`:last` は末尾stageを使用する。
+stage_position: :first は先頭stage、:last は末尾stageを使用する。
 
-`are_search:reindex_all_for_es_version_up` は各IndexTargetの末尾stageを使用するため、
-最終状態を作るstageを `are_search_all_sync_stage_names` の末尾に置く。
+are_search:reindex_all_for_es_version_up は各IndexTargetの末尾stageを使用するため、
+最終状態を作るstageを are_search_all_sync_stage_names の末尾に置く。
 
 reindex の実行方法は guide_operations.txt を参照する。
 
@@ -294,7 +294,7 @@ reindex の実行方法は guide_operations.txt を参照する。
 # 11. rake でstageを分けて回収する
 ================================================================
 
-`are_search:run_sync_requests` は指定したstage名で要求を回収する。
+are_search:run_sync_requests は指定したstage名で要求を回収する。
 同じstage名を複数モデル・targetで使用している場合、それらは同じ実行で回収される。
 
 stageごとの回収実行方法は guide_operations.txt を参照する。
@@ -337,5 +337,5 @@ stageごとの回収実行方法は guide_operations.txt を参照する。
         end
     end
 
-`are_search_sync_stage_names_on_enqueue` と `are_search_sync_stage_names_on_after_commit` は省略できる。
+are_search_sync_stage_names_on_enqueue と are_search_sync_stage_names_on_after_commit は省略できる。
 省略時はどちらも全stageを対象にする。

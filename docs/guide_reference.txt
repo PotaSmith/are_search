@@ -10,7 +10,7 @@ AreSearch リファレンス
 # 1. 任意設定
 ================================================================
 
-`config/initializers/are_search.rb` の `AreSearch.setup` 後に指定できる。
+config/initializers/are_search.rb の AreSearch.setup 後に指定できる。
 
     AreSearch.sync_request_delay             = 120
     AreSearch.max_sync_try_count             = 100
@@ -29,14 +29,14 @@ AreSearch リファレンス
 ## 1-1. sync_request_delay
 ----------------------------------------------------------------
 
-`run_sync_requests` が通常の再同期対象にするまでの待機秒数。
+run_sync_requests が通常の再同期対象にするまでの待機秒数。
 デフォルトは120秒。
 
 
 ## 1-2. max_sync_try_count
 ----------------------------------------------------------------
 
-`run_sync_requests` が通常同期を試す上限。
+run_sync_requests が通常同期を試す上限。
 デフォルトは100回。
 
 
@@ -50,7 +50,7 @@ AreSearch リファレンス
 ## 1-4. max_force_try_count
 ----------------------------------------------------------------
 
-`run_sync_requests` が強制同期を試す上限。
+run_sync_requests が強制同期を試す上限。
 デフォルトは5回。
 
 
@@ -66,7 +66,7 @@ flock ファイルの保存先。
     sync/sync.lock
     index/{index_alias_name}.lock
 
-複数プロセスで同じ排他を使用する場合は同じ `lock_dir` を参照できるようにする。
+複数プロセスで同じ排他を使用する場合は同じ lock_dir を参照できるようにする。
 
 
 ## 1-6. index_operation_enabled
@@ -83,13 +83,13 @@ index操作を行うプロセスだけ true にする。
 ## 1-7. rake_operation_enabled
 ----------------------------------------------------------------
 
-sync request を回収する `are_search:run_sync_requests` の実行を許可する。
+sync request を回収する are_search:run_sync_requests の実行を許可する。
 デフォルトは false。
 
     AreSearch.rake_operation_enabled = true
 
 定期実行を担当する単一の環境だけ true にする。
-共有されていない `lock_dir` を使用する複数環境からの同時実行は想定しない。
+共有されていない lock_dir を使用する複数環境からの同時実行は想定しない。
 
 
 ## 1-8. after_commit_mode
@@ -107,7 +107,7 @@ DB commit 後の同期開始方法。
         after_commit では同期せず、run_sync_requests に任せる。
 
 どのモードでも通常の保存・削除時には sync request が記録される。
-失敗した要求は `run_sync_requests` で再処理できる。
+失敗した要求は run_sync_requests で再処理できる。
 
 
 ## 1-9. batch_size
@@ -131,7 +131,7 @@ index 作成時に Elasticsearch の settings へ渡す analyzer 設定。
     cjk_index_analyzer
     cjk_search_analyzer
 
-変更する場合は `are_search_index_mappings` から参照する analyzer をすべて定義する。
+変更する場合は are_search_index_mappings から参照する analyzer をすべて定義する。
 変更後は対象targetの reindex が必要。
 
 
@@ -157,18 +157,18 @@ index 作成時に Elasticsearch の settings へ渡す analyzer 設定。
     index不存在
         AreSearch::SearchIndexNotFound
 
-生成される initializer は development 環境で `:raise`、それ以外で `:empty_result` を設定する。
+生成される initializer は development 環境で :raise、それ以外で :empty_result を設定する。
 
 
 ## 1-12. search_body_policy
 ----------------------------------------------------------------
 
 Elasticsearchへ送信する検索bodyと mapping のフィールド名を検査する policy。
-デフォルトは `AreSearch::ScriptDenySearchBodyPolicy`。
+デフォルトは AreSearch::ScriptDenySearchBodyPolicy。
 
-標準policyは `script`、`script_*`、`*_script` に一致するキーを拒否する。
+標準policyは script、script_*、*_script に一致するキーを拒否する。
 
-差し替える場合は `AreSearch::SearchBodyPolicy` を継承する。
+差し替える場合は AreSearch::SearchBodyPolicy を継承する。
 
     class ApplicationSearchBodyPolicy < AreSearch::SearchBodyPolicy
         def self.valid?(es_params)
@@ -182,14 +182,14 @@ Elasticsearchへ送信する検索bodyと mapping のフィールド名を検査
 
     AreSearch.search_body_policy = ApplicationSearchBodyPolicy
 
-`valid?` は検索body全体、`invalid_key?` は mapping のフィールド名を検査する。
+valid? は検索body全体、invalid_key? は mapping のフィールド名を検査する。
 
 
 ## 1-13. search_param_policy
 ----------------------------------------------------------------
 
 外部入力として扱う検索パラメータの値を検査する policy。
-デフォルトは `AreSearch::ParamLengthSearchParamPolicy`。
+デフォルトは AreSearch::ParamLengthSearchParamPolicy。
 
 標準policyの上限。
 
@@ -217,13 +217,13 @@ Elasticsearchへ送信する検索bodyと mapping のフィールド名を検査
 
     AreSearch.search_param_policy = ApplicationSearchParamPolicy
 
-false を返した値は `AreSearch::InvalidSearchOption` として扱う。
+false を返した値は AreSearch::InvalidSearchOption として扱う。
 
 
 # 2. index_settings
 ================================================================
 
-`index_settings` は `are_search_index_mappings` の target ごとに指定する。
+index_settings は are_search_index_mappings の target ごとに指定する。
 定義例は「3. are_search_index_mappings」を参照する。
 Elasticsearch の index 設定を指定できる。
 
@@ -234,14 +234,14 @@ Elasticsearch の index 設定を指定できる。
 page / per_page で取得できる範囲の上限。
 複数target検索では対象targetの最小値を使用する。
 
-page と per_page から算出した開始位置が `max_result_window` 以上の場合は検索パラメータ不正になる。
+page と per_page から算出した開始位置が max_result_window 以上の場合は検索パラメータ不正になる。
 設定変更後は reindex が必要。
 
 
 # 3. are_search_index_mappings
 ================================================================
 
-クラスメソッドで `index_target_name` ごとの定義を返す。
+クラスメソッドで index_target_name ごとの定義を返す。
 
     def self.are_search_index_mappings
         {
@@ -265,7 +265,7 @@ page と per_page から算出した開始位置が `max_result_window` 以上�
     _source.enabled に false は指定できない
     field_name は検索body policyでも検査する
 
-元のフィールド値を `_source` 以外から取得する機能で使用する場合は `store: true` を指定できる。
+元のフィールド値を _source 以外から取得する機能で使用する場合は store: true を指定できる。
 
     body: {
         type:  "text",
@@ -341,11 +341,22 @@ stageを使用する直接操作。
     )
 
 
+## 6-1. index 操作の戻り値
+----------------------------------------------------------------
+
+are_search_reindex、are_search_clean_up、are_search_with_index_guard の戻り値は結果を表す Hash。
+
+    result       成否。:success または :not_success。
+    message      失敗理由。
+    failed_ids   失敗したレコードID。対象操作でのみ含まれる。
+    stop_phase   停止した処理段階。成功時は nil。
+    done_phases  完了した処理段階。
+
 # 7. コールバックを通らない更新用API
 ================================================================
 
-通常saveと同じ同期経路へ乗せる場合は、DB更新と `are_search_enqueue_sync_request` を同じトランザクション内で行い、
-commit後に `are_search_after_commit` を呼ぶ。
+通常saveと同じ同期経路へ乗せる場合は、DB更新と are_search_enqueue_sync_request を同じトランザクション内で行い、
+commit後に are_search_after_commit を呼ぶ。
 
     article = Article.find(id)
 
@@ -360,7 +371,7 @@ commit後に `are_search_after_commit` を呼ぶ。
 
     article.are_search_after_commit
 
-`update_all`、`delete_all`、`insert_all`、`upsert_all` など複数件を変更する場合は、対象レコードごとに同期要求を作成するか、
+update_all、delete_all、insert_all、upsert_all など複数件を変更する場合は、対象レコードごとに同期要求を作成するか、
 件数に応じて reindex を使用する。
 
 
@@ -379,10 +390,10 @@ commit後に `are_search_after_commit` を呼ぶ。
         :done
     end
 
-実行後は `result[:result]` を確認する。
+実行後は result[:result] を確認する。
 
-`operation` は状態確認時に処理を識別するための名前として指定する。
-この処理には `AreSearch.index_operation_enabled = true` が必要。
+operation は状態確認時に処理を識別するための名前として指定する。
+この処理には AreSearch.index_operation_enabled = true が必要。
 詳細な運用例は guide_operations.txt を参照する。
 
 
@@ -423,7 +434,7 @@ sync request を経由しないため、通常の再試行経路が必要な処�
 
     AreSearch.delete_physical_index!(physical_index_name)
 
-`AreSearch.index_operation_enabled = true` が必要。
+AreSearch.index_operation_enabled = true が必要。
 通常は clean up を使用し、手動削除は状態を確認したうえで行う。
 
 
@@ -477,5 +488,18 @@ AreSearch は次の名前を共通形式で検査する。
     sync_stage_name
         String。
 
-Searchableモデルの静的定義は最初に `are_search_index_targets` を取得するときに検査する。
-`are_search:check_all_models` でも同じ定義検査を行う。
+Searchableモデルの静的定義は最初に are_search_index_targets を取得するときに検査する。
+are_search:check_all_models でも同じ定義検査を行う。
+
+# 11. SyncRequest の状態項目
+================================================================
+
+are_search_sync_requests の主な状態項目。
+
+    request_sequence / request_sequence_at      同期要求の世代とその時刻。
+    processing_token / processing_at            処理中を示す識別値とその時刻。
+    sync_try_count / last_sync_try_at            通常同期の試行回数と最終試行時刻。
+    callback_try_count / last_callback_try_at    同期後callbackの試行回数と最終試行時刻。
+    last_completed_at                            最後に同期要求全体が完了した時刻。
+    force_attempted / force_try_count / last_force_try_at  force同期の有無、試行回数、最終試行時刻。
+    last_error / last_error_at                    最後のエラー内容とその記録時刻。

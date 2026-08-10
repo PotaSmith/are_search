@@ -40,13 +40,14 @@ marker が存在する、alias が存在しない、または状態確認に失�
 
 Searchable を継承した子クラスからは実行せず、継承系統の最上位モデルの IndexTarget で実行する。
 
-実行後は `result[:result]` が `:success` であることを確認する。
-失敗した場合は返された診断情報を確認し、必要に応じて `are_search:check_index_status` で index の状態を確認する。
+実行後は result[:result] が :success であることを確認する。
+失敗した場合は返された診断情報を確認し、必要に応じて are_search:check_index_status で index の状態を確認する。
+戻り値の各項目は guide_reference.txt の「index 操作の戻り値」を参照する。
 reindex 中の検索は切り替え前の alias を使用する。
 失敗時に作成された物理 index が残った場合は、原因確認後に clean up または手動削除する。
 
 mappings、analyzer、index_settings の変更を反映するには reindex が必要。
-`AreSearch.batch_size` の詳細は guide_reference.txt を参照する。
+AreSearch.batch_size の詳細は guide_reference.txt を参照する。
 
 
 ## 2-1. Elasticsearch バージョンアップ前の全 reindex
@@ -59,7 +60,7 @@ mappings、analyzer、index_settings の変更を反映するには reindex が�
     are_search_sync_requests に未処理レコードが残っている
     AreSearch.index_prefix 配下に alias 未接続の index がある
 
-対象 index を確認し、`y` または `Y` を入力した場合だけ順番に reindex する。
+対象 index を確認し、y または Y を入力した場合だけ順番に reindex する。
 各IndexTargetの末尾stageを使用する。
 
 
@@ -84,7 +85,7 @@ DBから復元できない検索データを複数レコードへ直接反映す
         end
     end
 
-`are_search_with_index_guard` の引数、戻り値、実行条件は guide_reference.txt を参照する。
+are_search_with_index_guard の引数、戻り値、実行条件は guide_reference.txt を参照する。
 
 既存の未処理 sync request と直接更新を競合させたくない場合は、更新前に確認する。
 
@@ -110,8 +111,8 @@ alias が指していない古い物理 index を削除する。
         .are_search_index_target(:default)
         .are_search_clean_up
 
-実行後は `result[:result]` が `:success` であることを確認する。
-失敗した場合は `are_search:check_index_status` で alias、marker、物理 index の状態を確認する。
+実行後は result[:result] が :success であることを確認する。
+失敗した場合は are_search:check_index_status で alias、marker、物理 index の状態を確認する。
 
 全target。
 
@@ -161,9 +162,9 @@ reindex や clean up が実行できない場合、marker を削除する前に�
     AreSearch.mark_index!(index_alias_name)
     AreSearch.unmark_index!(index_alias_name)
 
-manual marker の解除には `unmark_all` または `AreSearch.unmark_index!` を使用する。
+manual marker の解除には unmark_all または AreSearch.unmark_index! を使用する。
 reindex / clean up の異常終了で残った marker は、この操作ではなく「marker の手動解除」の手順で確認してから解除する。
-これらの操作には `AreSearch.index_operation_enabled = true` が必要。
+これらの操作には AreSearch.index_operation_enabled = true が必要。
 
 
 # 7. SyncRequest を定期回収する
@@ -179,10 +180,16 @@ SampleGenerator で生成した rake task のサンプルを利用側アプリ�
 
 コピーした rake ファイルは運用に合わせて内容を確認・編集する。
 
-`are_search_run_sync_requests.rake` では、通常同期とforce同期の対象scopeを利用側の運用に合わせて変更できる。
+are_search_run_sync_requests.rake では、通常同期とforce同期の対象scopeを利用側の運用に合わせて変更できる。
 標準の対象条件をそのまま使用する場合は変更不要。
 
-`are_search_sync_limit_alert.rake` は実行前に、通知先・送信元と通知閾値を環境に合わせて変更する。
+force同期は、別の処理が processing_token を保持したまま一定時間停止した SyncRequest を補助的に再反映する処理。
+processing_at が sync_request_process_hang_wait より古く、force_try_count が max_force_try_count 未満の要求が候補になる。
+通常同期と異なり、force同期は Elasticsearch への反映だけを行い、sync_try_count と同期後callbackは進めない。
+実行すると force_attempted、last_force_try_at、force_try_count が更新される。
+残った processing_token を手動解除する必要がある場合は「processing_token を手動解除する」を参照する。
+
+are_search_sync_limit_alert.rake は実行前に、通知先・送信元と通知閾値を環境に合わせて変更する。
 
     ALERT_MAIL_TO
     ALERT_MAIL_FROM
@@ -190,9 +197,9 @@ SampleGenerator で生成した rake task のサンプルを利用側アプリ�
     ALERT_FORCE_TRY_THRESHOLD
     ALERT_STUCK_ERROR_WAIT
 
-メール送信には利用側Railsアプリケーションの `config.action_mailer` の設定を使用する。
+メール送信には利用側Railsアプリケーションの config.action_mailer の設定を使用する。
 
-タスクを実行する環境では `AreSearch.rake_operation_enabled` を有効にする。
+タスクを実行する環境では AreSearch.rake_operation_enabled を有効にする。
 設定の詳細は guide_reference.txt を参照する。
 
 単一stageを回収する。
@@ -203,7 +210,8 @@ SampleGenerator で生成した rake task のサンプルを利用側アプリ�
 
     bundle exec rake 'are_search:run_sync_requests[default,with_external_file]'
 
-回収条件、試行上限、`rake_operation_enabled` の詳細は guide_reference.txt を参照する。
+回収条件、試行上限、rake_operation_enabled の詳細は guide_reference.txt を参照する。
+SyncRequest の状態項目は guide_reference.txt の「SyncRequest の状態項目」を参照する。
 
 重いstageを別時間帯に処理する場合は、stageごとに定期実行を分ける。
 
@@ -236,7 +244,7 @@ SampleGenerator で生成した rake task のサンプルを利用側アプリ�
 # 9. コールバックを通らないDB更新
 ================================================================
 
-`update_columns`、`update_all`、`delete_all`、`insert_all`、`upsert_all`、SQL直接実行は ActiveRecord コールバックを通らない。
+update_columns、update_all、delete_all、insert_all、upsert_all、SQL直接実行は ActiveRecord コールバックを通らない。
 通常saveと同じ同期経路へ乗せる方法と、Elasticsearchへ直接反映する低レベルAPIは guide_reference.txt を参照する。
 
 件数が多い場合は reindex を使用する。
@@ -274,7 +282,7 @@ SampleGenerator で生成した rake task のサンプルを利用側アプリ�
 # 11. marker を手動解除する
 ================================================================
 
-異常終了で marker が残った場合は、先に `check_index_status` で次を確認する。
+異常終了で marker が残った場合は、先に check_index_status で次を確認する。
 
     index 操作中のプロセスが存在しない
     alias が正しい物理 index を指している
@@ -289,7 +297,7 @@ SampleGenerator で生成した rake task のサンプルを利用側アプリ�
     AreSearch::IndexMarker.delete_force!(index_alias_name)
 
 この操作は reindex / clean_up の marker も削除する。
-`AreSearch.index_operation_enabled = true` のプロセスでのみ実行する。
+AreSearch.index_operation_enabled = true のプロセスでのみ実行する。
 
 
 # 12. 物理 index を手動削除する
@@ -339,8 +347,8 @@ Job が再開しないことを確認してから行う。
 
     puts updated_count
 
-`updated_count` が1なら通常同期へ戻す。
+updated_count が1なら通常同期へ戻す。
 
     bundle exec rake 'are_search:run_sync_requests[default]'
 
-対象の `sync_stage_name` に合わせて引数を変更する。
+対象の sync_stage_name に合わせて引数を変更する。

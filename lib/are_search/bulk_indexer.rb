@@ -81,6 +81,12 @@ module AreSearch
                 log_file_path:       File.join(@result_dir, 'bulk.log'),
             )
 
+            recover_target_size = @logger.get_fail_key_uniq_size
+            if recover_target_size > @max_fail_count
+                raise AreSearch::Error, "失敗が多すぎます。recoverを行ってください。#{recover_target_size}/#{@max_fail_count}"
+            end
+
+            @logger.set_fail_count
 
             relation = build_index_relation
             index_records(relation)
@@ -512,6 +518,10 @@ module AreSearch
                 @fail_count = 0
             end
 
+            def set_fail_count
+                @fail_count = get_fail_key_uniq_size
+            end
+
             # 結果ファイルの1項目として記録できないIDか確認する。
             def invalid_key?(key)
                 not_nil_key = key.to_s
@@ -587,6 +597,16 @@ module AreSearch
                 read_result_keys(@failure_file_path,   FAILURE_RESULT) +
                 read_result_keys(@data_skip_file_path, DATA_SKIP_RESULT) +
                 read_result_keys(@data_fail_file_path, DATA_FAIL_RESULT)
+            end
+
+            # 失敗扱いの結果ファイルに記録済みの全IDを返す。
+            def get_fail_keys
+                read_result_keys(@failure_file_path,   FAILURE_RESULT) +
+                read_result_keys(@data_fail_file_path, DATA_FAIL_RESULT)
+            end
+
+            def get_fail_key_uniq_size
+                get_fail_keys.uniq.size
             end
 
             # 成功扱いの結果ファイルに記録済みの全IDを返す。
