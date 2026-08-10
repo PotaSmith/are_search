@@ -82,7 +82,7 @@ module AreSearch
             )
 
             recover_target_size = @logger.get_fail_key_uniq_size
-            if recover_target_size > @max_fail_count
+            if (recover_target_size + 1) > @max_fail_count
                 raise AreSearch::Error, "失敗が多すぎます。recoverを行ってください。#{recover_target_size}/#{@max_fail_count}"
             end
 
