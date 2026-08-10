@@ -118,6 +118,7 @@ module AreSearch
             if get_recover_keys.empty?
                 if get_recover_target_keys.size > 0
                     @logger.rename_all([@bulk_failure_target_file, @data_fail_target_file])
+                    raise AreSearch::Error, "recover対象がありません。終了処理が未処理であったため実施しました。"
                 else
                     raise AreSearch::Error, "recover対象がありません"
                 end
