@@ -14,7 +14,7 @@
 - force sync・reindex の bulk response の検証を追加
 - ページネーションを `max_result_window` の範囲に合わせて整理。開始位置が `max_result_window` 以上になる検索は実行前に検索パラメータ不正として扱うよう変更
 - 検索結果の件数を `es_total_count`、`total_count`、`pagination_total_count` に分離。
-- BulkIndexer と Reindexer の実処理入口で、Searchable を継承した STI 子クラスの IndexTarget を拒否するよう変更。共有 alias へ子クラスのレコードだけを投入して完了扱いになる経路と、Reindexer の直接呼び出しで公開APIのガードを迂回する経路を防止
+- BulkIndexer と Reindexer の実処理入口で、Searchable を継承した STI 子クラスの IndexTarget を拒否するよう変更。共有 alias へ子クラスのレコードだけを投入して完了扱いになる経路と、Reindexer の直接呼び出しでガードを迂回する経路を防止
 - `are_search_index_data` の戻り値を直接変更せず、複製した Hash へ AreSearch の予約フィールドを追加するよう変更。freeze 済みまたは再利用する Hash でも呼び出し側データを汚染しないよう修正
 - Elasticsearch client 作成時のデバッグログで、接続先情報だけを出力し、`user` / `password` などの認証情報を含めないよう変更
 - sync limit alert メールから `last_error` 本文を除外。`last_error_at` と通知条件は維持し、エラー詳細は `are_search_sync_requests` で確認する形へ変更

@@ -2,15 +2,17 @@
 AreSearch リファレンス
 ================================================================
 
-このガイドは、利用側で指定する設定値、mappings/dataの定義、名前制約、公開APIをまとめる。
+このガイドは、利用側で指定する設定値、mappings/dataの定義、名前制約、操作をまとめる。
+利用者が設定または操作したときに AreSearch が行う処理を記載する。
 導入手順は guide_setup.txt、検索方法は guide_usage.txt、IndexTargetとsync stageは guide_index_targets_and_stages.txt、
 運用操作と障害対応は guide_operations.txt を参照する。
 
 
-# 1. 任意設定
+# 1. 設定
 ================================================================
 
-config/initializers/are_search.rb の AreSearch.setup 後に指定できる。
+Elasticsearch client と index_prefix は AreSearch.setup で指定する。
+その他の設定は AreSearch.setup 後に指定できる。
 
     AreSearch.sync_request_delay             = 120
     AreSearch.max_sync_try_count             = 100
@@ -23,38 +25,57 @@ config/initializers/are_search.rb の AreSearch.setup 後に指定できる。
     AreSearch.batch_size                     = 500
     AreSearch.search_failure_mode            = :empty_result
     AreSearch.search_body_policy             = AreSearch::ScriptDenySearchBodyPolicy
-    AreSearch.search_param_policy            = AreSearch::ParamLengthSearchParamPolicy
+    AreSearch.search_param_policy            = AreSearch::SearchParamLengthPolicy
+    AreSearch.analyzer_settings              = AreSearch.analyzer_settings
+    AreSearch.logger                         = Rails.logger
+    AreSearch.database_specific              = AreSearch::PostgreSQLDatabaseSpecific
 
 
-## 1-1. sync_request_delay
+## 1-1. setup
+----------------------------------------------------------------
+
+Elasticsearch client の作成方法と index_prefix を指定する。
+
+    AreSearch.setup(index_prefix: "example_production") do
+        Elasticsearch::Client.new(...)
+    end
+
+ブロックが返した Elasticsearch::Client を AreSearch.client として使用する。
+index_prefix は IndexTarget の alias 名と物理 index 名の先頭要素に使用する。
+
+
+## 1-2. sync_request_delay
 ----------------------------------------------------------------
 
 run_sync_requests が通常の再同期対象にするまでの待機秒数。
 デフォルトは120秒。
 
 
-## 1-2. max_sync_try_count
+## 1-3. max_sync_try_count
 ----------------------------------------------------------------
 
 run_sync_requests が通常同期を試す上限。
 デフォルトは100回。
 
 
-## 1-3. sync_request_process_hang_wait
+## 1-4. sync_request_process_hang_wait
 ----------------------------------------------------------------
 
-処理中のまま残った sync request を強制同期対象にするまでの秒数。
+処理中のまま残った sync request を force 同期の対象として扱うまでの秒数。
 デフォルトは1800秒。
 
+force 同期では同期本体を実行し、同期後callbackは実行しない。
+処理した要求は force_attempted に記録し、通常の run_sync_requests で回収する。
 
-## 1-4. max_force_try_count
+
+## 1-5. max_force_try_count
 ----------------------------------------------------------------
 
 run_sync_requests が強制同期を試す上限。
 デフォルトは5回。
 
 
-## 1-5. lock_dir
+## 1-6. lock_dir
 ----------------------------------------------------------------
 
 flock ファイルの保存先。
@@ -69,7 +90,7 @@ flock ファイルの保存先。
 複数プロセスで同じ排他を使用する場合は同じ lock_dir を参照できるようにする。
 
 
-## 1-6. index_operation_enabled
+## 1-7. index_operation_enabled
 ----------------------------------------------------------------
 
 reindex、clean up、manual marker、物理 index の手動削除などを許可する。
@@ -80,7 +101,7 @@ reindex、clean up、manual marker、物理 index の手動削除などを許可
 index操作を行うプロセスだけ true にする。
 
 
-## 1-7. rake_operation_enabled
+## 1-8. rake_operation_enabled
 ----------------------------------------------------------------
 
 sync request を回収する are_search:run_sync_requests の実行を許可する。
@@ -92,7 +113,7 @@ sync request を回収する are_search:run_sync_requests の実行を許可す�
 共有されていない lock_dir を使用する複数環境からの同時実行は想定しない。
 
 
-## 1-8. after_commit_mode
+## 1-9. after_commit_mode
 ----------------------------------------------------------------
 
 DB commit 後の同期開始方法。
@@ -106,11 +127,11 @@ DB commit 後の同期開始方法。
     :none
         after_commit では同期せず、run_sync_requests に任せる。
 
-どのモードでも通常の保存・削除時には sync request が記録される。
-失敗した要求は run_sync_requests で再処理できる。
+どのモードでも通常の保存・削除時には sync request を記録する。
+after_commit からの同期またはJobで同期が完了しなかった要求は、run_sync_requests で再度同期対象として扱う。
 
 
-## 1-9. batch_size
+## 1-10. batch_size
 ----------------------------------------------------------------
 
 reindex 時に DB から一度に読み込む件数。
@@ -122,7 +143,7 @@ reindex 時に DB から一度に読み込む件数。
 この設定は reindex にだけ使われる。
 
 
-## 1-10. analyzer_settings
+## 1-11. analyzer_settings
 ----------------------------------------------------------------
 
 index 作成時に Elasticsearch の settings へ渡す analyzer 設定。
@@ -135,7 +156,7 @@ index 作成時に Elasticsearch の settings へ渡す analyzer 設定。
 変更後は対象targetの reindex が必要。
 
 
-## 1-11. search_failure_mode
+## 1-12. search_failure_mode
 ----------------------------------------------------------------
 
 検索パラメータ不正、検索body policyによる拒否、index不存在を検索時にどう扱うか指定できる。
@@ -160,7 +181,7 @@ index 作成時に Elasticsearch の settings へ渡す analyzer 設定。
 生成される initializer は development 環境で :raise、それ以外で :empty_result を設定する。
 
 
-## 1-12. search_body_policy
+## 1-13. search_body_policy
 ----------------------------------------------------------------
 
 Elasticsearchへ送信する検索bodyと mapping のフィールド名を検査する policy。
@@ -185,11 +206,11 @@ Elasticsearchへ送信する検索bodyと mapping のフィールド名を検査
 valid? は検索body全体、invalid_key? は mapping のフィールド名を検査する。
 
 
-## 1-13. search_param_policy
+## 1-14. search_param_policy
 ----------------------------------------------------------------
 
 外部入力として扱う検索パラメータの値を検査する policy。
-デフォルトは AreSearch::ParamLengthSearchParamPolicy。
+デフォルトは AreSearch::SearchParamLengthPolicy。
 
 標準policyの上限。
 
@@ -197,27 +218,52 @@ valid? は検索body全体、invalid_key? は mapping のフィールド名を�
         2048文字
 
     where / where_not / where_or の term の値
-        256文字
-
     where / where_not / where_or の terms の Array 全体
-        256文字
-
     where / where_not / where_or の range の Hash 全体
         256文字
 
-既定の制限を一部変更する場合。
+差し替える場合は AreSearch::SearchParamPolicy を継承する。
 
-    class ApplicationSearchParamPolicy < AreSearch::ParamLengthSearchParamPolicy
+    class ApplicationSearchParamPolicy < AreSearch::SearchParamPolicy
         def self.valid?(name, value)
-            return value.to_s.length <= 4096 if name == "query_string"
-
-            super
+            value.to_s.length <= 4096
         end
     end
 
     AreSearch.search_param_policy = ApplicationSearchParamPolicy
 
-false を返した値は AreSearch::InvalidSearchOption として扱う。
+valid? の戻り値を使用して、外部入力として扱う値を検査する。
+
+
+## 1-15. logger
+----------------------------------------------------------------
+
+AreSearch が使用する logger を指定する。
+
+    AreSearch.logger = Rails.logger
+
+未指定の場合は Rails.logger を使用する。
+
+
+## 1-16. database_specific
+----------------------------------------------------------------
+
+sync request の採番と登録で使用するDB固有処理を指定する。
+デフォルトは AreSearch::PostgreSQLDatabaseSpecific。
+
+別実装を使用する場合は AreSearch::DatabaseSpecific を継承する。
+
+    class ApplicationDatabaseSpecific < AreSearch::DatabaseSpecific
+        def self.next_request_sequence
+            # 利用DBに合わせて採番する
+        end
+
+        def self.upsert(**attributes)
+            # 利用DBに合わせてsync requestを登録または更新する
+        end
+    end
+
+    AreSearch.database_specific = ApplicationDatabaseSpecific
 
 
 # 2. index_settings
@@ -234,8 +280,8 @@ Elasticsearch の index 設定を指定できる。
 page / per_page で取得できる範囲の上限。
 複数target検索では対象targetの最小値を使用する。
 
-page と per_page から算出した開始位置が max_result_window 以上の場合は検索パラメータ不正になる。
-設定変更後は reindex が必要。
+page と per_page から算出した開始位置が max_result_window の範囲内か確認する。
+設定変更後は対象targetを reindex して新しい設定を使用する。
 
 
 # 3. are_search_index_mappings
@@ -262,7 +308,7 @@ page と per_page から算出した開始位置が max_result_window 以上の�
 
 注意点。
 
-    _source.enabled に false は指定できない
+    _source は有効な構成を使用する
     field_name は検索body policyでも検査する
 
 元のフィールド値を _source 以外から取得する機能で使用する場合は store: true を指定できる。
@@ -314,24 +360,109 @@ STIでは Searchable を持つ継承系統の上位モデルで定義する。
 その target の検索対象から外す用途で使用する。
 
 
-# 6. IndexTarget の主な公開API
+# 6. sync stage の設定とコールバック
+================================================================
+
+利用可能なstage、保存時に要求を作るstage、commit後に開始するstageをクラスメソッドで指定する。
+
+    def self.are_search_all_sync_stage_names
+        {
+            default: ["default"],
+        }
+    end
+
+    def self.are_search_sync_stage_names_on_enqueue
+        {
+            default: ["default"],
+        }
+    end
+
+    def self.are_search_sync_stage_names_on_after_commit
+        {
+            default: ["default"],
+        }
+    end
+
+are_search_sync_stage_names_on_enqueue を省略すると are_search_all_sync_stage_names と同じstageを使用する。
+are_search_sync_stage_names_on_after_commit を省略すると are_search_all_sync_stage_names と同じstageを使用する。
+
+保存時に要求を作るstageだけを are_search_sync_stage_names_on_enqueue に含める。
+commit後に直接同期またはJob登録を開始するstageだけを are_search_sync_stage_names_on_after_commit に含める。
+
+同期開始前に条件を確認する場合は are_search_before_sync_check を定義する。
+デフォルトは true。
+
+    def self.are_search_before_sync_check(ar_instance_key, index_target, sync_request)
+        ready?
+    end
+
+false の間はその要求の同期を開始しない。
+
+同期後に利用側処理を行う場合は are_search_after_sync_callback を定義する。
+デフォルトでは何もしない。
+
+    def self.are_search_after_sync_callback(record, index_target, sync_request)
+        return if record.nil?
+
+        record.are_search_upsert_sync_request(
+            index_target,
+            "next_stage",
+        )
+    end
+
+are_search_upsert_sync_request は指定した IndexTarget・stage の sync request を登録または更新する。
+
+指定したsync requestが存在するか確認する場合は are_search_sync_request_exists? を使用する。
+
+    Article.are_search_sync_request_exists?(
+        article.id,
+        index_target,
+        "default",
+    )
+
+
+# 7. IndexTarget の操作
 ================================================================
 
 IndexTarget を取得する。
 
     article_index = Article.are_search_index_target(:default)
 
+全targetを取得する。
+
+    Article.are_search_index_targets
+
+IndexTargetからalias名、index設定、mappingを取得できる。
+
+    article_index.are_search_index_alias_name
+    article_index.are_search_index_settings
+    article_index.are_search_index_mappings
+
 主な操作。
 
     article_index.are_search_search("Rails", fields: [:title, :body])
     article_index.are_search_index_marked?
     article_index.are_search_index_alias_exists?
+    article_index.are_search_create_index
     article_index.are_search_reindex(stage_position: :first)
     article_index.are_search_clean_up
+    article_index.are_search_bulk_index(
+        "default",
+        result_dir: result_dir,
+        max_bulk_bytes: 20 * 1024 * 1024,
+        max_bulk_count: 100,
+        max_fail_count: 100,
+    )
     article_index.are_search_with_index_guard(operation: "batch") do
         # IndexTarget単位で排他した処理
     end
     article_index.are_search_delete!(article.id)
+
+are_search_create_index は、その IndexTarget 用の空の物理indexを作成してaliasを接続する。
+既存データを投入する場合は、その後に reindex または BulkIndexer を実行する。
+
+are_search_bulk_index は、指定stageの完成ドキュメントを既存aliasへbulk投入する。
+recover: true を指定すると、同じ result_dir に記録された未解決の失敗IDを再処理する。
 
 stageを使用する直接操作。
 
@@ -341,18 +472,19 @@ stageを使用する直接操作。
     )
 
 
-## 6-1. index 操作の戻り値
+## 7-1. index 操作の戻り値
 ----------------------------------------------------------------
 
-are_search_reindex、are_search_clean_up、are_search_with_index_guard の戻り値は結果を表す Hash。
+are_search_reindex、are_search_clean_up、are_search_with_index_guard の戻り値は処理結果を表す Hash。
 
-    result       成否。:success または :not_success。
-    message      失敗理由。
-    failed_ids   失敗したレコードID。対象操作でのみ含まれる。
-    stop_phase   停止した処理段階。成功時は nil。
+    result       :success または :not_success。
+    message      処理結果の説明。
+    failed_ids   対象操作で記録されたレコードID。
+    stop_phase   処理を終了した段階。完了時は nil。
     done_phases  完了した処理段階。
 
-# 7. コールバックを通らない更新用API
+
+# 8. コールバックを通らない更新
 ================================================================
 
 通常saveと同じ同期経路へ乗せる場合は、DB更新と are_search_enqueue_sync_request を同じトランザクション内で行い、
@@ -375,7 +507,7 @@ update_all、delete_all、insert_all、upsert_all など複数件を変更する
 件数に応じて reindex を使用する。
 
 
-# 8. are_search_with_index_guard
+# 9. are_search_with_index_guard
 ================================================================
 
 対象 IndexTarget の index 操作と競合させたくない直接更新を guard 内で実行する。
@@ -397,11 +529,11 @@ operation は状態確認時に処理を識別するための名前として指�
 詳細な運用例は guide_operations.txt を参照する。
 
 
-# 9. 低レベル操作
+# 10. 直接操作
 ================================================================
 
 
-## 9-1. are_search_index_or_delete!
+## 10-1. are_search_index_or_delete!
 ----------------------------------------------------------------
 
 レコードの現在状態を直接 Elasticsearch へ反映する。
@@ -415,7 +547,7 @@ operation は状態確認時に処理を識別するための名前として指�
 sync request を経由しないため、通常の再試行経路が必要な処理では使用しない。
 
 
-## 9-2. are_search_delete!
+## 10-2. are_search_delete!
 ----------------------------------------------------------------
 
 ドキュメントを直接削除する。
@@ -429,7 +561,7 @@ sync request を経由しないため、通常の再試行経路が必要な処�
 対象が存在しない場合は無視する。
 
 
-## 9-3. 物理 index の手動削除
+## 10-3. 物理 index の手動削除
 ----------------------------------------------------------------
 
     AreSearch.delete_physical_index!(physical_index_name)
@@ -438,7 +570,39 @@ AreSearch.index_operation_enabled = true が必要。
 通常は clean up を使用し、手動削除は状態を確認したうえで行う。
 
 
-# 10. 利用側定義名
+## 10-4. manual marker
+----------------------------------------------------------------
+
+単一の IndexTarget に manual marker を設定する。
+
+    index_alias_name = Article
+        .are_search_index_target(:default)
+        .are_search_index_alias_name
+
+    AreSearch.mark_index!(index_alias_name)
+
+manual marker がある IndexTarget は sync request による同期と index 操作の対象にしない。
+検索はそのまま行う。
+
+解除する。
+
+    AreSearch.unmark_index!(index_alias_name)
+
+全targetへの設定・解除は are_search:mark_all / are_search:unmark_all を使用する。
+AreSearch.index_operation_enabled = true が必要。
+
+
+## 10-5. are_search_index_data_validate
+----------------------------------------------------------------
+
+レコードについて、各 IndexTarget・stage の are_search_index_data と mappings の整合性を確認する。
+
+    article.are_search_index_data_validate
+
+確認結果は article.errors から参照する。
+
+
+# 11. 利用側定義名
 ================================================================
 
 AreSearch は次の名前を共通形式で検査する。
@@ -474,7 +638,7 @@ AreSearch は次の名前を共通形式で検査する。
 型。
 
     index_prefix
-        String。空文字列は使用できない。
+        String。空文字列は対象外。
 
     are_search_ar_table_name
         String。
@@ -488,18 +652,71 @@ AreSearch は次の名前を共通形式で検査する。
     sync_stage_name
         String。
 
+are_search_ar_table_name はデフォルトで Active Record の table_name を使用する。
+別の名前を使用する場合はクラスメソッドで指定する。
+
+    def self.are_search_ar_table_name
+        "articles"
+    end
+
+この値は IndexTarget の alias 名と物理 index 名の要素に使用する。
+
 Searchableモデルの静的定義は最初に are_search_index_targets を取得するときに検査する。
 are_search:check_all_models でも同じ定義検査を行う。
 
-# 11. SyncRequest の状態項目
+
+# 12. SyncRequest の状態確認
 ================================================================
 
-are_search_sync_requests の主な状態項目。
+rakeで同期要求を回収するときは、are_search_sync_requests の状態項目を確認できる。
 
-    request_sequence / request_sequence_at      同期要求の世代とその時刻。
-    processing_token / processing_at            処理中を示す識別値とその時刻。
-    sync_try_count / last_sync_try_at            通常同期の試行回数と最終試行時刻。
-    callback_try_count / last_callback_try_at    同期後callbackの試行回数と最終試行時刻。
-    last_completed_at                            最後に同期要求全体が完了した時刻。
-    force_attempted / force_try_count / last_force_try_at  force同期の有無、試行回数、最終試行時刻。
-    last_error / last_error_at                    最後のエラー内容とその記録時刻。
+    request_sequence / request_sequence_at
+        同期要求の世代と、その要求が作成された時刻を確認する。
+
+    processing_token / processing_at
+        現在処理対象として扱われているかと、その処理開始時刻を確認する。
+
+    sync_try_count / last_sync_try_at
+        通常同期を試行した回数と、最後に試行した時刻を確認する。
+        同期要求の処理完了時に試行情報をリセットする。
+
+    callback_try_count / last_callback_try_at
+        同期後callbackを試行した回数と、最後に試行した時刻を確認する。
+        同期要求の処理完了時に試行情報をリセットする。
+
+    last_completed_at
+        最後に同期要求全体の処理を完了した時刻を確認する。
+
+    force_attempted / force_try_count / last_force_try_at
+        force同期を行ったか、試行回数、最後に試行した時刻を確認する。
+        force_attempted が記録された要求は、通常の run_sync_requests で回収対象として扱う。
+
+    last_error / last_error_at
+        最後に記録されたエラー内容と、その記録時刻を確認する。
+        同期要求の処理完了時に記録をクリアする。
+
+
+# 13. 補助操作
+================================================================
+
+設定済みの index_prefix と Elasticsearch client を取得する。
+
+    AreSearch.index_prefix
+    AreSearch.client
+
+簡易aggregationで使用する既定のbucket数を取得する。
+
+    AreSearch.default_aggs_size
+
+標準検索の query_type を指定する値を取得する。
+
+    AreSearch.query_type_combined_fields
+    AreSearch.query_type_simple_query_string
+
+AreSearch の区切り規則で index 名の要素を連結する。
+
+    AreSearch.join_index_name(
+        AreSearch.index_prefix,
+        "articles",
+        "*",
+    )

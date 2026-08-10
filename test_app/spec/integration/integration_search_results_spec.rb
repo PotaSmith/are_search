@@ -414,6 +414,82 @@ RSpec.describe "AreSearch multiple model search integration", type: :model do
             ],
         )
     end
+    it "同一IDのSTI子モデルを複数indexから検索して片方をmodel_relationsで除外してもhit対応を維持する" do
+        first_index_target = integration_index_target(DocumentFirst)
+        second_index_target = integration_index_target(DocumentSecond)
+        index_targets = [
+            first_index_target,
+            second_index_target,
+        ]
+
+        reindex_results = reindex_integration_indexes(index_targets)
+        expect(
+            reindex_results.map { |result| result[:result] },
+        ).to eq([
+            :success,
+            :success,
+        ])
+
+        excluded_first_child = DocumentFirstChild1.create!(
+            id:      2101,
+            title:   "stirelationtoken excluded first",
+            body:    "excluded first child",
+            status:  "hidden",
+            user_id: 821,
+        )
+        second_same_id_child = DocumentSecondChild.create!(
+            id:      2101,
+            title:   "stirelationtoken second same id",
+            body:    "second child same id",
+            status:  "visible",
+            user_id: 822,
+        )
+        included_first_child = DocumentFirstChild2.create!(
+            id:      2102,
+            title:   "stirelationtoken included first",
+            body:    "included first child",
+            status:  "visible",
+            user_id: 823,
+        )
+
+        refresh_integration_indexes(index_targets)
+
+        result = search_integration_indexes(
+            index_targets,
+            "stirelationtoken",
+            model_relations: {
+                DocumentFirst => DocumentFirst.where(status: "visible"),
+            },
+            sort: {
+                user_id: :asc,
+            },
+        )
+
+        raw_hits = result.raw_response.dig("hits", "hits")
+        expect(raw_hits.length).to eq(3)
+        expect(raw_hits.map { |hit| hit["_id"] }).to include(
+            excluded_first_child.id.to_s,
+            second_same_id_child.id.to_s,
+            included_first_child.id.to_s,
+        )
+
+        record_class_and_ids = result.records.map { |record|
+            [record.class, record.id]
+        }
+        expect(record_class_and_ids).to eq([
+            [DocumentSecondChild, second_same_id_child.id],
+            [DocumentFirstChild2, included_first_child.id],
+        ])
+
+        record_and_hit_ids = result.records_with_hit.map { |record, hit|
+            [record.class, record.id.to_s, hit[:id]]
+        }
+        expect(record_and_hit_ids).to eq([
+            [DocumentSecondChild, second_same_id_child.id.to_s, second_same_id_child.id.to_s],
+            [DocumentFirstChild2, included_first_child.id.to_s, included_first_child.id.to_s],
+        ])
+    end
+
 end
 
 RSpec.describe "AreSearch multi index response integration", type: :model do

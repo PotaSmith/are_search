@@ -569,6 +569,43 @@ RSpec.describe AreSearch::BulkIndexer do
             end.to raise_error(AreSearch::Error, "recover対象がありません")
         end
 
+        it "通常実行の失敗対象IDがrecover上限と一致する場合は処理を開始する" do
+            data_dir = File.join(result_dir, "data")
+            FileUtils.mkdir_p(data_dir)
+
+            recover_keys = (1..2000).map(&:to_s)
+            failure_file = File.join(data_dir, "bulk_failure.log")
+            File.open(failure_file, "w") do |file|
+                recover_keys.each do |key|
+                    file.write(result_line(key, "fail"))
+                end
+            end
+
+            lookup_relation = double("lookup_relation")
+            relation = double("relation")
+
+            expect(model_class)
+                .to receive(:where)
+                .with(id: recover_keys)
+                .ordered
+                .and_return(lookup_relation)
+            expect(lookup_relation)
+                .to receive(:pluck)
+                .with(:id)
+                .and_return((1..2000).to_a)
+            expect(model_class)
+                .to receive(:where)
+                .with(id: recover_keys)
+                .ordered
+                .and_return(relation)
+            expect(relation)
+                .to receive(:find_each)
+
+            expect do
+                indexer.bulk_recover_index_target
+            end.not_to raise_error
+        end
+
         it "通常実行の失敗対象IDが上限を超えていれば拒否する" do
             data_dir = File.join(result_dir, "data")
             FileUtils.mkdir_p(data_dir)

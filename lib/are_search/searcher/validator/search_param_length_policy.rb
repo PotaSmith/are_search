@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module AreSearch
-    class ParamLengthSearchParamPolicy < SearchParamPolicy
+    class SearchParamLengthPolicy < SearchParamPolicy
         class << self
 
             # 検索パラメーターの値の検査

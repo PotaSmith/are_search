@@ -4,7 +4,7 @@ AreSearch セットアップガイド
 
 このガイドは、AreSearch を Rails アプリへ導入し、最初の index を作成して検索するまでを扱う。
 IndexTarget と sync stage の設計は guide_index_targets_and_stages.txt、検索オプションは guide_usage.txt、
-運用操作は guide_operations.txt、設定と公開APIの一覧は guide_reference.txt を参照する。
+運用操作は guide_operations.txt、機能の詳細は guide_reference.txt を参照する。
 
 
 # 1. インストール
@@ -256,4 +256,4 @@ BulkIndexer サンプルの配置、設定、実行方法は guide_bulk_indexer.
     guide_index_targets_and_stages.txt  IndexTargetとsync stage
     guide_operations.txt                reindex、同期、clean up、障害対応
     guide_bulk_indexer.txt              大規模データの投入と切り替え
-    guide_reference.txt                 設定、データ定義、公開API
+    guide_reference.txt                 設定、データ定義、メソッド一覧

@@ -36,7 +36,7 @@ require_relative "are_search/searcher/validator/search_option_validator"
 require_relative "are_search/searcher/validator/search_param_validator"
 
 require_relative "are_search/searcher/validator/search_param_policy"
-require_relative "are_search/searcher/validator/param_length_search_param_policy"
+require_relative "are_search/searcher/validator/search_param_length_policy"
 
 require_relative "are_search/searcher/query_builder/query_builder_base"
 require_relative "are_search/searcher/query_builder/standard_query_builder"
@@ -95,7 +95,7 @@ module AreSearch
 
     @analyzer_settings = DEFAULT_ANALYZER_SETTINGS
     @search_body_policy = AreSearch::ScriptDenySearchBodyPolicy
-    @search_param_policy = AreSearch::ParamLengthSearchParamPolicy
+    @search_param_policy = AreSearch::SearchParamLengthPolicy
     @search_failure_mode = :empty_result
     @database_specific = AreSearch::PostgreSQLDatabaseSpecific
     @client_block = nil

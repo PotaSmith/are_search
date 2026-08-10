@@ -219,7 +219,7 @@ RSpec.describe AreSearch::SearchParamPolicy do
     end
 end
 
-RSpec.describe AreSearch::ParamLengthSearchParamPolicy do
+RSpec.describe AreSearch::SearchParamLengthPolicy do
     describe ".valid?" do
         it "query_stringは2048文字までtrueを返して2049文字でfalseを返す" do
             expect(described_class.valid?("query_string", "a" * 2048)).to eq(true)
