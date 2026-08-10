@@ -72,9 +72,6 @@ index target の alias 名は以下の形式になる。
 index_prefix、are_search_ar_table_name、index_target_name の名前制約は guide_reference.txt を参照する。
 index_prefix に空文字列は指定できない。
 
-旧形式の index 名から変更する場合は、未処理 sync request を空にしてから新形式の alias へ reindex する。
-旧形式の alias と物理 index は新形式の clean up 対象にならないため、切り替え確認後に手動で削除する。
-
 setup ブロックは Elasticsearch::Client のインスタンスを返す。
 任意設定は guide_reference.txt を参照する。
 
