@@ -751,7 +751,7 @@ RSpec.describe "are_search run sync requests task" do
         expect do
             Rake::Task["are_search:run_sync_requests"].invoke("default")
         end.to output(
-            /run_sync_requests は別プロセスが実行中のためスキップしました/,
+            /run_sync_requests は別の処理が実行中のためスキップしました/,
         ).to_stdout
     end
 end

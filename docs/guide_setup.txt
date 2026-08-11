@@ -168,7 +168,7 @@ Searchable を include している全モデルを確認する。
 # 5. 初回 reindex
 ================================================================
 
-index 操作を実行するプロセスでは以下を有効にする。
+index 操作を実行する実行環境では以下を有効にする。
 
     AreSearch.index_operation_enabled = true
 

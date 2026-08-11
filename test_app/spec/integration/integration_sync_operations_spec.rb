@@ -820,7 +820,7 @@ RSpec.describe "AreSearch process integration", type: :model do
         expect(payload[:version]).not_to eq(nil)
     end
 
-    it "別プロセスがsync flockを保持中はRunnerをskipして解放後は実行できる" do
+    it "別の処理がsync flockを保持中はRunnerをskipして解放後は実行できる" do
         Dir.mktmpdir("are_search_process_integration") do |dir|
             lock_file_path = File.join(dir, "sync.lock")
             ready_reader, ready_writer = IO.pipe

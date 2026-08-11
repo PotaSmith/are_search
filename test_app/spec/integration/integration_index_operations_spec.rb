@@ -33,7 +33,7 @@ RSpec.describe "AreSearch index guard integration", type: :model do
         AreSearch.lock_dir = original_lock_dir
     end
 
-    it "別プロセスがindex flockを保持中はskipし解放後はmarker付きで実行する" do
+    it "別の処理がindex flockを保持中はskipし解放後はmarker付きで実行する" do
         index_alias_name = document_first_index_target.are_search_index_alias_name
         lock_file_path = AreSearch.index_lock_file_path(index_alias_name)
         FileUtils.mkdir_p(File.dirname(lock_file_path))
@@ -70,7 +70,7 @@ RSpec.describe "AreSearch index guard integration", type: :model do
         expect(block_called).to eq(false)
         expect(locked_result[:result]).to eq(:not_success)
         expect(locked_result[:stop_phase]).to eq(:lock_index)
-        expect(locked_result[:message]).to match(/別プロセスが実行中/)
+        expect(locked_result[:message]).to match(/別の処理が実行中/)
         expect(AreSearch::IndexMarker.count).to eq(0)
 
         release_writer.write("1")
@@ -193,6 +193,69 @@ RSpec.describe "AreSearch reindex integration", type: :model do
             AreSearch::EsAdapter.delete_physical_index(
                 physical_index_name: physical_index_name,
             )
+        end
+    end
+
+    it "aliasが無く物理indexだけ存在する場合はcheck_aliasで停止して削除しない" do
+        index_alias_name = document_first_index_target.are_search_index_alias_name
+        physical_index_name = "#{index_alias_name}__2026_08_11_21_55_00_000001"
+
+        AreSearch.client.indices.create(index: physical_index_name)
+
+        result = AreSearch::IndexManager.index_clean_up(index_alias_name)
+
+        expect(result).to eq(
+            result:             :not_success,
+            message:            "alias が存在しないため clean up を実行できません",
+            stop_phase:         :check_alias,
+            done_phases:        [:lock_index, :create_marker],
+            delete_index_names: [],
+        )
+        expect(
+            AreSearch.client.indices.exists(index: physical_index_name),
+        ).to eq(true)
+        expect(AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)).to eq(nil)
+    end
+
+    it "別targetとtimestamp形式ではないindexはclean_upで削除しない" do
+        rebuild_result = rebuild_empty_document_first_index
+        expect(rebuild_result[:result]).to eq(:success)
+
+        index_alias_name = document_first_index_target.are_search_index_alias_name
+        current_physical_names = AreSearch::IndexManager.physical_index_names_by_alias(index_alias_name)
+        expect(current_physical_names.length).to eq(1)
+
+        old_physical_name = "#{index_alias_name}__2026_08_11_21_55_00_000001"
+        other_target_name = "#{AreSearch.index_prefix}__document_firsts__archive__2026_08_11_21_55_00_000001"
+        arbitrary_suffix_name = "#{index_alias_name}__backup"
+
+        AreSearch.client.indices.create(index: old_physical_name)
+        AreSearch.client.indices.create(index: other_target_name)
+        AreSearch.client.indices.create(index: arbitrary_suffix_name)
+
+        result = AreSearch::IndexManager.index_clean_up(index_alias_name)
+
+        expect(result[:result]).to eq(:success)
+        expect(result[:delete_index_names]).to eq([old_physical_name])
+        expect(
+            AreSearch.client.indices.exists(index: old_physical_name),
+        ).to eq(false)
+        expect(
+            AreSearch.client.indices.exists(index: other_target_name),
+        ).to eq(true)
+        expect(
+            AreSearch.client.indices.exists(index: arbitrary_suffix_name),
+        ).to eq(true)
+        expect(
+            AreSearch::IndexManager.physical_index_names_by_alias(index_alias_name),
+        ).to eq(current_physical_names)
+    ensure
+        [other_target_name, arbitrary_suffix_name].compact.each do |index_name|
+            begin
+                AreSearch.client.indices.delete(index: index_name)
+            rescue Elastic::Transport::Transport::Errors::NotFound
+                nil
+            end
         end
     end
 

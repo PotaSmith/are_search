@@ -29,7 +29,7 @@ module AreSearch
             # 無ければ作る・あれば中身は触らない（RDWR | CREAT、切り詰めなし）
             File.open(lock_path, File::RDWR | File::CREAT) do |lock_file|
                 # LOCK_NB（ノンブロッキング）で即座に取得可否を返す。
-                # 取得できなければ別プロセスが実行中なので、待たずに終了する。
+                # 取得できなければ別の処理が実行中なので、待たずに終了する。
                 locked = lock_file.flock(File::LOCK_EX | File::LOCK_NB)
                 return nil unless locked
 

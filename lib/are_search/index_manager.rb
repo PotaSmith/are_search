@@ -6,41 +6,12 @@ module AreSearch
 
         # 物理インデックスのライフサイクル管理。
         #
-        # 役割:
-        # - 物理インデックス名の生成
-        # - alias の作成・切替
-        # - 古い物理インデックスの clean_up
-        # - index 操作用 flock / marker 管理
-        #
         # Searchable は参照しない。
         # モデル依存の bulk 投入処理は Reindexer 側に置く。
 
         # alias の 物理インデックスの一覧。
         def physical_index_names_by_alias(index_alias_name)
             AreSearch::EsAdapter.indices_get_alias(index_alias_name: index_alias_name).keys
-        end
-
-        def index_status(index_alias_name)
-            current_physical_names = physical_index_names_by_alias(index_alias_name)
-            physical_names = physical_index_names_by_alias_pattern(index_alias_name)
-            alias_named_physical_index_exists =
-                AreSearch::EsAdapter.alias_named_physical_index_exists?(
-                    index_alias_name: index_alias_name,
-                )
-
-            {
-                index_alias_name:        index_alias_name,
-                alias_exists:            current_physical_names.any?,
-                current_physical_names:  current_physical_names,
-                physical_indexes:        build_physical_index_entries(physical_names, current_physical_names),
-                newest_physical_name:    newest_physical_index_name(physical_names),
-                alias_named_physical_index_exists: alias_named_physical_index_exists,
-                warnings:                build_index_status_warnings(
-                    current_physical_names,
-                    physical_names,
-                    alias_named_physical_index_exists,
-                ),
-            }
         end
 
         # alias が指していない古い物理インデックスをすべて削除する。
@@ -71,9 +42,12 @@ module AreSearch
                 to_delete = physical_names.reject { |physical_name| current_physical_names.include?(physical_name) }
 
                 to_delete.each do |physical_name|
-                    delete_physical_index!(physical_name)
-                    AreSearch.logger.info { "[AreSearch] index_clean_up: deleted #{physical_name}" }
-                    result[:delete_index_names] << physical_name
+                    delete_result = delete_physical_index!(physical_name)
+
+                    if delete_result == AreSearch::EsAdapter.success
+                        AreSearch.logger.info { "[AreSearch] index_clean_up: deleted #{physical_name}" }
+                        result[:delete_index_names] << physical_name
+                    end
                 end
                 result[:done_phases] << :delete_indexes
 
@@ -96,7 +70,7 @@ module AreSearch
 
         # 利用側の処理を index 単位の flock と marker でガードする。
         # reindex / clean_up と同じ排他制御を使用し、処理結果を result に設定する。
-        # 別処理が flock を取得済み、または marker が存在する場合は block を実行せず、
+        # 別の処理が flock を取得済み、または marker が存在する場合は block を実行せず、
         # result に未実行理由を設定する。alias が存在しない場合は ArgumentError を送出する。
         def with_index_guard(index_alias_name, result, operation:, &block)
             validate_index_operation_enabled!
@@ -152,6 +126,10 @@ module AreSearch
 
             if AreSearch::EsAdapter.alias_named_physical_index_exists?(index_alias_name: index_alias_name)
                 raise ArgumentError, "エイリアス名と同名の物理インデックスが存在します #{index_alias_name}"
+            end
+
+            physical_index_names_by_alias(index_alias_name).each do |physical_index_name|
+                AreSearch::IndexDefinition.valid_physical_index_name!(physical_index_name)
             end
 
             with_index_guard_base(index_alias_name, result, operation: operation) do
@@ -230,48 +208,6 @@ module AreSearch
             end
         end
 
-        def build_physical_index_entries(physical_names, current_physical_names)
-            physical_names.sort.map do |physical_name|
-                {
-                    name:    physical_name,
-                    current: current_physical_names.include?(physical_name),
-                }
-            end
-        end
-
-        def newest_physical_index_name(physical_names)
-            timestamped_names = physical_names.select { |physical_name| physical_name.to_s.match?(AreSearch::IndexDefinition::PHYSICAL_INDEX_TIMESTAMP_SUFFIX) }
-
-            return timestamped_names.sort.last if timestamped_names.any?
-
-            physical_names.sort.last
-        end
-
-        def build_index_status_warnings(current_physical_names, physical_names, alias_named_physical_index_exists)
-            warnings = []
-            newest_physical_name = newest_physical_index_name(physical_names)
-
-            if current_physical_names.empty?
-                warnings << "alias missing"
-            end
-
-            if physical_names.empty? && alias_named_physical_index_exists == false
-                warnings << "physical index missing"
-            end
-
-            if alias_named_physical_index_exists
-                warnings << "physical index with alias name exists"
-            end
-
-            if newest_physical_name && current_physical_names.any?
-                unless current_physical_names.include?(newest_physical_name)
-                    warnings << "newest physical index is not current"
-                end
-            end
-
-            warnings
-        end
-
         def create_physical_index!(physical_index_name, index_settings, mappings_for_index)
             AreSearch::EsAdapter.indices_create(
                 physical_index_name: physical_index_name,
@@ -292,7 +228,7 @@ module AreSearch
                 locked = lock_file.flock(File::LOCK_EX | File::LOCK_NB)
 
                 unless locked
-                    result[:message] = "別プロセスが実行中のためスキップしました"
+                    result[:message] = "別の処理が実行中のためスキップしました"
                     return
                 end
                 result[:done_phases] << :lock_index

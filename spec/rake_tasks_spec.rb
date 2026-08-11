@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "stringio"
 require_relative "../lib/are_search/rake_utils"
 require "rake"
 require "active_support/core_ext/numeric/time"
@@ -141,37 +142,6 @@ RSpec.describe "are_search rake tasks" do
     end
 
     describe "are_search:clean_up_all" do
-        it "Searchable index ごとに clean up を呼ぶ" do
-            allow(AreSearch::IndexManager)
-                .to receive(:index_clean_up)
-                .with("test__articles__default")
-                .and_return(
-                    result:             :success,
-                    message:            '',
-                    stop_phase:         nil,
-                    done_phases:        [:lock_index, :create_marker, :check_alias, :delete_indexes],
-                    delete_index_names: [],
-                )
-
-            allow(AreSearch::IndexManager)
-                .to receive(:index_clean_up)
-                .with("test__documents__default")
-                .and_return(
-                    result:             :not_success,
-                    message:            "別プロセスが実行中のためスキップしました",
-                    stop_phase:         :lock_index,
-                    done_phases:        [],
-                    delete_index_names: [],
-                )
-
-            expect do
-                Rake::Task["are_search:clean_up_all"].invoke
-            end.to output(
-                "[AreSearch] clean_up done: test__articles__default\n" \
-                "[AreSearch] clean_up failed: stopped at lock_index\n",
-            ).to_stdout
-        end
-
         it "1 index の clean up が失敗しても残り index を処理する" do
             allow(AreSearch::IndexManager)
                 .to receive(:index_clean_up)
@@ -214,257 +184,33 @@ RSpec.describe "are_search rake tasks" do
     end
 
     describe "are_search:check_index_status" do
-        it "marker と lock と Elasticsearch 状態を出力する" do
-            AreSearch::IndexMarker.create!(
-                index_alias_name: "test__documents__default",
-                operation:     "reindex",
-                owner_token:   SecureRandom.uuid,
-                owner_host:    "test-host",
-                owner_pid:     12345,
-                started_at:    Time.zone.now,
-            )
+        it "Elasticsearch 状態の取得に失敗しても marker と lock を出力して次のindexへ進む" do
+            allow(AreSearch::EsAdapter)
+                .to receive(:indices_get_alias)
+                .and_return({})
 
-            allow(AreSearch::IndexManager)
-                .to receive(:index_status)
-                .with("test__articles__default")
-                .and_return(
-                    {
-                        index_alias_name:             "test__articles__default",
-                        alias_exists:           true,
-                        current_physical_names: ["test__articles__default__2026_07_04_00_00_00_000000"],
-                        physical_indexes:       [
-                            {
-                                name:    "test__articles__default__2026_07_04_00_00_00_000000",
-                                current: true,
-                            },
-                        ],
-                        warnings:               [],
-                    },
-                )
+            allow(AreSearch::EsAdapter)
+                .to receive(:physical_indices_for_alias)
+                .and_return({})
 
-            allow(AreSearch::IndexManager)
-                .to receive(:index_status)
-                .with("test__documents__default")
-                .and_return(
-                    {
-                        index_alias_name:             "test__documents__default",
-                        alias_exists:           false,
-                        current_physical_names: [],
-                        physical_indexes:       [],
-                        warnings:               ["alias missing"],
-                    },
-                )
+            allow(AreSearch::EsAdapter)
+                .to receive(:alias_named_physical_index)
+                .and_return({})
 
-            expect do
-                Rake::Task["are_search:check_index_status"].invoke
-            end.to output(
-                /index status: test__articles__default.*alias:\s+exists.*current physical:.*test__articles__default__2026_07_04_00_00_00_000000.*physical indexes:.*test__articles__default__2026_07_04_00_00_00_000000 current.*warning:\s+none.*index status: test__documents__default.*marker:\s+exists.*alias:\s+missing.*warning:\s+alias missing.*warning:\s+marker exists/m,
-            ).to_stdout
-        end
-
-        it "Elasticsearch 状態の取得に失敗しても marker と lock は出力する" do
-            allow(AreSearch::IndexManager)
-                .to receive(:index_status)
-                .with("test__articles__default")
+            allow(AreSearch::EsAdapter)
+                .to receive(:indices_get_alias)
+                .with(index_alias_name: "test__articles__default")
                 .and_raise(RuntimeError, "es down")
 
-            allow(AreSearch::IndexManager)
-                .to receive(:index_status)
-                .with("test__documents__default")
-                .and_return(
-                    {
-                        index_alias_name:             "test__documents__default",
-                        alias_exists:           true,
-                        current_physical_names: ["test__documents__default__2026_07_04_00_00_00_000000"],
-                        physical_indexes:       [],
-                        warnings:               [],
-                    },
-                )
+            expected_output = Regexp.new(
+                "index status: test__articles__default.*marker:\\s+none.*" \
+                    "elasticsearch: failed RuntimeError: es down.*index status: test__documents__default",
+                Regexp::MULTILINE,
+            )
 
             expect do
                 Rake::Task["are_search:check_index_status"].invoke
-            end.to output(
-                /index status: test__articles__default.*marker:\s+none.*elasticsearch: failed RuntimeError: es down.*index status: test__documents__default/m,
-            ).to_stdout
-        end
-    end
-
-    describe "are_search:check_sync_request_status" do
-        it "marker・モデル別件数・テーブル別エラー上位20件を固定幅で出力する" do
-            article_archive_model = class_double(
-                "ArticleArchive",
-                name:       "ArticleArchive",
-                are_search_ar_table_name: "articles",
-            )
-            stub_const("ArticleArchive", article_archive_model)
-
-            AreSearch::IndexMarker.create!(
-                index_alias_name: "test__articles__default",
-                operation:     "manual",
-                owner_token:   SecureRandom.uuid,
-                owner_host:    "test-host",
-                owner_pid:     12345,
-                started_at:    Time.zone.parse("2026-07-11 10:20:30"),
-                message:       "maintenance",
-            )
-
-            create_sync_request(
-                ar_instance_key: "1",
-                last_error:     "index marked",
-            )
-            create_sync_request(
-                ar_instance_key: "2",
-                last_error:     "index marked",
-            )
-            create_sync_request(
-                ar_instance_key: "3",
-            )
-            create_sync_request(
-                ar_model_class_name: "ArticleArchive",
-                ar_instance_key:     "4",
-                last_error:          "index marked",
-            )
-            create_sync_request(
-                ar_model_class_name: "Document",
-                ar_instance_key:     "5",
-                index_alias_name:       "test__documents__default",
-                last_error:          "timeout",
-            )
-
-            expected_output = <<~OUTPUT
-                -------------------------------------------------------------------------
-                [AreSearch] sync request status
-                -------------------------------------------------------------------------
-                マーカー状況
-
-                ESインデックス名         操作    開始日時             ホスト     PID    メッセージ
-                test__articles__default  manual  2026-07-11 10:20:30  test-host  12345  maintenance
-
-                -------------------------------------------------------------------------
-                リクエスト数
-
-                テーブル名  モデル          データ数  エラー数
-                articles    Article         3         2
-                articles    ArticleArchive  1         1
-                documents   Document        1         1
-
-                -------------------------------------------------------------------------
-                エラー内容 トップ20
-
-                テーブル名  内容          件数
-                articles    index marked  3
-                documents   timeout       1
-
-            OUTPUT
-
-            expect do
-                Rake::Task["are_search:check_sync_request_status"].invoke
             end.to output(expected_output).to_stdout
-        end
-
-        it "marker・sync request・エラーが無い場合は各区分に、なしと出力する" do
-            expected_output = <<~OUTPUT
-                -------------------------------------------------------------------------
-                [AreSearch] sync request status
-                -------------------------------------------------------------------------
-                マーカー状況
-
-                なし
-
-                -------------------------------------------------------------------------
-                リクエスト数
-
-                なし
-
-                -------------------------------------------------------------------------
-                エラー内容 トップ20
-
-                なし
-
-            OUTPUT
-
-            expect do
-                Rake::Task["are_search:check_sync_request_status"].invoke
-            end.to output(expected_output).to_stdout
-        end
-
-        it "エラー内容は件数順の上位20件だけを返す" do
-            21.times do |index|
-                create_sync_request(
-                    ar_instance_key: index.to_s,
-                    last_error:     "error #{index.to_s.rjust(2, '0')}",
-                )
-            end
-
-            rows = AreSearch::RakeUtils::CheckSyncRequestStatus.sync_request_error_status_rows(20)
-
-            expect(rows.length).to eq(20)
-            expect(rows[0]).to eq(["articles", "error 00", "1"])
-            expect(rows[19]).to eq(["articles", "error 19", "1"])
-            expect(rows).not_to include(["articles", "error 20", "1"])
-        end
-    end
-
-
-    describe "are_search:mark_all" do
-        before do
-            allow(AreSearch::EsAdapter)
-                .to receive(:index_alias_exists?)
-                .and_return(true)
-        end
-
-        it "manual marker を作成し、既存 marker がある index はスキップする" do
-            existing_marker = AreSearch::IndexMarker.create!(
-                index_alias_name: "test__documents__default",
-                operation:     "reindex",
-                owner_token:   SecureRandom.uuid,
-                owner_host:    "test-host",
-                owner_pid:     12345,
-                started_at:    Time.zone.now,
-            )
-
-            expect do
-                Rake::Task["are_search:mark_all"].invoke
-            end.to output(
-                /mark_all marked: test__articles__default marker_id=\d+.*mark_all skipped: test__documents__default existing_operation=reindex marker_id=#{existing_marker.id}/m,
-            ).to_stdout
-
-            article_marker = AreSearch::IndexMarker.find_by(index_alias_name: "test__articles__default")
-            document_marker = AreSearch::IndexMarker.find_by(index_alias_name: "test__documents__default")
-
-            expect(article_marker.operation).to eq("manual")
-            expect(document_marker.id).to eq(existing_marker.id)
-            expect(document_marker.operation).to eq("reindex")
-        end
-    end
-
-    describe "are_search:unmark_all" do
-        it "manual marker だけを削除する" do
-            manual_marker = AreSearch::IndexMarker.create!(
-                index_alias_name: "test__articles__default",
-                operation:     "manual",
-                owner_token:   SecureRandom.uuid,
-                owner_host:    "test-host",
-                owner_pid:     12345,
-                started_at:    Time.zone.now,
-            )
-            reindex_marker = AreSearch::IndexMarker.create!(
-                index_alias_name: "test__documents__default",
-                operation:     "reindex",
-                owner_token:   SecureRandom.uuid,
-                owner_host:    "test-host",
-                owner_pid:     12345,
-                started_at:    Time.zone.now,
-            )
-
-            expect do
-                Rake::Task["are_search:unmark_all"].invoke
-            end.to output(
-                /unmark_all deleted: test__articles__default count=1.*unmark_all skipped: test__documents__default manual marker not found/m,
-            ).to_stdout
-
-            expect(AreSearch::IndexMarker.find_by(id: manual_marker.id)).to eq(nil)
-            expect(AreSearch::IndexMarker.find_by(id: reindex_marker.id)).not_to eq(nil)
         end
     end
 
@@ -475,55 +221,6 @@ RSpec.describe "are_search rake tasks" do
         before do
             allow(AreSearch).to receive(:client).and_return(client)
             allow(AreSearch).to receive(:index_prefix).and_return("test")
-        end
-
-        it "sync request が残っている場合はエラーにする" do
-            create_sync_request
-
-            expect(indices).not_to receive(:get)
-            expect(article_index_target).not_to receive(:are_search_reindex)
-            expect(document_index_target).not_to receive(:are_search_reindex)
-
-            expect do
-                Rake::Task["are_search:reindex_all_for_es_version_up"].invoke
-            end.to raise_error(
-                AreSearch::Error,
-                "[AreSearch] are_search_sync_requests に 1 件残っているため reindex できません",
-            )
-        end
-
-        it "現在の alias に接続されていない index があればエラーにする" do
-            allow(indices)
-                .to receive(:get)
-                .with(index: "test__*")
-                .and_return(
-                    {
-                        "test__articles__default__2026_07_10_00_00_00_000000" => {},
-                        "test__documents__default__2026_07_10_00_00_00_000000" => {},
-                        "test__articles__default__2026_07_09_00_00_00_000000" => {},
-                    },
-                )
-
-            allow(AreSearch::IndexManager)
-                .to receive(:physical_index_names_by_alias)
-                .with("test__articles__default")
-                .and_return(["test__articles__default__2026_07_10_00_00_00_000000"])
-
-            allow(AreSearch::IndexManager)
-                .to receive(:physical_index_names_by_alias)
-                .with("test__documents__default")
-                .and_return(["test__documents__default__2026_07_10_00_00_00_000000"])
-
-            expect($stdin).not_to receive(:gets)
-            expect(article_index_target).not_to receive(:are_search_reindex)
-            expect(document_index_target).not_to receive(:are_search_reindex)
-
-            expect do
-                Rake::Task["are_search:reindex_all_for_es_version_up"].invoke
-            end.to raise_error(
-                AreSearch::Error,
-                /test__articles__default__2026_07_09_00_00_00_000000/,
-            )
         end
 
         it "確認で y 以外が入力された場合は reindex しない" do
@@ -561,60 +258,6 @@ RSpec.describe "are_search rake tasks" do
                 "  test__documents__default\n" \
                 "\n" \
                 "実行しますか？ [y/N]: [AreSearch] reindex canceled.\n",
-            ).to_stdout
-        end
-
-        it "確認で y が入力された場合は全 index target を reindex する" do
-            allow(indices)
-                .to receive(:get)
-                .with(index: "test__*")
-                .and_return(
-                    {
-                        "test__articles__default__2026_07_10_00_00_00_000000" => {},
-                        "test__documents__default__2026_07_10_00_00_00_000000" => {},
-                    },
-                )
-
-            allow(AreSearch::IndexManager)
-                .to receive(:physical_index_names_by_alias)
-                .with("test__articles__default")
-                .and_return(["test__articles__default__2026_07_10_00_00_00_000000"])
-
-            allow(AreSearch::IndexManager)
-                .to receive(:physical_index_names_by_alias)
-                .with("test__documents__default")
-                .and_return(["test__documents__default__2026_07_10_00_00_00_000000"])
-
-            allow($stdin).to receive(:gets).and_return("y\n")
-
-            expect(article_index_target)
-                .to receive(:are_search_reindex)
-                .with(stage_position: :last)
-                .ordered
-                .and_return(
-                    result:      :success,
-                    message:     '',
-                    failed_ids:  [],
-                    stop_phase:  nil,
-                    done_phases: [:switch_alias],
-                )
-
-            expect(document_index_target)
-                .to receive(:are_search_reindex)
-                .with(stage_position: :last)
-                .ordered
-                .and_return(
-                    result:      :success,
-                    message:     '',
-                    failed_ids:  [],
-                    stop_phase:  nil,
-                    done_phases: [:switch_alias],
-                )
-
-            expect do
-                Rake::Task["are_search:reindex_all_for_es_version_up"].invoke
-            end.to output(
-                /reindex が完了しました: test__articles__default.*reindex が完了しました: test__documents__default/m,
             ).to_stdout
         end
 

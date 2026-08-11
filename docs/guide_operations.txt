@@ -126,17 +126,10 @@ alias が指していない古い物理 index を削除する。
 
     bundle exec rake are_search:check_index_status
 
-各 index target について主に以下を表示する。
-
-    marker
-    flock
-    alias
-    current physical index
-    alias に接続されていない physical index
-    legacy index
-    warning
-
+各 index target の alias、物理 index、marker などの状態と警告を表示する。
 reindex や clean up が実行できない場合、marker を削除する前にこのタスクで状態を確認する。
+
+このタスクは、AreSearch で作成された index を対象とする。
 
 
 # 6. manual marker

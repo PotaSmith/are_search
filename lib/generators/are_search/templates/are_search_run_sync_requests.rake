@@ -82,7 +82,7 @@ namespace :are_search do
         )
 
         if result.nil?
-            puts "[AreSearch] run_sync_requests は別プロセスが実行中のためスキップしました " \
+            puts "[AreSearch] run_sync_requests は別の処理が実行中のためスキップしました " \
                 "(#{lock_file_path})"
             next
         end

@@ -73,21 +73,16 @@ namespace :are_search do
         index_alias_names = AreSearch::RakeUtils.searchable_index_alias_names
 
         index_alias_names.each do |index_alias_name|
-            lock_path     = AreSearch.index_lock_file_path(index_alias_name)
-            marker        = AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)
+            lock_path = AreSearch.index_lock_file_path(index_alias_name)
+            marker = AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)
 
             marker_status = marker ? " exists" : "   none"
             marker_detail = "index_alias_name=#{index_alias_name}"
             unless marker.nil?
-                marker_detail = "id=#{marker.id} " \
-                    "operation=#{marker.operation} " \
-                    "started_at=#{marker.started_at} " \
-                    "owner_host=#{marker.owner_host} " \
-                    "owner_pid=#{marker.owner_pid}"
+                marker_detail = "id=#{marker.id} operation=#{marker.operation} started_at=#{marker.started_at} " \
+                    "owner_host=#{marker.owner_host} owner_pid=#{marker.owner_pid}"
 
-                unless marker.message.blank?
-                    marker_detail += " message=#{marker.message.inspect}"
-                end
+                marker_detail += " message=#{marker.message.inspect}" unless marker.message.blank?
             end
 
             lock_status = "   free"
@@ -108,17 +103,27 @@ namespace :are_search do
             puts "[AreSearch] index status: #{index_alias_name}"
             puts ""
             puts "       marker: #{marker_status}  #{marker_detail}"
-            puts "         lock: #{lock_status  }  #{lock_path}"
+            puts "         lock: #{lock_status}  #{lock_path}"
 
             begin
-                index_status = AreSearch::IndexManager.index_status(index_alias_name)
-                alias_status = index_status[:alias_exists] ? " exists" : "missing"
+                alias_response = AreSearch::EsAdapter.indices_get_alias(index_alias_name: index_alias_name)
+                current_physical_names = alias_response.keys
 
-                puts "        alias: #{alias_status}  #{index_status[:index_alias_name]}"
+                physical_response = AreSearch::EsAdapter.physical_indices_for_alias(index_alias_name: index_alias_name)
+                physical_names = physical_response.keys.select do |physical_name|
+                    source_alias_name = AreSearch::IndexDefinition.index_alias_name_from_physical_index_name(physical_name)
+                    source_alias_name == index_alias_name
+                end.sort
+
+                alias_named_physical_index = AreSearch::EsAdapter.alias_named_physical_index(
+                    index_alias_name: index_alias_name,
+                )
+                alias_named_physical_index_exists = alias_named_physical_index.key?(index_alias_name)
+
+                puts "        alias: #{alias_response.empty? ? 'missing' : ' exists'}  #{index_alias_name}"
                 puts ""
                 puts "    current physical:"
 
-                current_physical_names = index_status[:current_physical_names]
                 if current_physical_names.empty?
                     puts "                        none"
                 else
@@ -127,24 +132,69 @@ namespace :are_search do
                     end
                 end
 
+                physical_creation_dates = {}
+                physical_names.each do |physical_name|
+                    creation_date = physical_response.dig(
+                        physical_name,
+                        "settings",
+                        "index",
+                        "creation_date",
+                    )
+                    next if creation_date.nil?
+
+                    physical_creation_dates[physical_name] = creation_date.to_i
+                end
+
                 puts "    physical indexes:"
 
-                physical_indexes = index_status[:physical_indexes]
-                if physical_indexes.empty?
+                if physical_names.empty?
                     puts "                        none"
                 else
-                    physical_indexes.each do |entry|
-                        current_label = entry[:current] ? "current" : "unaliased"
-                        puts "                        #{entry[:name]} #{current_label}"
+                    physical_names.each do |physical_name|
+                        current_label = current_physical_names.include?(physical_name) ? "current  " : "unaliased"
+                        creation_date = physical_creation_dates[physical_name]
+                        creation_date_text = if creation_date.nil?
+                            "unknown"
+                        else
+                            Time.at(creation_date / 1000.0).utc.iso8601(6)
+                        end
+
+                        puts "                        #{current_label} - #{physical_name} : creation_date #{creation_date_text}"
                     end
                 end
 
                 puts ""
-                alias_named_physical_index_status = index_status[:alias_named_physical_index_exists] ? " exists" : "   none"
+                alias_named_status = alias_named_physical_index_exists ? " exists" : "   none"
                 puts " alias named physical index:"
-                puts "               #{alias_named_physical_index_status}  #{index_status[:index_alias_name]}"
+                puts "               #{alias_named_status}  #{index_alias_name}"
 
-                warnings = index_status[:warnings].dup
+                warnings = []
+                warnings << "alias missing" if current_physical_names.empty?
+
+                if current_physical_names.empty? && physical_names.empty? && alias_named_physical_index_exists == false
+                    warnings << "physical index missing"
+                end
+
+                invalid_current_exists = current_physical_names.any? do |physical_name|
+                    source_alias_name = AreSearch::IndexDefinition.index_alias_name_from_physical_index_name(physical_name)
+                    source_alias_name != index_alias_name
+                end
+                warnings << "current physical index is not AreSearch format" if invalid_current_exists
+
+                if alias_named_physical_index_exists
+                    warnings << "physical index with alias name exists"
+                end
+
+                newest_physical_name = physical_creation_dates.max_by do |_physical_name, creation_date|
+                    creation_date
+                end&.first
+
+                if newest_physical_name && current_physical_names.any?
+                    unless current_physical_names.include?(newest_physical_name)
+                        warnings << "newest physical index is not current"
+                    end
+                end
+
                 warnings << "marker exists" unless marker.nil?
 
                 if warnings.empty?

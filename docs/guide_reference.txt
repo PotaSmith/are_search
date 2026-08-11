@@ -87,7 +87,7 @@ flock ファイルの保存先。
     sync/sync.lock
     index/{index_alias_name}.lock
 
-複数プロセスで同じ排他を使用する場合は同じ lock_dir を参照できるようにする。
+複数の処理で同じ排他を使用する場合は同じ lock_dir を参照できるようにする。
 
 
 ## 1-7. index_operation_enabled
@@ -98,7 +98,7 @@ reindex、clean up、manual marker、物理 index の手動削除などを許可
 
     AreSearch.index_operation_enabled = true
 
-index操作を行うプロセスだけ true にする。
+index操作を行う実行環境だけ true にする。
 
 
 ## 1-8. rake_operation_enabled
@@ -479,9 +479,11 @@ are_search_reindex、are_search_clean_up、are_search_with_index_guard の戻り
 
     result       :success または :not_success。
     message      処理結果の説明。
-    failed_ids   対象操作で記録されたレコードID。
     stop_phase   処理を終了した段階。完了時は nil。
     done_phases  完了した処理段階。
+
+操作によっては、失敗したレコードIDや削除対象の index 名など、追加の結果情報が含まれる。
+処理中に例外が発生した場合は、Hashを返さず例外を送出することがあります。
 
 
 # 8. コールバックを通らない更新
