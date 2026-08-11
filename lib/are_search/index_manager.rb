@@ -9,7 +9,6 @@ module AreSearch
         # 役割:
         # - 物理インデックス名の生成
         # - alias の作成・切替
-        # - alias 名と同名の物理 index の削除
         # - 古い物理インデックスの clean_up
         # - index 操作用 flock / marker 管理
         #

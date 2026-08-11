@@ -223,33 +223,6 @@ RSpec.describe "AreSearch EsAdapter integration", type: :model do
         ).to eq([new_physical_index_name])
     end
 
-    it "alias名と同名の物理indexを取得して削除できる" do
-        AreSearch.client.indices.create(index: test_index_alias_name)
-
-        response = AreSearch::EsAdapter.alias_named_physical_index(
-            index_alias_name: test_index_alias_name,
-        )
-
-        expect(response.keys).to eq([test_index_alias_name])
-        expect(
-            AreSearch::EsAdapter.alias_named_physical_index_exists?(
-                index_alias_name: test_index_alias_name,
-            ),
-        ).to eq(true)
-
-        expect(
-            AreSearch::EsAdapter.delete_alias_named_physical_index(
-                index_alias_name: test_index_alias_name,
-            ),
-        ).to eq(AreSearch::EsAdapter.success)
-
-        expect(
-            AreSearch::EsAdapter.delete_alias_named_physical_index(
-                index_alias_name: test_index_alias_name,
-            ),
-        ).to eq(AreSearch::EsAdapter.not_found)
-    end
-
     it "通常aliasからalias名と同名の物理indexを取得しない" do
         physical_index_name = test_physical_index_name(1)
         create_test_physical_index(physical_index_name)
@@ -658,76 +631,6 @@ RSpec.describe "AreSearch EsAdapter index kind integration", type: :model do
             expect(
                 AreSearch.client.indices.exists(
                     index: physical_index_named_alias_backing_name,
-                ),
-            ).to eq(true)
-        end
-    end
-
-    describe ".delete_alias_named_physical_index" do
-        it "物理indexを指定した場合はalias名ではないため拒否する" do
-            expect do
-                AreSearch::EsAdapter.delete_alias_named_physical_index(
-                    index_alias_name: physical_index_name,
-                )
-            end.to raise_error(
-                ArgumentError,
-                "不正な Elasticsearch alias 名です",
-            )
-
-            expect(
-                AreSearch.client.indices.exists(
-                    index: physical_index_name,
-                ),
-            ).to eq(true)
-        end
-
-        it "aliasを指定した場合はElasticsearchのBadRequestを送出して削除しない" do
-            expect do
-                AreSearch::EsAdapter.delete_alias_named_physical_index(
-                    index_alias_name: index_alias_name,
-                )
-            end.to raise_error(
-                Elastic::Transport::Transport::Errors::BadRequest,
-            )
-
-            expect(
-                AreSearch.client.indices.exists_alias(
-                    name: index_alias_name,
-                ),
-            ).to eq(true)
-            expect(
-                AreSearch.client.indices.exists(
-                    index: index_alias_backing_physical_name,
-                ),
-            ).to eq(true)
-        end
-
-        it "alias名の物理indexを指定した場合はその物理indexを削除する" do
-            result = AreSearch::EsAdapter.delete_alias_named_physical_index(
-                index_alias_name: alias_named_physical_index_name,
-            )
-
-            expect(result).to eq(AreSearch::EsAdapter.success)
-            expect(
-                AreSearch.client.indices.exists(
-                    index: alias_named_physical_index_name,
-                ),
-            ).to eq(false)
-        end
-
-        it "物理index名のaliasを指定した場合はAreSearchのalias名ではないため拒否する" do
-            expect do
-                AreSearch::EsAdapter.delete_alias_named_physical_index(
-                    index_alias_name: physical_index_named_alias_name,
-                )
-            end.to raise_error(
-                ArgumentError,
-                "不正な Elasticsearch alias 名です",
-            )
-
-            expect(
-                AreSearch.client.indices.exists_alias(
-                    name: physical_index_named_alias_name,
                 ),
             ).to eq(true)
         end

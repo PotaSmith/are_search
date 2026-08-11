@@ -125,20 +125,6 @@ module AreSearch
             return not_found
         end
 
-        # alias名と同名の物理indexを削除する。
-        # indices.delete は通常aliasを参照先へ展開しない。
-        # 通常aliasを指定するとElasticsearchはBadRequestを返す。
-        # NotFoundだけをnot_foundへ変換し、それ以外のElasticsearchエラーは送出する。
-        def delete_alias_named_physical_index(index_alias_name:)
-            AreSearch::IndexDefinition.valid_index_alias_name!(index_alias_name)
-
-            AreSearch.client.indices.delete(index: index_alias_name)
-
-            return success
-        rescue Elastic::Transport::Transport::Errors::NotFound
-            return not_found
-        end
-
         # Elasticsearch のindex作成APIを呼び出す。
         # 同名のindexだけでなく、同名のaliasが存在する場合もElasticsearchはBadRequestを返す。
         def indices_create(physical_index_name:, body:)
