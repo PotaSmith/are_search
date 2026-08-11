@@ -695,7 +695,7 @@ RSpec.describe "are_search rake tasks" do
                     message:     "インデックスの切り替えに失敗しました。",
                     failed_ids:  [],
                     stop_phase:  :switch_alias,
-                    done_phases: [:delete_alias_duplicate_index],
+                    done_phases: [:index_to_new_index],
                 )
 
             expect(document_index_target)

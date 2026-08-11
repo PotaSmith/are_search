@@ -83,6 +83,10 @@ RSpec.describe AreSearch::IndexManager do
             .to receive(:exists_alias)
             .with(name: index_alias_name)
             .and_return(false)
+        allow(indices)
+            .to receive(:exists)
+            .with(index: index_alias_name)
+            .and_return(false)
 
         allow(logger).to receive(:warn)
         allow(logger).to receive(:info)
@@ -347,7 +351,6 @@ RSpec.describe AreSearch::IndexManager do
                     :create_marker,
                     :create_new_index,
                     :index_to_new_index,
-                    :delete_alias_duplicate_index,
                     :switch_alias,
                 ],
             )
@@ -391,47 +394,7 @@ RSpec.describe AreSearch::IndexManager do
             expect(AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)).to eq(nil)
         end
 
-        it "alias 名と同名の物理 index があれば切り替え前に削除する" do
-            result = build_reindex_result
-            deleted_indices = []
-
-            allow(indices)
-                .to receive(:exists)
-                .with(index: index_alias_name)
-                .and_return(true)
-
-            allow(indices)
-                .to receive(:delete) do |args|
-                    deleted_indices << args[:index]
-                end
-
-            allow(indices).to receive(:create)
-            allow(indices)
-                .to receive(:get_alias)
-                .with(name: index_alias_name)
-                .and_raise(Elastic::Transport::Transport::Errors::NotFound)
-            allow(indices)
-                .to receive(:update_aliases)
-                .and_return(
-                    "acknowledged" => true,
-                    "errors"       => false,
-                )
-
-            described_class.reindex(
-                index_alias_name,
-                index_settings,
-                mappings,
-                "reindex",
-                result,
-            ) do
-                true
-            end
-
-            expect(result[:result]).to eq(:success)
-            expect(deleted_indices).to eq([index_alias_name])
-        end
-
-        it "alias 名と同名の物理 index の削除失敗を結果へ残す" do
+        it "alias 名と同名の物理 index が存在する場合は reindex を開始しない" do
             result = build_reindex_result
 
             allow(indices)
@@ -439,35 +402,25 @@ RSpec.describe AreSearch::IndexManager do
                 .with(index: index_alias_name)
                 .and_return(true)
 
-            allow(indices)
-                .to receive(:delete)
-                .with(index: index_alias_name)
-                .and_raise(RuntimeError, "delete failed")
-
-            allow(indices).to receive(:create)
+            expect(indices).not_to receive(:create)
             expect(indices).not_to receive(:update_aliases)
 
-            described_class.reindex(
-                index_alias_name,
-                index_settings,
-                mappings,
-                "reindex",
-                result,
-            ) do
-                true
-            end
-
-            expect(result[:result]).to eq(:not_success)
-            expect(result[:message]).to eq(
-                "alias名と重複する物理インデックスの削除に失敗しました。#{index_alias_name}",
+            expect do
+                described_class.reindex(
+                    index_alias_name,
+                    index_settings,
+                    mappings,
+                    "reindex",
+                    result,
+                ) do
+                    true
+                end
+            end.to raise_error(
+                ArgumentError,
+                "エイリアス名と同名の物理インデックスが存在します #{index_alias_name}",
             )
-            expect(result[:stop_phase]).to eq(:delete_alias_duplicate_index)
-            expect(result[:done_phases]).to eq([
-                :lock_index,
-                :create_marker,
-                :create_new_index,
-                :index_to_new_index,
-            ])
+
+            expect(result).to eq(build_reindex_result)
             expect(AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)).to eq(nil)
         end
 
@@ -509,7 +462,6 @@ RSpec.describe AreSearch::IndexManager do
                 :create_marker,
                 :create_new_index,
                 :index_to_new_index,
-                :delete_alias_duplicate_index,
             ])
             expect(AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)).to eq(nil)
         end

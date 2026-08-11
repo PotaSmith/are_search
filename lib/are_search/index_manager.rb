@@ -151,6 +151,10 @@ module AreSearch
         def reindex(index_alias_name, index_settings, mappings_for_index, operation, result, &block)
             validate_index_operation_enabled!
 
+            if AreSearch::EsAdapter.alias_named_physical_index_exists?(index_alias_name: index_alias_name)
+                raise ArgumentError, "エイリアス名と同名の物理インデックスが存在します #{index_alias_name}"
+            end
+
             with_index_guard_base(index_alias_name, result, operation: operation) do
                 result[:stop_phase] = :create_new_index
                 physical_index_name = gen_physical_index_name(index_alias_name)
@@ -164,17 +168,6 @@ module AreSearch
                     return
                 end
                 result[:done_phases] << :index_to_new_index
-
-                begin
-                    result[:stop_phase] = :delete_alias_duplicate_index
-                    # alias 名と同名の物理 index が存在する場合、
-                    # alias を作れないため bulk 投入成功後、alias 切り替え前に削除する。
-                    delete_alias_named_physical_index_if_exists!(index_alias_name)
-                    result[:done_phases] << :delete_alias_duplicate_index
-                rescue
-                    result[:message] = "alias名と重複する物理インデックスの削除に失敗しました。#{index_alias_name}"
-                    return
-                end
 
                 result[:stop_phase] = :switch_alias
                 # 現行物理インデックスの一覧を取得
@@ -278,19 +271,6 @@ module AreSearch
             end
 
             warnings
-        end
-
-        def delete_alias_named_physical_index_if_exists!(index_alias_name)
-            return unless AreSearch::EsAdapter.alias_named_physical_index_exists?(
-                index_alias_name: index_alias_name,
-            )
-
-            AreSearch::EsAdapter.delete_alias_named_physical_index(
-                index_alias_name: index_alias_name,
-            )
-        rescue StandardError => e
-            AreSearch.logger.error { "[AreSearch] physical index with alias name delete failed: index_alias_name=#{index_alias_name} error=#{e.message}" }
-            raise
         end
 
         def create_physical_index!(physical_index_name, index_settings, mappings_for_index)

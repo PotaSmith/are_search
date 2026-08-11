@@ -99,7 +99,6 @@ RSpec.describe AreSearch::Reindexer do
                 :create_marker,
                 :create_new_index,
                 :index_to_new_index,
-                :delete_alias_duplicate_index,
                 :switch_alias,
             ]
         else
@@ -281,8 +280,7 @@ RSpec.describe AreSearch::Reindexer do
                         :create_marker,
                         :create_new_index,
                         :index_to_new_index,
-                        :delete_alias_duplicate_index,
-                        :switch_alias,
+                                :switch_alias,
                     ],
                 )
             end
