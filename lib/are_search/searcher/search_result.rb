@@ -7,13 +7,14 @@ module AreSearch
 
         # Kaminari paginate / 前後ページ系 helper の使用を想定
         attr_reader :page, :per_page
+        alias current_page page # Kaminari will_paginate 互換
         alias limit_value per_page # Kaminari paginate / page_entries_info 互換
 
         # Kaminari page_entries_info の使用を想定
         attr_reader :total_count
 
         attr_reader :es_total_count, :hits_count, :max_result_window, :pagination_total_count
-        alias total_entries total_count # will_paginate互換
+        alias total_entries total_count # will_paginate 互換
 
         # 検索で得た件数情報を保持し、ページング用件数を組み立てる。
         def initialize(

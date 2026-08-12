@@ -8,6 +8,8 @@ gem "bootsnap", require: false
 gem "are_search", path: ".."
 gem "conf_vars",  git: "https://github.com/PotaSmith/conf_vars.git", tag: "v0.1.1"
 
+gem "kaminari"
+
 group :development, :test do
     gem "rspec-rails"
 end

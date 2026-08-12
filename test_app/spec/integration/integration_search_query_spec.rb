@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "kaminari/helpers/helper_methods"
 require_relative "../support/integration_support"
 
 RSpec.describe "AreSearch search", type: :model do
@@ -467,6 +468,56 @@ RSpec.describe "AreSearch search features integration", type: :model do
 
         expect(over_result.status).to eq(AreSearch::SearchResult::STATUS_PARAMS_INVALID)
         expect(over_result.records).to eq([])
+    end
+
+    it "PaginatedCollectionをKaminariのpaginateとpage_entries_infoへ渡せる" do
+        create_pagination_documents(25)
+
+        result = AreSearch::Searcher.search(
+            [index_target],
+            queries: [
+                {
+                    query_string: "paginationboundarytoken",
+                    fields:       [:title],
+                },
+            ],
+            sort: {
+                user_id: :asc,
+            },
+            page:     2,
+            per_page: 10,
+        )
+
+        expect(result.status).to eq(AreSearch::SearchResult::STATUS_OK)
+        expect(result.records.map(&:user_id)).to eq((11..20).to_a)
+
+        helper = double("kaminari_helper")
+        helper.extend(Kaminari::Helpers::HelperMethods)
+
+        paginator = double("paginator", to_s: "pagination")
+        paginator_class = double("paginator_class")
+
+        expect(paginator_class).to receive(:new).with(
+            helper,
+            total_pages:  3,
+            current_page: 2,
+            per_page:     10,
+            remote:       false,
+        ).and_return(paginator)
+
+        expect(
+            helper.paginate(result.records, paginator_class: paginator_class),
+        ).to eq("pagination")
+
+        expect(helper).to receive(:t).with(
+            "helpers.page_entries_info.more_pages.display_entries",
+            entry_name: anything,
+            first:      11,
+            last:       20,
+            total:      25,
+        ).and_return("page entries")
+
+        expect(helper.page_entries_info(result.records)).to eq("page entries")
     end
 
     it "storeを指定していないtextフィールドを通常検索できる" do
