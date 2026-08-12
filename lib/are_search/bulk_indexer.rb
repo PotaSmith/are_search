@@ -243,20 +243,25 @@ module AreSearch
         def append_buffer(record)
             key = record.id.to_s
 
-            if record.are_search_indexable?(@index_target.index_target_name, @sync_stage_name) != true
-                @buffer.append_no_sync_data(key, :skip, nil)
-                return
+            if record.are_search_indexable?(@index_target.index_target_name, @sync_stage_name) == true
+                action = {
+                    index: {
+                        _index: @index_target.are_search_index_alias_name,
+                        _id:    key,
+                    },
+                }
+                data = record.are_search_index_data_for_index!(@index_target, @sync_stage_name)
+            else
+                action = {
+                    delete: {
+                        _index: @index_target.are_search_index_alias_name,
+                        _id:    key,
+                    },
+                }
+                data = nil
             end
-
-            action = {
-                index: {
-                    _index: @index_target.are_search_index_alias_name,
-                    _id:    key,
-                },
-            }
-
-            data = record.are_search_index_data_for_index!(@index_target, @sync_stage_name)
             @buffer.append_sync_data(key, action, data)
+
         rescue StandardError => error
             @buffer.append_no_sync_data(key, :fail, error)
         end
@@ -272,7 +277,7 @@ module AreSearch
                 validate_bulk_response!(response, bulk_data[:keys])
 
                 response["items"].each do |item|
-                    result = item["index"]
+                    result = item["index"] || item["delete"]
 
                     if result["error"]
                         @logger.write_failure_result!(result["_id"], result["error"])
@@ -313,7 +318,7 @@ module AreSearch
                     raise AreSearch::Error, "Elasticsearch bulk response の item が不正です"
                 end
 
-                result = item["index"]
+                result = item["index"] || item["delete"]
                 unless result.instance_of?(Hash)
                     raise AreSearch::Error, "Elasticsearch bulk response の index 結果が不正です"
                 end
@@ -392,9 +397,14 @@ module AreSearch
                 end
 
                 begin
-                    reserved_es_action = Elasticsearch::API.serializer.dump(action) + "\n"
-                    reserved_index_data = Elasticsearch::API.serializer.dump(data) + "\n"
-                    reserved_bytesize = reserved_es_action.bytesize + reserved_index_data.bytesize
+                    if data.nil?
+                        reserved_es_action = Elasticsearch::API.serializer.dump(action) + "\n"
+                        reserved_bytesize = reserved_es_action.bytesize
+                    else
+                        reserved_es_action = Elasticsearch::API.serializer.dump(action) + "\n"
+                        reserved_index_data = Elasticsearch::API.serializer.dump(data) + "\n"
+                        reserved_bytesize = reserved_es_action.bytesize + reserved_index_data.bytesize
+                    end
                 rescue StandardError => error
                     append_no_sync_data(key, :fail, error)
                     return
@@ -490,7 +500,7 @@ module AreSearch
                     @fail_key_and_errors << [@reserved_key, @reserved_index_data]
                 else
                     @values << @reserved_es_action
-                    @values << @reserved_index_data
+                    @values << @reserved_index_data unless @reserved_index_data.nil?
                     @keys << @reserved_key
                     @values_bytesize += @reserved_bytesize
                     @values_count += 1

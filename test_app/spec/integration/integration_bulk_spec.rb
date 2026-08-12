@@ -370,7 +370,7 @@ RSpec.describe "AreSearch BulkIndexer indexable integration", type: :model do
         end
     end
 
-    # statusがhiddenのレコードをBulkIndexerのskip対象にする。
+    # statusがhiddenのレコードをBulkIndexerのindex対象外にする。
     def apply_hidden_document_indexable_definition
         DocumentFirst.send(
             :define_method,
@@ -380,26 +380,26 @@ RSpec.describe "AreSearch BulkIndexer indexable integration", type: :model do
         end
     end
 
-    it "are_search_indexable?がfalseのレコードをdata_skipとしてElasticsearchへ投入しない" do
+    it "are_search_indexable?がfalseのレコードをbulk deleteとして正常処理する" do
         apply_hidden_document_indexable_definition
 
         reindex_result = rebuild_empty_document_first_index
         expect(reindex_result[:result]).to eq(:success)
 
-        skipped_document = DocumentFirst.create!(
-            title:   "bulkskiptoken hidden",
+        excluded_document = DocumentFirst.create!(
+            title:   "bulkdeletetoken hidden",
             body:    "hidden bulk body",
             status:  "hidden",
             user_id: 1601,
         )
         indexed_document = DocumentFirst.create!(
-            title:   "bulkskiptoken visible",
+            title:   "bulkdeletetoken visible",
             body:    "visible bulk body",
             status:  "published",
             user_id: 1602,
         )
 
-        Dir.mktmpdir("are_search_bulk_skip_integration") do |result_dir|
+        Dir.mktmpdir("are_search_bulk_delete_integration") do |result_dir|
             document_first_index_target.are_search_bulk_index(
                 "default",
                 result_dir:      result_dir,
@@ -408,12 +408,68 @@ RSpec.describe "AreSearch BulkIndexer indexable integration", type: :model do
                 max_fail_count:  10,
             )
 
-            data_skip_file = File.join(result_dir, "data", "data_skip.log")
-            expect(File.read(data_skip_file)).to include("#{skipped_document.id} data_skip")
+            success_file = File.join(result_dir, "data", "bulk_success.log")
+            expect(File.read(success_file)).to include("#{excluded_document.id} success")
+            expect(File.exist?(File.join(result_dir, "data", "data_skip.log"))).to eq(false)
 
             refresh_document_first_index
-            result = search_document_first("bulkskiptoken")
+            result = search_document_first("bulkdeletetoken")
             expect(result.records.map(&:id)).to eq([indexed_document.id])
         end
+    end
+
+    it "既存ドキュメントがare_search_indexable?の対象外になった場合はbulkで削除する" do
+        apply_hidden_document_indexable_definition
+
+        reindex_result = rebuild_empty_document_first_index
+        expect(reindex_result[:result]).to eq(:success)
+
+        excluded_document = DocumentFirst.create!(
+            title:   "bulkdeleteexistingtoken hidden",
+            body:    "existing hidden bulk body",
+            status:  "published",
+            user_id: 1603,
+        )
+        indexed_document = DocumentFirst.create!(
+            title:   "bulkdeleteexistingtoken visible",
+            body:    "existing visible bulk body",
+            status:  "published",
+            user_id: 1604,
+        )
+
+        Dir.mktmpdir("are_search_bulk_delete_seed_integration") do |result_dir|
+            document_first_index_target.are_search_bulk_index(
+                "default",
+                result_dir:      result_dir,
+                max_bulk_bytes:  1024 * 1024,
+                max_bulk_count:  10,
+                max_fail_count:  10,
+            )
+        end
+
+        refresh_document_first_index
+        before_result = search_document_first("bulkdeleteexistingtoken")
+        expect(before_result.records.map(&:id).sort).to eq(
+            [excluded_document.id, indexed_document.id].sort,
+        )
+
+        excluded_document.update!(status: "hidden")
+
+        Dir.mktmpdir("are_search_bulk_delete_existing_integration") do |result_dir|
+            document_first_index_target.are_search_bulk_index(
+                "default",
+                result_dir:      result_dir,
+                max_bulk_bytes:  1024 * 1024,
+                max_bulk_count:  10,
+                max_fail_count:  10,
+            )
+
+            success_file = File.join(result_dir, "data", "bulk_success.log")
+            expect(File.read(success_file)).to include("#{excluded_document.id} success")
+        end
+
+        refresh_document_first_index
+        result = search_document_first("bulkdeleteexistingtoken")
+        expect(result.records.map(&:id)).to eq([indexed_document.id])
     end
 end

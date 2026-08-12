@@ -4,6 +4,7 @@
 
 ## [Unreleased]
 
+- bulk_indexerのare_search_indexable対応
 - 検索時のパラメーターエラーでのページの扱いの統一
 - jobのretry条件の例外の修正
 - ガイドの整理

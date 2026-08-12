@@ -95,11 +95,11 @@ RSpec.describe AreSearch::BulkIndexer do
             expect(File.directory?(File.join(result_dir, "recover"))).to eq(true)
         end
 
-        it "成功、bulk失敗、data_skip、data_failを記録し最後の処理IDをcheckpointへ記録する" do
+        it "成功、bulk失敗、delete、data_failを記録し最後の処理IDをcheckpointへ記録する" do
             relation = double("relation")
             success_record = double("success_record", id: 1)
             bulk_failure_record = double("bulk_failure_record", id: 2)
-            skip_record = double("skip_record", id: 3)
+            delete_record = double("delete_record", id: 3)
             data_failure_record = double("data_failure_record", id: 4)
 
             allow(model_class)
@@ -110,7 +110,7 @@ RSpec.describe AreSearch::BulkIndexer do
                 [
                     success_record,
                     bulk_failure_record,
-                    skip_record,
+                    delete_record,
                     data_failure_record,
                 ],
             )
@@ -133,11 +133,11 @@ RSpec.describe AreSearch::BulkIndexer do
                 .with(index_target, sync_stage_name)
                 .and_return(id: 2, title: "failure")
 
-            allow(skip_record)
+            allow(delete_record)
                 .to receive(:are_search_indexable?)
                 .with(:default, sync_stage_name)
                 .and_return(false)
-            expect(skip_record)
+            expect(delete_record)
                 .not_to receive(:are_search_index_data_for_index!)
 
             allow(data_failure_record)
@@ -176,6 +176,12 @@ RSpec.describe AreSearch::BulkIndexer do
                             "id"    => 2,
                             "title" => "failure",
                         },
+                        {
+                            "delete" => {
+                                "_index" => "test__articles__default",
+                                "_id"    => "3",
+                            },
+                        },
                     ])
 
                     {
@@ -193,6 +199,12 @@ RSpec.describe AreSearch::BulkIndexer do
                                     },
                                 },
                             },
+                            {
+                                "delete" => {
+                                    "_id"   => "3",
+                                    "result" => "not_found",
+                                },
+                            },
                         ],
                     }
                 end
@@ -202,13 +214,10 @@ RSpec.describe AreSearch::BulkIndexer do
             data_dir = File.join(result_dir, "data")
 
             expect(File.read(File.join(data_dir, "bulk_success.log"))).to match(
-                /\A\[[^\]]+\] 1 success\n\z/,
+                /\A\[[^\]]+\] 1 success\n\[[^\]]+\] 3 success\n\z/,
             )
             expect(File.read(File.join(data_dir, "bulk_failure.log"))).to match(
                 /\A\[[^\]]+\] 2 fail\n\z/,
-            )
-            expect(File.read(File.join(data_dir, "data_skip.log"))).to match(
-                /\A\[[^\]]+\] 3 data_skip\n\z/,
             )
             expect(File.read(File.join(data_dir, "data_fail.log"))).to match(
                 /\A\[[^\]]+\] 4 data_fail\n\z/,
@@ -220,7 +229,7 @@ RSpec.describe AreSearch::BulkIndexer do
             bulk_log = File.read(File.join(result_dir, "bulk.log"))
             expect(bulk_log).to match(/\[[^\]]+\] 1 success/)
             expect(bulk_log).to match(/\[[^\]]+\] 2 .*mapper_parsing_exception.* fail/)
-            expect(bulk_log).to match(/\[[^\]]+\] 3 data_skip/)
+            expect(bulk_log).to match(/\[[^\]]+\] 3 success/)
             expect(bulk_log).to match(
                 /\[[^\]]+\] 4 RuntimeError: data build failed second line data_fail/,
             )
