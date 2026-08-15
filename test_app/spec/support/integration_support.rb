@@ -90,7 +90,7 @@ module AreSearchIntegrationSupport
         end
 
         AreSearch::SyncRequest.delete_all
-        AreSearch::IndexMarker.delete_all
+        AreSearch::SyncLock.delete_all
     end
 
     # DocumentFirst の標準 IndexTarget を返す。

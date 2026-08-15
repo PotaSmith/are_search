@@ -78,9 +78,10 @@ ActiveRecord::Schema.define do
         name:   "idx_are_search_sync_requests_unique"
 
 
-    create_table :are_search_index_markers, id: :integer, force: true do |t|
+    create_table :are_search_sync_locks, id: :integer, force: true do |t|
         t.string   :index_alias_name, null: false
-        t.string   :operation,     null: false
+        t.string   :sync_stage_name,  null: false
+        t.string   :operation,        null: false
         t.string   :owner_token,   null: false
         t.string   :owner_host
         t.integer  :owner_pid
@@ -90,10 +91,27 @@ ActiveRecord::Schema.define do
         t.timestamps
     end
 
-    add_index :are_search_index_markers,
-        :index_alias_name,
+    add_index :are_search_sync_locks,
+        [:index_alias_name, :sync_stage_name],
         unique: true,
-        name:   "idx_are_search_index_markers_unique"
+        name:   "idx_are_search_sync_locks_unique"
+
+
+    create_table :are_search_sync_request_boundary_targets, id: :integer, force: true do |t|
+        t.string   :index_alias_name,      null: false
+        t.string   :sync_stage_name,       null: false
+        t.bigint   :sequence_limit,        null: false
+        t.datetime :last_sync_started_at
+        t.datetime :last_sync_ended_at
+        t.text     :message
+
+        t.timestamps
+    end
+
+    add_index :are_search_sync_request_boundary_targets,
+        [:index_alias_name, :sync_stage_name],
+        unique: true,
+        name:   "idx_are_search_sync_request_boundary_targets_unique"
 end
 
 RSpec.configure do |config|
@@ -109,6 +127,7 @@ RSpec.configure do |config|
 
     config.after(:each) do
         AreSearch::SyncRequest.delete_all
-        AreSearch::IndexMarker.delete_all
+        AreSearch::SyncLock.delete_all
+        AreSearch::SyncRequestBoundaryTarget.delete_all
     end
 end

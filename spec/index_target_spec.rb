@@ -34,6 +34,22 @@ RSpec.describe AreSearch::IndexTarget do
         described_class.new(model_class, :default)
     end
 
+    around do |example|
+        original_index_operation_enabled = AreSearch.index_operation_enabled
+        AreSearch.index_operation_enabled = true
+
+        example.run
+    ensure
+        AreSearch.index_operation_enabled = original_index_operation_enabled
+    end
+
+    before do
+        allow(model_class)
+            .to receive(:are_search_get_all_sync_stage_names)
+            .with(index_target)
+            .and_return(["default"])
+    end
+
     describe "同一性" do
         it "同じモデルとindex_target_nameなら同一targetとして扱う" do
             first_index_target = described_class.new(model_class, :default)
@@ -228,20 +244,128 @@ RSpec.describe AreSearch::IndexTarget do
 
     end
 
-    describe "#are_search_index_marked?" do
+    describe "manual sync lock API" do
         before do
             allow(AreSearch)
                 .to receive(:index_prefix)
                 .and_return("test")
         end
 
-        it "対象aliasのmarker存在確認をIndexMarkerへ委譲する" do
-            expect(AreSearch::IndexMarker)
-                .to receive(:marked?)
-                .with("test__articles__default")
-                .and_return(true)
+        it "IndexTarget全体のmanual sync lock取得をSyncLockへ委譲する" do
+            sync_lock = double("sync_lock")
 
-            expect(index_target.are_search_index_marked?).to eq(true)
+            expect(AreSearch::SyncLock)
+                .to receive(:acquire_index_target_manual!)
+                .with("test__articles__default")
+                .and_return(sync_lock)
+
+            expect(index_target.are_search_acquire_sync_lock!).to equal(sync_lock)
+        end
+
+        it "IndexTarget全体のmanual sync lock解放をSyncLockへ委譲する" do
+            expect(AreSearch::SyncLock)
+                .to receive(:release_index_target_manual!)
+                .with("test__articles__default")
+                .and_return(1)
+
+            expect(index_target.are_search_release_sync_lock!).to eq(1)
+        end
+
+        it "IndexTarget全体のsync lock強制解除をSyncLockへ委譲する" do
+            expect(AreSearch::SyncLock)
+                .to receive(:force_release!)
+                .with("test__articles__default")
+                .and_return(1)
+
+            expect(index_target.are_search_force_release_sync_lock!).to eq(1)
+        end
+
+        it "指定stageのmanual sync lock取得をSyncLockへ委譲する" do
+            sync_lock = double("sync_lock")
+
+            expect(AreSearch::SyncLock)
+                .to receive(:acquire_sync_stage_manual!)
+                .with("test__articles__default", "default")
+                .and_return(sync_lock)
+
+            expect(index_target.are_search_acquire_sync_stage_lock!("default")).to equal(sync_lock)
+        end
+
+        it "指定stageのmanual sync lock解放をSyncLockへ委譲する" do
+            expect(AreSearch::SyncLock)
+                .to receive(:release_sync_stage_manual!)
+                .with("test__articles__default", "default")
+                .and_return(1)
+
+            expect(index_target.are_search_release_sync_stage_lock!("default")).to eq(1)
+        end
+
+        it "指定stageのsync lock強制解除をSyncLockへ委譲する" do
+            expect(AreSearch::SyncLock)
+                .to receive(:force_release_sync_stage!)
+                .with("test__articles__default", "removed_stage")
+                .and_return(1)
+
+            expect(index_target.are_search_force_release_sync_stage_lock!("removed_stage")).to eq(1)
+        end
+
+        it "index 操作が許可されていない場合はmanual sync lock操作を開始しない" do
+            AreSearch.index_operation_enabled = false
+
+            expect(AreSearch::SyncLock).not_to receive(:acquire_index_target_manual!)
+            expect(AreSearch::SyncLock).not_to receive(:release_index_target_manual!)
+            expect(AreSearch::SyncLock).not_to receive(:force_release!)
+            expect(AreSearch::SyncLock).not_to receive(:force_release_sync_stage!)
+
+            expect do
+                index_target.are_search_acquire_sync_lock!
+            end.to raise_error(AreSearch::IndexOperationViolation)
+
+            expect do
+                index_target.are_search_release_sync_lock!
+            end.to raise_error(AreSearch::IndexOperationViolation)
+
+            expect do
+                index_target.are_search_force_release_sync_lock!
+            end.to raise_error(AreSearch::IndexOperationViolation)
+
+            expect do
+                index_target.are_search_force_release_sync_stage_lock!("default")
+            end.to raise_error(AreSearch::IndexOperationViolation)
+        end
+    end
+
+    describe "#are_search_index_target_syncable?" do
+        before do
+            allow(AreSearch)
+                .to receive(:index_prefix)
+                .and_return("test")
+        end
+
+        it "対象aliasへ同期できるかSyncLockへ委譲して判定する" do
+            expect(AreSearch::SyncLock)
+                .to receive(:index_target_locked?)
+                .with("test__articles__default")
+                .and_return(false)
+
+            expect(index_target.are_search_index_target_syncable?).to eq(true)
+        end
+    end
+
+    describe "#are_search_sync_stage_syncable?" do
+        before do
+            allow(AreSearch)
+                .to receive(:index_prefix)
+                .and_return("test")
+        end
+
+        it "対象stageへ同期できるかSyncLockへ委譲して判定する" do
+            expect(AreSearch::SyncLock)
+                .to receive(:sync_stage_locked?)
+                .with("test__articles__default", "default")
+                .and_return(false)
+
+            expect(index_target.are_search_sync_stage_syncable?("default")).to eq(true)
         end
     end
 
@@ -269,6 +393,16 @@ RSpec.describe AreSearch::IndexTarget do
                 .and_return("test")
         end
 
+        it "index 操作が許可されていない場合は IndexOperationViolation を出す" do
+            AreSearch.index_operation_enabled = false
+
+            expect(AreSearch::IndexManager).not_to receive(:index_clean_up)
+
+            expect do
+                index_target.are_search_clean_up
+            end.to raise_error(AreSearch::IndexOperationViolation)
+        end
+
         it "対象 index 名を IndexManager へ渡して処理結果を返す" do
             clean_up_result = {
                 result: :success,
@@ -289,42 +423,77 @@ RSpec.describe AreSearch::IndexTarget do
         end
     end
 
-    describe "#are_search_with_index_guard" do
+    describe "#are_search_with_sync_stage_lock" do
         before do
             allow(AreSearch)
                 .to receive(:index_prefix)
                 .and_return("test")
+            allow(AreSearch::EsAdapter)
+                .to receive(:index_alias_exists?)
+                .with(index_alias_name: "test__articles__default")
+                .and_return(true)
         end
 
-        it "対象 index 名と result と operation と block を IndexManager へ渡す" do
-            received_block = nil
-            received_result = nil
+        it "index 操作が許可されていない場合は IndexOperationViolation を出す" do
+            AreSearch.index_operation_enabled = false
+
+            expect(AreSearch::SyncLock).not_to receive(:with_sync_stage_operation!)
+
+            expect do
+                index_target.are_search_with_sync_stage_lock("default", operation: "bulk") do
+                    "not reached"
+                end
+            end.to raise_error(AreSearch::IndexOperationViolation)
+        end
+
+        it "未定義stageなら SyncLock を呼ばず ArgumentError を出す" do
+            expect(AreSearch::SyncLock).not_to receive(:with_sync_stage_operation!)
+
+            expect do
+                index_target.are_search_with_sync_stage_lock("unknown", operation: "bulk") do
+                    "not reached"
+                end
+            end.to raise_error(ArgumentError, /IndexTarget に定義されていません/)
+        end
+
+        it "operation が空なら SyncLock を呼ばず ArgumentError を出す" do
+            expect(AreSearch::SyncLock).not_to receive(:with_sync_stage_operation!)
+
+            expect do
+                index_target.are_search_with_sync_stage_lock("default", operation: nil) do
+                    "not reached"
+                end
+            end.to raise_error(ArgumentError, "operation を指定してください")
+        end
+
+        it "block が無ければ SyncLock を呼ばず ArgumentError を出す" do
+            expect(AreSearch::SyncLock).not_to receive(:with_sync_stage_operation!)
+
+            expect do
+                index_target.are_search_with_sync_stage_lock("default", operation: "bulk")
+            end.to raise_error(ArgumentError, "are_search_with_sync_stage_lock には block が必要です")
+        end
+
+        it "対象 index 名と stage と operation と block を SyncLock へ渡す" do
             source_block = proc { "done" }
 
-            expect(AreSearch::IndexManager)
-                .to receive(:with_index_guard) do |index_alias_name, result, operation:, &block|
+            expect(AreSearch::SyncLock)
+                .to receive(:with_sync_stage_operation!) do |index_alias_name, operation:, sync_stage_name:, &block|
                     expect(index_alias_name).to eq("test__articles__default")
-                    expect(operation).to eq("pdf_extract")
-                    received_result = result
-                    received_block = block
+                    expect(operation).to eq("bulk")
+                    expect(sync_stage_name).to eq("default")
+                    expect(block).to equal(source_block)
 
-                    result[:result] = :success
-                    result[:stop_phase] = nil
+                    "done"
                 end
 
-            result = index_target.are_search_with_index_guard(
-                operation: "pdf_extract",
+            result = index_target.are_search_with_sync_stage_lock(
+                "default",
+                operation: "bulk",
                 &source_block
             )
 
-            expect(result).to equal(received_result)
-            expect(result).to eq(
-                result: :success,
-                message: '',
-                stop_phase: nil,
-                done_phases: [],
-            )
-            expect(received_block).to equal(source_block)
+            expect(result).to eq("done")
         end
     end
 
@@ -547,6 +716,16 @@ RSpec.describe AreSearch::IndexTarget do
                 .and_return("test")
         end
 
+        it "index 操作が許可されていない場合は IndexOperationViolation を出す" do
+            AreSearch.index_operation_enabled = false
+
+            expect(AreSearch::IndexManager).not_to receive(:reindex)
+
+            expect do
+                index_target.are_search_create_index
+            end.to raise_error(AreSearch::IndexOperationViolation)
+        end
+
         it "既存aliasがある場合は拒否する" do
             allow(AreSearch::EsAdapter)
                 .to receive(:index_alias_exists?)
@@ -634,6 +813,16 @@ RSpec.describe AreSearch::IndexTarget do
     end
 
     describe "#are_search_reindex" do
+        it "index 操作が許可されていない場合は IndexOperationViolation を出す" do
+            AreSearch.index_operation_enabled = false
+
+            expect(AreSearch::Reindexer).not_to receive(:reindex_index_target)
+
+            expect do
+                index_target.are_search_reindex(stage_position: :first)
+            end.to raise_error(AreSearch::IndexOperationViolation)
+        end
+
         let(:reindex_result) do
             {
                 result: :success,
@@ -647,7 +836,7 @@ RSpec.describe AreSearch::IndexTarget do
         it "firstならallの先頭stageでreindexする" do
             allow(model_class)
                 .to receive(:are_search_get_all_sync_stage_names)
-                .with(:default)
+                .with(index_target)
                 .and_return(["default", "with_external_file"])
 
             expect(AreSearch::Reindexer)
@@ -663,7 +852,7 @@ RSpec.describe AreSearch::IndexTarget do
         it "lastならallの末尾stageでreindexする" do
             allow(model_class)
                 .to receive(:are_search_get_all_sync_stage_names)
-                .with(:default)
+                .with(index_target)
                 .and_return(["default", "with_external_file"])
 
             expect(AreSearch::Reindexer)
@@ -679,7 +868,7 @@ RSpec.describe AreSearch::IndexTarget do
         it "firstとlast以外は拒否する" do
             allow(model_class)
                 .to receive(:are_search_get_all_sync_stage_names)
-                .with(:default)
+                .with(index_target)
                 .and_return(["default"])
 
             expect(AreSearch::Reindexer)
@@ -766,6 +955,10 @@ RSpec.describe AreSearch::IndexTarget do
                 def self.are_search_ar_table_name
                     "articles"
                 end
+
+                def self.are_search_get_all_sync_stage_names(_index_target_name)
+                    ["default"]
+                end
             end
         end
 
@@ -781,13 +974,13 @@ RSpec.describe AreSearch::IndexTarget do
                 .and_return("test")
         end
 
-        it "SyncRequest.are_search_find_and_try_sync に同期キーと processing_token を渡す" do
+        it "SyncRequest.find_and_try_sync に同期キーと processing_token を渡す" do
             allow(SecureRandom)
                 .to receive(:uuid)
                 .and_return("token-1")
 
             expect(AreSearch::SyncRequest)
-                .to receive(:are_search_find_and_try_sync)
+                .to receive(:find_and_try_sync)
                 .with(
                     "Article",
                     "123",

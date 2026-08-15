@@ -497,7 +497,7 @@ RSpec.describe AreSearch::IndexDataValidator do
     end
 end
 
-RSpec.describe AreSearch::IndexMarker do
+RSpec.describe AreSearch::SyncLock do
     let(:index_alias_name) { "test__articles__default" }
 
     around do |example|
@@ -509,10 +509,11 @@ RSpec.describe AreSearch::IndexMarker do
         AreSearch.index_operation_enabled = original_index_operation_enabled
     end
 
-    def create_index_marker(attrs = {})
+    def create_sync_lock(attrs = {})
         defaults = {
             index_alias_name: index_alias_name,
-            operation:     "reindex",
+            sync_stage_name:  AreSearch::SyncLock.index_target_lock_name,
+            operation:        "reindex",
             owner_token:   SecureRandom.uuid,
             owner_host:    "test-host",
             owner_pid:     12345,
@@ -522,43 +523,43 @@ RSpec.describe AreSearch::IndexMarker do
         described_class.create!(defaults.merge(attrs))
     end
 
-    describe ".marked?" do
-        it "marker が無ければ false を返す" do
-            expect(described_class.marked?(index_alias_name)).to eq(false)
+    describe ".index_target_locked?" do
+        it "sync lock が無ければ false を返す" do
+            expect(described_class.index_target_locked?(index_alias_name)).to eq(false)
         end
 
-        it "marker があれば true を返す" do
-            create_index_marker
+        it "sync lock があれば true を返す" do
+            create_sync_lock
 
-            expect(described_class.marked?(index_alias_name)).to eq(true)
+            expect(described_class.index_target_locked?(index_alias_name)).to eq(true)
         end
     end
 
-    describe ".with_index_operation_marker!" do
-        it "index 操作用 marker を作成し、block の戻り値を返して marker を削除する" do
-            marker_inside_block = nil
+    describe ".with_index_operation!" do
+        it "index 操作用 sync lock を作成し、block の戻り値を返して sync lock を削除する" do
+            sync_lock_inside_block = nil
 
-            result = described_class.with_index_operation_marker!(
+            result = described_class.with_index_operation!(
                 index_alias_name,
                 operation: "reindex",
             ) do
-                marker_inside_block = described_class.find_by(index_alias_name: index_alias_name)
+                sync_lock_inside_block = described_class.find_by(index_alias_name: index_alias_name)
 
                 "done"
             end
 
             expect(result).to eq("done")
-            expect(marker_inside_block).not_to eq(nil)
-            expect(marker_inside_block.operation).to eq("reindex")
-            expect(marker_inside_block.owner_token).not_to eq(nil)
-            expect(marker_inside_block.owner_pid).to eq(Process.pid)
-            expect(marker_inside_block.started_at).not_to eq(nil)
+            expect(sync_lock_inside_block).not_to eq(nil)
+            expect(sync_lock_inside_block.operation).to eq("reindex")
+            expect(sync_lock_inside_block.owner_token).not_to eq(nil)
+            expect(sync_lock_inside_block.owner_pid).to eq(Process.pid)
+            expect(sync_lock_inside_block.started_at).not_to eq(nil)
             expect(described_class.find_by(index_alias_name: index_alias_name)).to eq(nil)
         end
 
-        it "block で例外が出た場合も marker を削除して例外を再送出する" do
+        it "block で例外が出た場合も sync lock を削除して例外を再送出する" do
             expect do
-                described_class.with_index_operation_marker!(
+                described_class.with_index_operation!(
                     index_alias_name,
                     operation: "reindex",
                 ) do
@@ -569,58 +570,40 @@ RSpec.describe AreSearch::IndexMarker do
             expect(described_class.find_by(index_alias_name: index_alias_name)).to eq(nil)
         end
 
-        it "owner_token が変わっている marker は削除しない" do
-            marker_id = nil
+        it "owner_token が変わっている sync lock は削除しない" do
+            sync_lock_id = nil
 
-            described_class.with_index_operation_marker!(
+            described_class.with_index_operation!(
                 index_alias_name,
                 operation: "reindex",
             ) do
-                marker = described_class.find_by(index_alias_name: index_alias_name)
-                marker_id = marker.id
+                sync_lock = described_class.find_by(index_alias_name: index_alias_name)
+                sync_lock_id = sync_lock.id
 
-                marker.update_columns(owner_token: "other-token")
+                sync_lock.update_columns(owner_token: "other-token")
             end
 
-            marker = described_class.find_by(id: marker_id)
+            sync_lock = described_class.find_by(id: sync_lock_id)
 
-            expect(marker).not_to eq(nil)
-            expect(marker.owner_token).to eq("other-token")
+            expect(sync_lock).not_to eq(nil)
+            expect(sync_lock.owner_token).to eq("other-token")
         end
 
-        it "既存 marker があれば IndexMarkerUnavailable を出す" do
-            create_index_marker(operation: "reindex")
+        it "既存 sync lock があれば SyncLockUnavailable を出す" do
+            create_sync_lock(operation: "reindex")
 
             expect do
-                described_class.with_index_operation_marker!(
+                described_class.with_index_operation!(
                     index_alias_name,
                     operation: "clean_up",
                 ) do
                     "not reached"
                 end
-            end.to raise_error(AreSearch::IndexMarkerUnavailable)
-        end
-
-        it "index 操作が許可されていない場合は IndexOperationViolation を出す" do
-            AreSearch.index_operation_enabled = false
-
-            expect do
-                described_class.with_index_operation_marker!(
-                    index_alias_name,
-                    operation: "reindex",
-                ) do
-                    "not reached"
-                end
-            end.to raise_error(
-                AreSearch::IndexOperationViolation,
-                /index 操作が許可されていません/,
-            )
-
-            expect(described_class.find_by(index_alias_name: index_alias_name)).to eq(nil)
+            end.to raise_error(AreSearch::SyncLockUnavailable)
         end
     end
 
-    describe ".create_manual!" do
+    describe ".with_sync_stage_operation!" do
         before do
             allow(AreSearch::EsAdapter)
                 .to receive(:index_alias_exists?)
@@ -628,124 +611,161 @@ RSpec.describe AreSearch::IndexMarker do
                 .and_return(true)
         end
 
-        it "alias が存在する場合は manual marker を作成する" do
-            marker = described_class.create_manual!(index_alias_name)
+        it "指定stageの sync lock を作成し、block の戻り値を返して sync lock を削除する" do
+            sync_lock_inside_block = nil
 
-            expect(marker.index_alias_name).to eq(index_alias_name)
-            expect(marker.operation).to eq(described_class::MANUAL_OPERATION)
-            expect(marker.owner_token).not_to eq(nil)
-            expect(marker.started_at).not_to eq(nil)
+            result = described_class.with_sync_stage_operation!(
+                index_alias_name,
+                operation: "bulk",
+                sync_stage_name: "default",
+            ) do
+                sync_lock_inside_block = described_class.find_by(
+                    index_alias_name: index_alias_name,
+                    sync_stage_name:  "default",
+                )
+
+                "done"
+            end
+
+            expect(result).to eq("done")
+            expect(sync_lock_inside_block).not_to eq(nil)
+            expect(sync_lock_inside_block.operation).to eq("bulk")
+            expect(sync_lock_inside_block.owner_token).not_to eq(nil)
+            expect(sync_lock_inside_block.owner_pid).to eq(Process.pid)
+            expect(sync_lock_inside_block.started_at).not_to eq(nil)
+            expect(
+                described_class.find_by(
+                    index_alias_name: index_alias_name,
+                    sync_stage_name:  "default",
+                ),
+            ).to eq(nil)
         end
 
-        it "既存 marker があれば alias を確認せず nil を返して上書きしない" do
-            existing_marker = create_index_marker(operation: "reindex")
+        it "block で例外が出た場合も sync lock を削除して例外を再送出する" do
+            expect do
+                described_class.with_sync_stage_operation!(
+                    index_alias_name,
+                    operation: "bulk",
+                    sync_stage_name: "default",
+                ) do
+                    raise RuntimeError, "failed"
+                end
+            end.to raise_error(RuntimeError, "failed")
+
+            expect(
+                described_class.find_by(
+                    index_alias_name: index_alias_name,
+                    sync_stage_name:  "default",
+                ),
+            ).to eq(nil)
+        end
+
+        it "同じstageの sync lock があれば SyncLockUnavailable を出す" do
+            create_sync_lock(
+                sync_stage_name: "default",
+                operation: "manual",
+            )
+
+            expect do
+                described_class.with_sync_stage_operation!(
+                    index_alias_name,
+                    operation: "bulk",
+                    sync_stage_name: "default",
+                ) do
+                    "not reached"
+                end
+            end.to raise_error(AreSearch::SyncLockUnavailable)
+        end
+
+    end
+
+    describe ".acquire_index_target_manual!" do
+        before do
+            allow(AreSearch::EsAdapter)
+                .to receive(:index_alias_exists?)
+                .with(index_alias_name: index_alias_name)
+                .and_return(true)
+        end
+
+        it "alias が存在する場合は manual sync lock を作成する" do
+            sync_lock = described_class.acquire_index_target_manual!(index_alias_name)
+
+            expect(sync_lock.index_alias_name).to eq(index_alias_name)
+            expect(sync_lock.operation).to eq(described_class::MANUAL_OPERATION)
+            expect(sync_lock.owner_token).not_to eq(nil)
+            expect(sync_lock.started_at).not_to eq(nil)
+        end
+
+        it "既存 sync lock があれば alias を確認せず nil を返して上書きしない" do
+            existing_sync_lock = create_sync_lock(operation: "reindex")
 
             expect(AreSearch::EsAdapter)
                 .not_to receive(:index_alias_exists?)
 
-            marker = described_class.create_manual!(index_alias_name)
+            sync_lock = described_class.acquire_index_target_manual!(index_alias_name)
 
-            expect(marker).to eq(nil)
-            expect(described_class.find_by(id: existing_marker.id).operation).to eq("reindex")
+            expect(sync_lock).to eq(nil)
+            expect(described_class.find_by(id: existing_sync_lock.id).operation).to eq("reindex")
         end
 
-        it "alias が存在しなければ nil を返して marker を作成しない" do
+        it "alias が存在しなければ nil を返して sync lock を作成しない" do
             allow(AreSearch::EsAdapter)
                 .to receive(:index_alias_exists?)
                 .with(index_alias_name: index_alias_name)
                 .and_return(false)
 
-            marker = described_class.create_manual!(index_alias_name)
+            sync_lock = described_class.acquire_index_target_manual!(index_alias_name)
 
-            expect(marker).to eq(nil)
+            expect(sync_lock).to eq(nil)
             expect(described_class.find_by(index_alias_name: index_alias_name)).to eq(nil)
         end
 
-        it "index 操作が許可されていない場合は IndexOperationViolation を出す" do
-            AreSearch.index_operation_enabled = false
-
-            expect do
-                described_class.create_manual!(index_alias_name)
-            end.to raise_error(
-                AreSearch::IndexOperationViolation,
-                /index 操作が許可されていません/,
-            )
-        end
     end
 
-    describe ".delete_manual!" do
-        it "manual marker だけを削除する" do
-            marker = create_index_marker(operation: described_class::MANUAL_OPERATION)
+    describe ".release_index_target_manual!" do
+        it "manual sync lock だけを削除する" do
+            sync_lock = create_sync_lock(operation: described_class::MANUAL_OPERATION)
 
-            deleted_count = described_class.delete_manual!(index_alias_name)
+            deleted_count = described_class.release_index_target_manual!(index_alias_name)
 
             expect(deleted_count).to eq(1)
-            expect(described_class.find_by(id: marker.id)).to eq(nil)
+            expect(described_class.find_by(id: sync_lock.id)).to eq(nil)
         end
 
-        it "manual 以外の marker は削除しない" do
-            marker = create_index_marker(operation: "reindex")
+        it "manual 以外の sync lock は削除しない" do
+            sync_lock = create_sync_lock(operation: "reindex")
 
-            deleted_count = described_class.delete_manual!(index_alias_name)
+            deleted_count = described_class.release_index_target_manual!(index_alias_name)
 
             expect(deleted_count).to eq(0)
-            expect(described_class.find_by(id: marker.id)).not_to eq(nil)
+            expect(described_class.find_by(id: sync_lock.id)).not_to eq(nil)
         end
 
-        it "index 操作が許可されていない場合は IndexOperationViolation を出す" do
-            create_index_marker(operation: described_class::MANUAL_OPERATION)
-            AreSearch.index_operation_enabled = false
-
-            expect do
-                described_class.delete_manual!(index_alias_name)
-            end.to raise_error(
-                AreSearch::IndexOperationViolation,
-                /index 操作が許可されていません/,
-            )
-        end
     end
 
-    describe ".delete_force!" do
-        it "operation に関係なく marker を削除する" do
-            marker = create_index_marker(operation: "reindex")
+    describe ".force_release!" do
+        it "operation に関係なく sync lock を削除する" do
+            sync_lock = create_sync_lock(operation: "reindex")
 
-            deleted_count = described_class.delete_force!(index_alias_name)
+            deleted_count = described_class.force_release!(index_alias_name)
 
             expect(deleted_count).to eq(1)
-            expect(described_class.find_by(id: marker.id)).to eq(nil)
+            expect(described_class.find_by(id: sync_lock.id)).to eq(nil)
         end
 
-        it "index 操作が許可されていない場合は IndexOperationViolation を出す" do
-            create_index_marker(operation: "reindex")
-            AreSearch.index_operation_enabled = false
-
-            expect do
-                described_class.delete_force!(index_alias_name)
-            end.to raise_error(
-                AreSearch::IndexOperationViolation,
-                /index 操作が許可されていません/,
-            )
-        end
     end
 
-    describe "AreSearch manual marker API" do
-        before do
-            allow(AreSearch::EsAdapter)
-                .to receive(:index_alias_exists?)
-                .with(index_alias_name: index_alias_name)
-                .and_return(true)
-        end
+    describe ".force_release_sync_stage!" do
+        it "operation に関係なく指定stageの sync lock だけを削除する" do
+            target_sync_lock = create_sync_lock(sync_stage_name: "default", operation: "bulk")
+            other_sync_lock = create_sync_lock(sync_stage_name: "other_stage", operation: "maintenance")
 
-        it "mark_index! と unmark_index! で manual marker を操作する" do
-            marker = AreSearch.mark_index!(index_alias_name)
-
-            expect(marker.operation).to eq(described_class::MANUAL_OPERATION)
-            expect(described_class.marked?(index_alias_name)).to eq(true)
-
-            deleted_count = AreSearch.unmark_index!(index_alias_name)
+            deleted_count = described_class.force_release_sync_stage!(index_alias_name, "default")
 
             expect(deleted_count).to eq(1)
-            expect(described_class.marked?(index_alias_name)).to eq(false)
+            expect(described_class.find_by(id: target_sync_lock.id)).to eq(nil)
+            expect(described_class.find_by(id: other_sync_lock.id)).not_to eq(nil)
         end
     end
+
 end

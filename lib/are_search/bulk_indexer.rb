@@ -29,6 +29,8 @@ module AreSearch
         end
     end
 
+    # 以下は直接呼ばない
+
     class BulkIndexer
 
         MAX_RECOVER_COUNT = 2000
@@ -149,9 +151,7 @@ module AreSearch
                     "Searchable を継承した子クラスから bulk_index は実行できません: #{model_class.name}"
             end
 
-            sync_stage_names = model_class.are_search_get_all_sync_stage_names(
-                @index_target.index_target_name,
-            )
+            sync_stage_names = model_class.are_search_get_all_sync_stage_names(@index_target)
             unless sync_stage_names.include?(@sync_stage_name)
                 raise ArgumentError,
                     "sync_stage_name が IndexTarget に定義されていません: #{@sync_stage_name}"
@@ -190,27 +190,6 @@ module AreSearch
             end
         end
 
-        # relationを1件ずつ処理し、容量上限を超えた時点でbulk送信する。
-        def index_records(relation)
-            relation.find_each do |record|
-                key = record.id.to_s
-                if @logger.invalid_key?(key)
-                    raise AreSearch::Error,
-                        "bulk結果ファイルへ記録できないIDです: #{key.inspect}"
-                end
-
-                append_buffer(record)
-
-                if @buffer.capacity_over?(@logger)
-                    send_bulk(@buffer.take)
-                end
-
-                @buffer.check_bulk_exit!(@logger)
-            end
-
-            send_bulk(@buffer.take_all)
-        end
-
         # recover 時は未解決の失敗IDだけ、通常時は各結果ファイルの最後のIDより後を対象にする。
         def build_index_relation
             model_class = @index_target.model_class
@@ -236,6 +215,27 @@ module AreSearch
             end
 
             model_class.where(id: existing_keys)
+        end
+
+        # relationを1件ずつ処理し、容量上限を超えた時点でbulk送信する。
+        def index_records(relation)
+            relation.find_each do |record|
+                key = record.id.to_s
+                if @logger.invalid_key?(key)
+                    raise AreSearch::Error,
+                        "bulk結果ファイルへ記録できないIDです: #{key.inspect}"
+                end
+
+                append_buffer(record)
+
+                if @buffer.capacity_over?(@logger)
+                    send_bulk(@buffer.take)
+                end
+
+                @buffer.check_bulk_exit!(@logger)
+            end
+
+            send_bulk(@buffer.take_all)
         end
 
         # 対象レコードからbulkのactionとdataを作り、bufferへ渡す。

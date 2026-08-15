@@ -4,9 +4,11 @@ module AreSearch
     module RakeUtils
         extend self
 
-        def searchable_index_alias_names
+        # Searchable の全 IndexTarget を alias 単位で重複を除いて返す。
+        def searchable_index_targets
             Rails.application.eager_load!
 
+            index_targets = []
             index_alias_names = []
 
             ActiveRecord::Base.descendants.select { |klass| klass.include?(AreSearch::Searchable) }.each do |klass|
@@ -15,10 +17,11 @@ module AreSearch
                     next if index_alias_names.include?(index_alias_name)
 
                     index_alias_names << index_alias_name
+                    index_targets << index_target
                 end
             end
 
-            index_alias_names
+            index_targets
         end
 
         # Searchable モデルを継承系統ごとに整理し、

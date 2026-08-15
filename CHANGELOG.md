@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-16
+
+- このバージョンは、DBの作り直しが必要だが、バージョンが1.0.0以下なので移行手順は用意しない
+- IndexMakerをSyncLockに変更。合わせて sync stage 単位でのロック機能を追加
 - bulk_indexerのare_search_indexable対応
 - 検索時のパラメーターエラーでのページの扱いの統一
 - jobのretry条件の例外の修正
@@ -79,12 +83,12 @@
 - Elasticsearch index 名を `{index_prefix}__{are_search_ar_table_name}__{index_target_name}` 形式へ変更し、物理 index の timestamp 前も `__` へ統一。index 名の各要素を小文字英字で始まり、小文字英字とアンダーバーだけを使用する形式に限定。※reindexが必要
 - `sort` の Array 形式を廃止し、複数条件は記述順を優先順位とする Hash 形式へ統一
 - `aggs` をフィールド名をキーとする Hash 形式へ変更し、各フィールドの `size` を必須化。`AreSearch.default_aggs_size` を削除
-- index target単位で flock と marker を取得して処理する `are_search_with_index_guard` を追加
+- index target単位で flock と sync lock を取得して処理する `are_search_with_index_guard` を追加
 - Searchable の継承系統と同一 index 名の所有関係を検査し、STIの検索結果復元を調整
 - highlight オプションを整理し、フィールド別設定、`pre_tags`、`post_tags`、`encoder` をそのまま Elasticsearch へ渡すよう変更
 - Elasticsearchへ送信するbodyとmappingフィールド名を検査する `SearchBodyPolicy` を追加。標準の `ScriptDenySearchBodyPolicy` はscript系キーを拒否し、利用側でpolicyを差し替え可能
 - Elasticsearch clientのスレッドキャッシュにPIDを保持し、fork後は親プロセスから継承したclientを再生成
-- sync request、index marker、状態確認、reindex、clean up 周辺の排他・復旧処理とテストを整理
+- sync request、sync lock、状態確認、reindex、clean up 周辺の排他・復旧処理とテストを整理
 
 ## [0.3.1] - 2026-07-14
 
@@ -101,7 +105,7 @@
 
 - 大量の修正。reindexが必要
 - IndexTargetとtarget別mappingsの整備
-- alias・物理index・marker・flockを使ったreindex運用
+- alias・物理index・sync lock・flockを使ったreindex運用
 - 全index reindexや状態確認などのrakeタスク
 - 単一検索のMultiSearch統合
 - RawSearchのbuild_model_bool

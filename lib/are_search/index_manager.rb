@@ -1,6 +1,54 @@
 # frozen_string_literal: true
 
 module AreSearch
+    class IndexTarget
+
+        # alias が指していない古い物理インデックスをすべて削除する（currentのみ残す）。
+        def are_search_clean_up
+            AreSearch.validate_index_operation_enabled!
+
+            AreSearch::IndexManager.index_clean_up(are_search_index_alias_name)
+        end
+
+        # Elasticsearch上に存在しないIndexTargetの空indexを作成する。
+        # 既存indexの置き換えには使用せず、aliasが存在する場合は拒否する。
+        def are_search_create_index
+            AreSearch.validate_index_operation_enabled!
+
+            if are_search_index_alias_exists?
+                raise AreSearch::Error, "index は既に存在します: #{are_search_index_alias_name}"
+            end
+
+            # 同じ alias を共有する上位モデルの全レコードを欠落させないため、
+            # Searchable を継承した子クラスからの reindex を拒否する。
+            if model_class.superclass&.include?(AreSearch::Searchable)
+                raise AreSearch::Error, "Searchable を継承した子クラスから create_index は実行できません: #{model_class.name}"
+            end
+
+            result = {
+                result:      :not_success,
+                message:     '',
+                failed_ids:  [],
+                stop_phase:  nil,
+                done_phases: [],
+            }
+
+            AreSearch::IndexManager.reindex(
+                are_search_index_alias_name,
+                are_search_index_settings,
+                are_search_index_mappings_for_index,
+                "create_index",
+                result,
+            ) do
+                true
+            end
+
+            result
+        end
+    end
+
+    # 以下は直接呼ばない
+
     module IndexManager
         extend self
 
@@ -16,8 +64,6 @@ module AreSearch
 
         # alias が指していない古い物理インデックスをすべて削除する。
         def index_clean_up(index_alias_name)
-            validate_index_operation_enabled!
-
             result = {
                 result: :not_success,
                 message: '',
@@ -61,57 +107,24 @@ module AreSearch
         # 指定した物理インデックスを削除する。
         # ロックによるガードはなし。
         def delete_physical_index!(physical_index_name)
-            validate_index_operation_enabled!
-
             AreSearch::EsAdapter.delete_physical_index(
                 physical_index_name: physical_index_name,
             )
         end
 
-        # 利用側の処理を index 単位の flock と marker でガードする。
-        # reindex / clean_up と同じ排他制御を使用し、処理結果を result に設定する。
-        # 別の処理が flock を取得済み、または marker が存在する場合は block を実行せず、
-        # result に未実行理由を設定する。alias が存在しない場合は ArgumentError を送出する。
-        def with_index_guard(index_alias_name, result, operation:, &block)
-            validate_index_operation_enabled!
-
-            if operation.to_s.empty?
-                raise ArgumentError, "operation を指定してください"
-            end
-
-            if block.nil?
-                raise ArgumentError, "with_index_guard には block が必要です"
-            end
-
-            # 利用側の指定誤りで、存在しない alias の guard を開始しない。
-            if AreSearch::EsAdapter.index_alias_exists?(
-                index_alias_name: index_alias_name,
-            ) == false
-                raise ArgumentError, "indexが存在しません #{index_alias_name}"
-            end
-
-            operation_name = operation.to_s
-            with_index_guard_base(index_alias_name, result, operation: operation_name) do
-                block.call
-
-                result[:result] = :success
-                result[:stop_phase] = nil
-            end
-        end
-
-        # index 操作の flock と marker を管理する。
+        # index 操作の flock と sync lock を管理する。
         # reindex / 初期 index 作成 / clean up で共通利用する。
         #
         # 流れ:
         # 1. flock を取る
-        # 2. marker を作る
+        # 2. sync lock を取得する
         # 3. 新 physical index を作る
         # 4. block 側で bulk 投入
         # 5. 成功したら alias を切り替える
-        # 6. marker を消す
+        # 6. sync lock を解放する
         #
-        # 正常・例外のどちらでも marker 削除を試みる。
-        # marker 削除に到達できない場合、または marker 削除自体が失敗した場合は marker が残る。
+        # 正常・例外のどちらでも sync lock 解放を試みる。
+        # sync lock 解放に到達できない場合、または解放自体が失敗した場合は sync lock が残る。
         #
         # {
         #     result: :not_success,
@@ -122,8 +135,6 @@ module AreSearch
         # }
         #
         def reindex(index_alias_name, index_settings, mappings_for_index, operation, result, &block)
-            validate_index_operation_enabled!
-
             if AreSearch::EsAdapter.alias_named_physical_index_exists?(index_alias_name: index_alias_name)
                 raise ArgumentError, "エイリアス名と同名の物理インデックスが存在します #{index_alias_name}"
             end
@@ -164,14 +175,6 @@ module AreSearch
                 result[:result] = :success
                 result[:stop_phase] = nil
             end
-        end
-
-        def validate_index_operation_enabled!
-            return if AreSearch.index_operation_enabled
-
-            message = "[AreSearch] index 操作が許可されていません。AreSearch.index_operation_enabled が false になっています。"
-
-            raise AreSearch::IndexOperationViolation, message
         end
 
         private
@@ -234,13 +237,13 @@ module AreSearch
                 result[:done_phases] << :lock_index
 
                 begin
-                    result[:stop_phase] = :create_marker
-                    return AreSearch::IndexMarker.with_index_operation_marker!(index_alias_name, operation: operation) do
-                        result[:done_phases] << :create_marker
+                    result[:stop_phase] = :acquire_index_target_sync_lock
+                    return AreSearch::SyncLock.with_index_operation!(index_alias_name, operation: operation) do
+                        result[:done_phases] << :acquire_index_target_sync_lock
                         block.call
                     end
-                rescue AreSearch::IndexMarkerUnavailable
-                    result[:message] = "マーカーが作成できませんでした"
+                rescue AreSearch::SyncLockUnavailable
+                    result[:message] = "同期ロックを取得できませんでした"
                     return
                 end
             end

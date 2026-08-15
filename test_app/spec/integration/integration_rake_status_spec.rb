@@ -161,27 +161,37 @@ RSpec.describe "AreSearch check index status rake integration", type: :model do
 
     # 全出力からDocumentFirstの状態表示だけを返す。
     def document_first_status_output(output)
-        start_marker = "[AreSearch] index status: #{index_alias_name}"
-        start_position = output.index(start_marker)
+        status_header = "[AreSearch] index status: #{index_alias_name}"
+        start_position = output.index(status_header)
         raise "DocumentFirst status not found" if start_position.nil?
 
-        next_position = output.index("[AreSearch] index status:", start_position + start_marker.length)
+        next_position = output.index("[AreSearch] index status:", start_position + status_header.length)
         return output[start_position..] if next_position.nil?
 
         output[start_position...next_position]
     end
 
-    it "実aliasとmarkerとlockの状態を出力する" do
+    it "実aliasと複数sync lockとlockの状態を出力する" do
         current_name = physical_index_name(1)
         create_index(current_name)
         add_alias(current_name)
 
-        AreSearch::IndexMarker.create!(
+        AreSearch::SyncLock.create!(
             index_alias_name: index_alias_name,
+            sync_stage_name:  AreSearch::SyncLock.index_target_lock_name,
             operation:        "reindex",
             owner_token:      SecureRandom.uuid,
             owner_host:       "test-host",
             owner_pid:        12345,
+            started_at:       Time.zone.now,
+        )
+        AreSearch::SyncLock.create!(
+            index_alias_name: index_alias_name,
+            sync_stage_name:  "default",
+            operation:        "manual",
+            owner_token:      SecureRandom.uuid,
+            owner_host:       "test-stage-host",
+            owner_pid:        23456,
             started_at:       Time.zone.now,
         )
 
@@ -193,13 +203,15 @@ RSpec.describe "AreSearch check index status rake integration", type: :model do
 
             output = document_first_status_output(run_check_index_status)
 
-            expect(output).to match(/marker:\s+exists/)
+            expect(output.scan(/sync lock:\s+exists/).length).to eq(2)
+            expect(output).to include("sync_stage_name=\"#{AreSearch::SyncLock.index_target_lock_name}\"")
+            expect(output).to include('sync_stage_name="default"')
             expect(output).to match(/lock:\s+locked/)
             expect(output).to match(/alias:\s+exists/)
             expect(output).to include(
                 "current   - #{current_name} : creation_date #{index_creation_date_text(current_name)}",
             )
-            expect(output).to match(/warning:\s+marker exists/)
+            expect(output).to match(/warning:\s+sync lock exists/)
         end
     end
 
@@ -367,7 +379,7 @@ RSpec.describe "AreSearch rake status operations integration", type: :model do
         DocumentFirst.delete_all
         DocumentSecond.delete_all
         AreSearch::SyncRequest.delete_all
-        AreSearch::IndexMarker.delete_all
+        AreSearch::SyncLock.delete_all
 
         target_alias_names = rake_status_index_targets.map(&:are_search_index_alias_name)
 
@@ -425,10 +437,11 @@ RSpec.describe "AreSearch rake status operations integration", type: :model do
         )
     end
 
-    it "mark_allは全root modelへmanual markerを作成し既存markerを維持する" do
+    it "acquire_sync_lock_allは全root modelへmanual sync lockを作成し既存sync lockを維持する" do
         document_alias_name = DocumentSecond.are_search_index_target(:default).are_search_index_alias_name
-        existing_marker = AreSearch::IndexMarker.create!(
+        existing_sync_lock = AreSearch::SyncLock.create!(
             index_alias_name: document_alias_name,
+            sync_stage_name:  AreSearch::SyncLock.index_target_lock_name,
             operation:        "reindex",
             owner_token:      SecureRandom.uuid,
             owner_host:       "test-host",
@@ -437,27 +450,28 @@ RSpec.describe "AreSearch rake status operations integration", type: :model do
         )
 
         output = capture_stdout do
-            Rake::Task["are_search:mark_all"].invoke
+            Rake::Task["are_search:acquire_sync_lock_all"].invoke
         end
 
         article_alias_name = DocumentFirst.are_search_index_target(:default).are_search_index_alias_name
-        article_marker = AreSearch::IndexMarker.find_by(index_alias_name: article_alias_name)
-        document_marker = AreSearch::IndexMarker.find_by(index_alias_name: document_alias_name)
+        article_sync_lock = AreSearch::SyncLock.find_by(index_alias_name: article_alias_name)
+        document_sync_lock = AreSearch::SyncLock.find_by(index_alias_name: document_alias_name)
 
-        expect(article_marker.operation).to eq("manual")
-        expect(document_marker.id).to eq(existing_marker.id)
-        expect(document_marker.operation).to eq("reindex")
-        expect(output).to include("mark_all marked: #{article_alias_name}")
-        expect(output).to include("mark_all skipped: #{document_alias_name}")
+        expect(article_sync_lock.operation).to eq("manual")
+        expect(document_sync_lock.id).to eq(existing_sync_lock.id)
+        expect(document_sync_lock.operation).to eq("reindex")
+        expect(output).to include("acquire_sync_lock_all acquired: #{article_alias_name}")
+        expect(output).to include("acquire_sync_lock_all skipped: #{document_alias_name}")
     end
 
-    it "unmark_allはmanual markerだけを削除する" do
+    it "release_sync_lock_allはmanual sync lockだけを削除する" do
         article_alias_name = DocumentFirst.are_search_index_target(:default).are_search_index_alias_name
         document_alias_name = DocumentSecond.are_search_index_target(:default).are_search_index_alias_name
 
-        AreSearch::IndexMarker.create_manual!(article_alias_name)
-        reindex_marker = AreSearch::IndexMarker.create!(
+        AreSearch::SyncLock.acquire_index_target_manual!(article_alias_name)
+        reindex_sync_lock = AreSearch::SyncLock.create!(
             index_alias_name: document_alias_name,
+            sync_stage_name:  AreSearch::SyncLock.index_target_lock_name,
             operation:        "reindex",
             owner_token:      SecureRandom.uuid,
             owner_host:       "test-host",
@@ -466,22 +480,23 @@ RSpec.describe "AreSearch rake status operations integration", type: :model do
         )
 
         output = capture_stdout do
-            Rake::Task["are_search:unmark_all"].invoke
+            Rake::Task["are_search:release_sync_lock_all"].invoke
         end
 
-        expect(AreSearch::IndexMarker.find_by(index_alias_name: article_alias_name)).to eq(nil)
+        expect(AreSearch::SyncLock.find_by(index_alias_name: article_alias_name)).to eq(nil)
 
-        remaining_marker = AreSearch::IndexMarker.find_by(index_alias_name: document_alias_name)
-        expect(remaining_marker.id).to eq(reindex_marker.id)
-        expect(output).to include("unmark_all deleted: #{article_alias_name}")
-        expect(output).to include("unmark_all skipped: #{document_alias_name}")
+        remaining_sync_lock = AreSearch::SyncLock.find_by(index_alias_name: document_alias_name)
+        expect(remaining_sync_lock.id).to eq(reindex_sync_lock.id)
+        expect(output).to include("release_sync_lock_all released: #{article_alias_name}")
+        expect(output).to include("release_sync_lock_all skipped: #{document_alias_name}")
     end
 
-    it "check_sync_request_statusは実DBのmarker・モデル別件数・エラー集計を出力する" do
+    it "check_sync_request_statusは実DBのsync lock・モデル別件数・エラー集計を出力する" do
         article_alias_name = DocumentFirst.are_search_index_target(:default).are_search_index_alias_name
 
-        AreSearch::IndexMarker.create!(
+        AreSearch::SyncLock.create!(
             index_alias_name: article_alias_name,
+            sync_stage_name:  AreSearch::SyncLock.index_target_lock_name,
             operation:        "manual",
             owner_token:      SecureRandom.uuid,
             owner_host:       "test-host",
@@ -490,8 +505,8 @@ RSpec.describe "AreSearch rake status operations integration", type: :model do
             message:          "maintenance",
         )
 
-        create_sync_request(1, last_error: "index marked")
-        create_sync_request(2, last_error: "index marked")
+        create_sync_request(1, last_error: "sync locked")
+        create_sync_request(2, last_error: "sync locked")
         create_sync_request(3)
         create_sync_request(4, model_class: DocumentSecond, last_error: "timeout")
 
@@ -501,15 +516,16 @@ RSpec.describe "AreSearch rake status operations integration", type: :model do
 
         expect(output).to include("[AreSearch] sync request status")
         expect(output).to include(article_alias_name)
+        expect(output).to include(AreSearch::SyncLock.index_target_lock_name)
         expect(output).to match(/document_firsts\s+DocumentFirst\s+3\s+2/)
         expect(output).to match(/document_seconds\s+DocumentSecond\s+1\s+1/)
-        expect(output).to match(/document_firsts\s+index marked\s+2/)
+        expect(output).to match(/document_firsts\s+sync locked\s+2/)
         expect(output).to match(/document_seconds\s+timeout\s+1/)
         expect(output).to include("maintenance")
     end
 
     it "check_sync_request_statusは状態が無い場合に各区分へなしと出力する" do
-        AreSearch::IndexMarker.delete_all
+        AreSearch::SyncLock.delete_all
         AreSearch::SyncRequest.delete_all
 
         output = capture_stdout do

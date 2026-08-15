@@ -28,7 +28,7 @@ Gemfile に追加する。
 AreSearch は標準のDB固有処理として PostgreSQL 向け実装を使用する。
 DB固有処理は AreSearch.database_specific で差し替え可能。
 
-are_search_sync_requests と are_search_index_markers は検索対象モデルと同じデータベースに作成する。
+are_search_sync_requests、are_search_sync_locks は検索対象モデルと同じデータベースに作成する。
 通常の保存・touch・削除でDB更新と同期要求を同じトランザクションに含めるため、
 are_search_sync_requests を別データベースへ分離しない。
 
@@ -239,6 +239,9 @@ stage の選択方法は guide_index_targets_and_stages.txt を参照する。
     tmp/are_search/sample/are_search_sync_limit_alert.rake.sample
         SyncRequest の同期停止候補をメール通知する rake task のサンプル。
 
+    tmp/are_search/sample/are_search_sync_request_boundary.rake.sample
+        BoundaryTarget を使用した 同期処理のrakeのサンプル。
+
     tmp/are_search/sample/are_search_bulk_index.rb.sample
         BulkIndexer を実行する Ruby ファイルのサンプル。
 
@@ -254,6 +257,6 @@ BulkIndexer サンプルの配置、設定、実行方法は guide_bulk_indexer.
 
     guide_usage.txt                     検索方法と検索結果
     guide_index_targets_and_stages.txt  IndexTargetとsync stage
-    guide_operations.txt                reindex、同期、clean up、障害対応
+    guide_operations.txt                reindex、同期、clean up、sync lock、障害対応
     guide_bulk_indexer.txt              大規模データの投入と切り替え
     guide_reference.txt                 設定、データ定義、メソッド一覧

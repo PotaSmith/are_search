@@ -105,6 +105,7 @@ module AreSearch
         # 同期処理の sync_stage_name を検査する。
         def valid_sync_stage_name?(sync_stage_name)
             return false if sync_stage_name.instance_of?(String) == false
+            return false if SyncLock.index_target_lock_sync_stage_name?(sync_stage_name)
 
             valid_definition_name?(sync_stage_name)
         end

@@ -96,7 +96,7 @@ RSpec.describe AreSearch::Reindexer do
             result[:stop_phase] = nil
             result[:done_phases] = [
                 :lock_index,
-                :create_marker,
+                :acquire_index_target_sync_lock,
                 :create_new_index,
                 :index_to_new_index,
                 :switch_alias,
@@ -106,7 +106,7 @@ RSpec.describe AreSearch::Reindexer do
                 "bulk 投入に失敗した ID があるため alias を切り替えませんでした"
             result[:done_phases] = [
                 :lock_index,
-                :create_marker,
+                :acquire_index_target_sync_lock,
                 :create_new_index,
             ]
         end
@@ -118,7 +118,7 @@ RSpec.describe AreSearch::Reindexer do
 
         allow(model)
             .to receive(:are_search_get_all_sync_stage_names)
-            .with(:default)
+            .with(index_target)
             .and_return([sync_stage_name])
 
         logger = instance_double("Logger", error: nil)
@@ -169,26 +169,6 @@ RSpec.describe AreSearch::Reindexer do
             end.to raise_error(
                 AreSearch::Error,
                 "Searchable を継承した子クラスから reindex は実行できません: SpecialArticle",
-            )
-        end
-
-        it "IndexTargetに存在しないstageは拒否する" do
-            allow(model)
-                .to receive(:are_search_get_all_sync_stage_names)
-                .with(:default)
-                .and_return(["other"])
-
-            expect(AreSearch::IndexManager)
-                .not_to receive(:reindex)
-
-            expect do
-                described_class.reindex_index_target(
-                    index_target,
-                    sync_stage_name,
-                )
-            end.to raise_error(
-                ArgumentError,
-                "sync_stage_name が IndexTarget に定義されていません: default",
             )
         end
 
@@ -277,7 +257,7 @@ RSpec.describe AreSearch::Reindexer do
                     stop_phase:  nil,
                     done_phases: [
                         :lock_index,
-                        :create_marker,
+                        :acquire_index_target_sync_lock,
                         :create_new_index,
                         :index_to_new_index,
                                 :switch_alias,
@@ -350,7 +330,7 @@ RSpec.describe AreSearch::Reindexer do
                     stop_phase:  :index_to_new_index,
                     done_phases: [
                         :lock_index,
-                        :create_marker,
+                        :acquire_index_target_sync_lock,
                         :create_new_index,
                     ],
                 )

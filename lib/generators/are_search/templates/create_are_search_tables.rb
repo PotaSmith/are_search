@@ -44,8 +44,10 @@ class <%= migration_class_name %> < ActiveRecord::Migration[<%= ActiveRecord::Mi
             unique: true
 
 
-        create_table :are_search_index_markers, id: :bigserial do |t|
+        create_table :are_search_sync_locks, id: :bigserial do |t|
             t.string   :index_alias_name,   null: false
+            t.string   :sync_stage_name,    null: false
+
             t.string   :operation,          null: false
             t.string   :owner_token,        null: false
             t.string   :owner_host
@@ -56,6 +58,22 @@ class <%= migration_class_name %> < ActiveRecord::Migration[<%= ActiveRecord::Mi
             t.timestamps
         end
 
-        add_index :are_search_index_markers, :index_alias_name, unique: true
+        add_index :are_search_sync_locks, [:index_alias_name, :sync_stage_name], unique: true
+
+
+        create_table :are_search_sync_request_boundary_targets, id: :bigserial do |t|
+            t.string   :index_alias_name,      null: false
+            t.string   :sync_stage_name,       null: false
+
+            t.bigint   :sequence_limit,        null: false
+
+            t.datetime :last_sync_started_at
+            t.datetime :last_sync_ended_at
+            t.text     :message
+
+            t.timestamps
+        end
+
+        add_index :are_search_sync_request_boundary_targets, [:index_alias_name, :sync_stage_name], unique: true
     end
 end

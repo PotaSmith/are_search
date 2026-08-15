@@ -181,7 +181,7 @@ bulk中の差分回収用stageを for_version_up、通常同期stageを default 
 
     are_search_all_sync_stage_names
         default:     ["default"]
-        new_version: ["for_version_up"]
+        new_version: ["for_version_up", "default"]
 
     are_search_sync_stage_names_on_enqueue
         default:     ["default"]
@@ -316,3 +316,256 @@ for_version_up の新規SyncRequestが作成されなくなった後、run_sync_
 
 旧IndexTargetを削除したデプロイ後もすぐにはElasticsearch indexを削除せず、アプリケーションの状態を確認する。
 問題がないことを確認した後、旧IndexTargetの物理indexを削除する。
+
+
+# 11. 通常同期を継続しながらBulkIndexerで全件再投入する
+================================================================
+
+ここでは、同じIndexTargetに次の3つのstageをあらかじめ定義して運用する。
+
+    default
+        通常の軽い同期。
+
+    huge_data
+        通常運用で使用する重いデータの同期。
+
+    huge_data_for_reindex
+        BulkIndexerによる全件再投入中の差分回収専用stage。
+
+huge_data_for_reindex は保存時にSyncRequestを作成するが、
+通常の run_sync_requests では処理しない。
+そのため、通常運用中は huge_data_for_reindex のSyncRequestが蓄積され続ける。
+
+
+## 11-1. stageを定義する
+----------------------------------------------------------------
+
+モデルには最初から3つのstageを定義しておく。
+
+    def self.are_search_all_sync_stage_names
+        {
+            default: [
+                "default",
+                "huge_data",
+                "huge_data_for_reindex",
+            ],
+        }
+    end
+
+    def self.are_search_sync_stage_names_on_enqueue
+        {
+            default: [
+                "default",
+                "huge_data",
+                "huge_data_for_reindex",
+            ],
+        }
+    end
+
+    def self.are_search_sync_stage_names_on_after_commit
+        {
+            default: ["default"],
+        }
+    end
+
+通常の rake 同期では default と huge_data だけを指定する。
+
+    bundle exec rake 'are_search:run_sync_requests[default,huge_data]'
+
+huge_data_for_reindex は通常の rake 同期へ追加しない。
+
+huge_data と huge_data_for_reindex で同じ完成ドキュメントを作る場合は、
+are_search_index_data から同じデータ生成処理を呼び出してよい。
+
+
+## 11-2. Boundary操作用rakeを準備する
+----------------------------------------------------------------
+
+サンプルを生成する。
+
+    bin/rails generate are_search:sample
+
+生成される次のファイルを、利用側の rake task としてコピーして使用する。
+
+    tmp/are_search/sample/are_search_sync_request_boundary.rake.sample
+
+ファイル先頭の対象を変更する。
+
+    INDEX_TARGET_MODEL_CLASS_NAME = "Article"
+    INDEX_TARGET_NAME = "default"
+    SYNC_STAGE_NAME = "huge_data_for_reindex"
+
+このrakeでは次の4操作を行う。
+
+    are_search:delete_sync_stage_all_sync_requests
+        対象stageに現在溜まっているSyncRequestを削除する。
+
+    are_search:set_sync_request_boundary
+        bulk完了時点のrequest sequenceを境界として保存する。
+
+    are_search:run_sync_request_before_boundary
+        保存した境界までのSyncRequestだけを同期する。
+
+    are_search:clear_sync_request_boundary
+        差分回収完了後に保存した境界を削除する。
+
+
+## 11-3. bulk開始前のSyncRequestを削除する
+----------------------------------------------------------------
+
+bulk開始直前に、通常運用中に蓄積していた
+huge_data_for_reindex のSyncRequestを削除する。
+
+    bundle exec rake are_search:delete_sync_stage_all_sync_requests
+
+削除後も huge_data_for_reindex のSyncRequest作成は停止しない。
+この時点以降に発生した更新は再び蓄積される。
+
+
+## 11-4. BulkIndexerを実行する
+----------------------------------------------------------------
+
+BulkIndexerでは huge_data_for_reindex を使用する。
+
+    index_target = Article.are_search_index_target(:default)
+    sync_stage_name = "huge_data_for_reindex"
+
+通常どおりbulkを実行する。
+
+    /path/to/are_search_bulk_index.sh index
+
+中断した場合は同じRESULT_DIRで再開する。
+失敗レコードがある場合は必要に応じてrecoverする。
+
+    /path/to/are_search_bulk_index.sh recover
+
+bulkと必要なrecoverが完了するまで、
+次のBoundaryTarget設定は行わない。
+
+
+## 11-5. bulk完了時点を境界として保存する
+----------------------------------------------------------------
+
+bulkと必要なrecoverが完了したら BoundaryTarget を設定する。
+
+    bundle exec rake are_search:set_sync_request_boundary
+
+この操作で、その時点のrequest sequenceが境界として保存される。
+
+以降に作成される新しいSyncRequestは通常運用分として蓄積を続け、
+今回の差分回収対象には含めない。
+
+
+## 11-6. bulk中の差分を同期する
+----------------------------------------------------------------
+
+専用rakeを実行する。
+
+    bundle exec rake are_search:run_sync_request_before_boundary
+
+実行時には、今回の境界までに発生したSyncRequestの件数が表示される。
+
+対象が存在する場合は実行確認が表示される。
+
+    同期を実行しますか？ [y/N]:
+
+y を入力すると同期を開始する。
+
+実行後にも残件数が表示される。
+
+残件がある場合は、同じコマンドを再度実行する。
+
+    bundle exec rake are_search:run_sync_request_before_boundary
+
+BoundaryTarget 以前のDBの更新は全て対象となる
+コミットが遅れているデータがあとから増える可能性があるが、後から増えた
+データは本来であれば処理の対象外だが、安全側に倒して処理をしているだけ。
+そのため、一度でも実行前の対象件数が0件になれば問題ない。
+
+    [AreSearch] Boundary同期対象 実行前 0件
+
+0件になれば、今回のbulk中に蓄積した差分回収は確認完了。
+
+
+## 11-7. 差分回収後に境界を削除する
+----------------------------------------------------------------
+
+run_sync_request_before_boundary の実行前対象件数が0件になったら、
+今回保存したBoundaryTargetを削除する。
+
+    bundle exec rake are_search:clear_sync_request_boundary
+
+次回の set_sync_request_boundary は、新しいBoundaryTargetを作成する。
+
+
+## 11-8. 次回のbulk
+----------------------------------------------------------------
+
+次回も同じ手順を繰り返す。
+
+    1. are_search:delete_sync_stage_all_sync_requests
+    2. BulkIndexerを実行し、必要ならrecover
+    3. are_search:set_sync_request_boundary
+    4. are_search:run_sync_request_before_boundary を0件になるまで実行
+    5. are_search:clear_sync_request_boundary
+
+huge_data_for_reindex は通常の run_sync_requests では処理しないため、
+次回bulkまでの間もSyncRequestは蓄積され続ける。
+
+## 11-9. Boundary操作で回収する範囲
+----------------------------------------------------------------
+
+4つの操作とbulkの位置関係は次のようになる。
+
+    delete_sync_stage_all_sync_requests
+        |
+        |  データA: 更新 → commit
+        |
+        |  データB: 更新 --------------------→ commit
+        |
+        |  BulkIndexer
+        |      開始
+        |      ...
+        |      終了
+        |
+    set_sync_request_boundary
+        |
+        |  データC: 更新 → commit
+        |
+    run_sync_request_before_boundary
+        |
+        |  対象が0件になるまで繰り返す
+        |
+    clear_sync_request_boundary
+
+
+delete_sync_stage_all_sync_requests
+    それ以前に蓄積されていた huge_data_for_reindex のSyncRequestを削除する。
+    今回のbulkで回収する範囲の開始点になる。
+
+データA
+    delete_sync_stage_all_sync_requests後に更新され、set_sync_request_boundaryより前にcommitまで完了している。
+
+データB
+    set_sync_request_boundaryより前に更新処理が始まっているが、commitが境界設定付近まで遅れている。
+    transactionの長さなどによりコミットが境界の前後のどちらを安全に判定できない。
+
+set_sync_request_boundary
+    この時点で今回の差分回収の終了境界を設定する。
+    以後の通常更新を、今回のbulk差分から分けるために使用する。
+
+データC
+    set_sync_request_boundary後に更新され、commitされた通常の更新。
+
+専用rakeは、set_sync_request_boundaryまでにコミットされたデータだけを同期対象にしたい。
+しかし、明確にはわからないためデータAだけでなくデータBも拾う。
+データCは確定しているため対象外。
+
+また、データAやBにその後さらに更新が入り、SyncRequestがset_sync_request_boundaryより後の
+新しい要求へ更新された場合は、最新の通常更新として扱う。
+今回の境界へ固定して処理する必要はない。
+
+run_sync_request_before_boundary は、この境界までにbulkへ反映できなかった可能性がある
+SyncRequestだけを処理する。
+実行前の対象件数が0件になれば、今回のbulk差分回収は完了となる。
+clear_sync_request_boundary は、差分回収に使用したBoundaryTargetを削除する。

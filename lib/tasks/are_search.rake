@@ -2,8 +2,8 @@
 
 require "fileutils"
 
-# bundle exec rake are_search:mark_all
-# bundle exec rake are_search:unmark_all
+# bundle exec rake are_search:acquire_sync_lock_all
+# bundle exec rake are_search:release_sync_lock_all
 # bundle exec rake are_search:clean_up_all
 # bundle exec rake are_search:check_index_status
 # bundle exec rake are_search:check_sync_request_status
@@ -12,37 +12,42 @@ require "fileutils"
 
 namespace :are_search do
 
-    desc "AreSearch::Searchable を include している全モデルの index(STI重複なし) に manual marker を作成する"
-    task mark_all: :environment do
-        AreSearch::RakeUtils.searchable_index_alias_names.each do |index_alias_name|
-            marker = AreSearch.mark_index!(index_alias_name)
+    desc "AreSearch::Searchable を include している全モデルの index(STI重複なし) に manual sync lock を取得する"
+    task acquire_sync_lock_all: :environment do
+        AreSearch::RakeUtils.searchable_index_targets.each do |index_target|
+            index_alias_name = index_target.are_search_index_alias_name
+            sync_lock = index_target.are_search_acquire_sync_lock!
 
-            if marker
-                puts "[AreSearch] mark_all marked: #{index_alias_name} marker_id=#{marker.id}"
+            if sync_lock
+                puts "[AreSearch] acquire_sync_lock_all acquired: #{index_alias_name} sync_lock_id=#{sync_lock.id}"
                 next
             end
 
-            existing_marker = AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)
+            existing_sync_lock = AreSearch::SyncLock.find_by(
+                index_alias_name: index_alias_name,
+                sync_stage_name:  AreSearch::SyncLock.index_target_lock_name,
+            )
 
-            if existing_marker
-                puts "[AreSearch] mark_all skipped: #{index_alias_name} " \
-                    "existing_operation=#{existing_marker.operation} marker_id=#{existing_marker.id}"
+            if existing_sync_lock
+                puts "[AreSearch] acquire_sync_lock_all skipped: #{index_alias_name} " \
+                    "existing_operation=#{existing_sync_lock.operation} sync_lock_id=#{existing_sync_lock.id}"
             else
-                puts "[AreSearch] mark_all skipped: #{index_alias_name}"
+                puts "[AreSearch] acquire_sync_lock_all skipped: #{index_alias_name}"
             end
         end
     end
 
 
-    desc "AreSearch::Searchable を include している全モデルの index(STI重複なし) の manual marker を削除する"
-    task unmark_all: :environment do
-        AreSearch::RakeUtils.searchable_index_alias_names.each do |index_alias_name|
-            deleted_count = AreSearch.unmark_index!(index_alias_name)
+    desc "AreSearch::Searchable を include している全モデルの index(STI重複なし) の manual sync lock を解放する"
+    task release_sync_lock_all: :environment do
+        AreSearch::RakeUtils.searchable_index_targets.each do |index_target|
+            index_alias_name = index_target.are_search_index_alias_name
+            deleted_count = index_target.are_search_release_sync_lock!
 
             if deleted_count > 0
-                puts "[AreSearch] unmark_all deleted: #{index_alias_name} count=#{deleted_count}"
+                puts "[AreSearch] release_sync_lock_all released: #{index_alias_name} count=#{deleted_count}"
             else
-                puts "[AreSearch] unmark_all skipped: #{index_alias_name} manual marker not found"
+                puts "[AreSearch] release_sync_lock_all skipped: #{index_alias_name} manual sync lock not found"
             end
         end
     end
@@ -50,9 +55,11 @@ namespace :are_search do
 
     desc "AreSearch::Searchable を include している全モデルの index(STI重複なし) から古い物理インデックスを削除する"
     task clean_up_all: :environment do
-        AreSearch::RakeUtils.searchable_index_alias_names.each do |index_alias_name|
+        AreSearch::RakeUtils.searchable_index_targets.each do |index_target|
+            index_alias_name = index_target.are_search_index_alias_name
+
             begin
-                result = AreSearch::IndexManager.index_clean_up(index_alias_name)
+                result = index_target.are_search_clean_up
 
                 if result[:result] == :success
                     puts "[AreSearch] clean_up done: #{index_alias_name}"
@@ -68,23 +75,14 @@ namespace :are_search do
     end
 
 
-    desc "AreSearch::Searchable を include している全モデルの index(STI重複なし) の marker / lock / alias 状態を表示する"
+    desc "AreSearch::Searchable を include している全モデルの index(STI重複なし) の sync lock / index lock / alias 状態を表示する"
     task check_index_status: :environment do
-        index_alias_names = AreSearch::RakeUtils.searchable_index_alias_names
+        index_targets = AreSearch::RakeUtils.searchable_index_targets
 
-        index_alias_names.each do |index_alias_name|
+        index_targets.each do |index_target|
+            index_alias_name = index_target.are_search_index_alias_name
             lock_path = AreSearch.index_lock_file_path(index_alias_name)
-            marker = AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)
-
-            marker_status = marker ? " exists" : "   none"
-            marker_detail = "index_alias_name=#{index_alias_name}"
-            unless marker.nil?
-                marker_detail = "id=#{marker.id} operation=#{marker.operation} started_at=#{marker.started_at} " \
-                    "owner_host=#{marker.owner_host} owner_pid=#{marker.owner_pid}"
-
-                marker_detail += " message=#{marker.message.inspect}" unless marker.message.blank?
-            end
-
+            sync_locks = AreSearch::SyncLock.where(index_alias_name: index_alias_name).order(:id)
             lock_status = "   free"
 
             FileUtils.mkdir_p(File.dirname(lock_path))
@@ -102,7 +100,19 @@ namespace :are_search do
             puts "-------------------------------------------------------------------------"
             puts "[AreSearch] index status: #{index_alias_name}"
             puts ""
-            puts "       marker: #{marker_status}  #{marker_detail}"
+            if sync_locks.empty?
+                puts "    sync lock:    none  index_alias_name=#{index_alias_name}"
+            else
+                sync_locks.each do |sync_lock|
+                    sync_lock_detail = "id=#{sync_lock.id} sync_stage_name=#{sync_lock.sync_stage_name.inspect} " \
+                        "operation=#{sync_lock.operation} started_at=#{sync_lock.started_at} " \
+                        "owner_host=#{sync_lock.owner_host} owner_pid=#{sync_lock.owner_pid}"
+                    sync_lock_detail += " message=#{sync_lock.message.inspect}" unless sync_lock.message.blank?
+
+                    puts "    sync lock:  exists  #{sync_lock_detail}"
+                end
+            end
+
             puts "         lock: #{lock_status}  #{lock_path}"
 
             begin
@@ -195,7 +205,7 @@ namespace :are_search do
                     end
                 end
 
-                warnings << "marker exists" unless marker.nil?
+                warnings << "sync lock exists" if sync_locks.any?
 
                 if warnings.empty?
                     puts "      warning:    none"
@@ -211,22 +221,23 @@ namespace :are_search do
     end
 
 
-    desc "are_search_sync_requests の marker・件数・エラー内容を表示する"
+    desc "are_search_sync_requests の sync lock・件数・エラー内容を表示する"
     task check_sync_request_status: :environment do
         Rails.application.eager_load!
 
         puts "-------------------------------------------------------------------------"
         puts "[AreSearch] sync request status"
         puts "-------------------------------------------------------------------------"
-        puts "マーカー状況"
+        puts "同期ロック状況"
         puts ""
 
-        marker_rows = AreSearch::RakeUtils::CheckSyncRequestStatus.index_marker_status_rows
-        if marker_rows.empty?
+        sync_lock_rows = AreSearch::RakeUtils::CheckSyncRequestStatus.sync_lock_status_rows
+        if sync_lock_rows.empty?
             puts "なし"
         else
-            marker_headers = [
+            sync_lock_headers = [
                 "ESインデックス名",
+                "同期stage",
                 "操作",
                 "開始日時",
                 "ホスト",
@@ -234,7 +245,7 @@ namespace :are_search do
                 "メッセージ",
             ]
 
-            AreSearch::RakeUtils::CheckSyncRequestStatus.fixed_width_table_lines(marker_headers, marker_rows).each do |line|
+            AreSearch::RakeUtils::CheckSyncRequestStatus.fixed_width_table_lines(sync_lock_headers, sync_lock_rows).each do |line|
                 puts line
             end
         end

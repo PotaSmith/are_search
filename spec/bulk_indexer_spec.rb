@@ -61,7 +61,7 @@ RSpec.describe AreSearch::BulkIndexer do
             .and_return(nil)
         allow(model_class)
             .to receive(:are_search_get_all_sync_stage_names)
-            .with(:default)
+            .with(index_target)
             .and_return([sync_stage_name])
     end
 
@@ -689,7 +689,7 @@ RSpec.describe AreSearch::BulkIndexer do
         it "IndexTargetに存在しないstageは拒否する" do
             allow(model_class)
                 .to receive(:are_search_get_all_sync_stage_names)
-                .with(:default)
+                .with(index_target)
                 .and_return(["other"])
 
             expect do

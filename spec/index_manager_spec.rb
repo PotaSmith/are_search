@@ -41,10 +41,11 @@ RSpec.describe AreSearch::IndexManager do
         response
     end
 
-    def create_index_marker(index_alias_name, operation: "reindex", message: nil)
-        AreSearch::IndexMarker.create!(
+    def create_sync_lock(index_alias_name, operation: "reindex", message: nil)
+        AreSearch::SyncLock.create!(
             index_alias_name: index_alias_name,
-            operation:     operation,
+            sync_stage_name:  AreSearch::SyncLock.index_target_lock_name,
+            operation:        operation,
             owner_token:   SecureRandom.uuid,
             owner_host:    "test-host",
             owner_pid:     12345,
@@ -58,15 +59,6 @@ RSpec.describe AreSearch::IndexManager do
             result: :not_success,
             message: '',
             failed_ids: [],
-            stop_phase: nil,
-            done_phases: [],
-        }
-    end
-
-    def build_guard_result
-        {
-            result: :not_success,
-            message: '',
             stop_phase: nil,
             done_phases: [],
         }
@@ -111,30 +103,6 @@ RSpec.describe AreSearch::IndexManager do
                 .with(name: index_alias_name)
                 .exactly(count).times
                 .and_raise(Elastic::Transport::Transport::Errors::NotFound)
-        end
-
-        it "index 操作が許可されていない場合は IndexOperationViolation を出す" do
-            AreSearch.index_operation_enabled = false
-            result = build_reindex_result
-
-            expect(indices).not_to receive(:get_alias)
-            expect(indices).not_to receive(:create)
-            expect(indices).not_to receive(:update_aliases)
-
-            expect do
-                described_class.reindex(
-                    index_alias_name,
-                    index_settings,
-                    mappings,
-                    "reindex",
-                    result,
-                ) do
-                    true
-                end
-            end.to raise_error(
-                AreSearch::IndexOperationViolation,
-                /index 操作が許可されていません/,
-            )
         end
 
         it "bulk 投入成功時は alias を切り替えて成功結果を設定する" do
@@ -211,13 +179,13 @@ RSpec.describe AreSearch::IndexManager do
                 stop_phase:  nil,
                 done_phases: [
                     :lock_index,
-                    :create_marker,
+                    :acquire_index_target_sync_lock,
                     :create_new_index,
                     :index_to_new_index,
                     :switch_alias,
                 ],
             )
-            expect(AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)).to eq(nil)
+            expect(AreSearch::SyncLock.find_by(index_alias_name: index_alias_name)).to eq(nil)
         end
 
         it "bulk 投入に失敗した場合は alias を切り替えず停止段階を残す" do
@@ -252,11 +220,11 @@ RSpec.describe AreSearch::IndexManager do
                 stop_phase:  :index_to_new_index,
                 done_phases: [
                     :lock_index,
-                    :create_marker,
+                    :acquire_index_target_sync_lock,
                     :create_new_index,
                 ],
             )
-            expect(AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)).to eq(nil)
+            expect(AreSearch::SyncLock.find_by(index_alias_name: index_alias_name)).to eq(nil)
         end
 
         it "alias 名と同名の物理 index が存在する場合は reindex を開始しない" do
@@ -287,7 +255,7 @@ RSpec.describe AreSearch::IndexManager do
             )
 
             expect(result).to eq(build_reindex_result)
-            expect(AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)).to eq(nil)
+            expect(AreSearch::SyncLock.find_by(index_alias_name: index_alias_name)).to eq(nil)
         end
 
         it "alias 接続先が AreSearch の物理 index 形式でなければ reindex を開始しない" do
@@ -313,7 +281,7 @@ RSpec.describe AreSearch::IndexManager do
             end.to raise_error(ArgumentError, "不正な物理 index 名です")
 
             expect(result).to eq(build_reindex_result)
-            expect(AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)).to eq(nil)
+            expect(AreSearch::SyncLock.find_by(index_alias_name: index_alias_name)).to eq(nil)
         end
 
         it "alias 更新APIがaction失敗を返した場合は結果へ残す" do
@@ -348,14 +316,14 @@ RSpec.describe AreSearch::IndexManager do
             expect(result[:stop_phase]).to eq(:switch_alias)
             expect(result[:done_phases]).to eq([
                 :lock_index,
-                :create_marker,
+                :acquire_index_target_sync_lock,
                 :create_new_index,
                 :index_to_new_index,
             ])
-            expect(AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)).to eq(nil)
+            expect(AreSearch::SyncLock.find_by(index_alias_name: index_alias_name)).to eq(nil)
         end
 
-        it "処理中に例外が出た場合も marker を削除して例外を再送出する" do
+        it "処理中に例外が出た場合も sync lock を削除して例外を再送出する" do
             result = build_reindex_result
 
             expect_missing_reindex_alias(count: 1)
@@ -374,10 +342,10 @@ RSpec.describe AreSearch::IndexManager do
                 end
             end.to raise_error(RuntimeError, "bulk failed")
 
-            expect(AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)).to eq(nil)
+            expect(AreSearch::SyncLock.find_by(index_alias_name: index_alias_name)).to eq(nil)
         end
 
-        it "alias 更新APIで例外が出た場合も marker を削除して再送出する" do
+        it "alias 更新APIで例外が出た場合も sync lock を削除して再送出する" do
             result = build_reindex_result
 
             allow(indices)
@@ -402,27 +370,27 @@ RSpec.describe AreSearch::IndexManager do
                 end
             end.to raise_error(RuntimeError, "alias failed")
 
-            expect(AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)).to eq(nil)
+            expect(AreSearch::SyncLock.find_by(index_alias_name: index_alias_name)).to eq(nil)
         end
 
-        it "処理中の例外後に marker 削除も失敗した場合は削除失敗例外を出す" do
+        it "処理中の例外後に sync lock 削除も失敗した場合は削除失敗例外を出す" do
             result = build_reindex_result
 
             expect_missing_reindex_alias(count: 1)
             allow(indices).to receive(:create)
             expect(indices).not_to receive(:update_aliases)
 
-            allow(AreSearch::IndexMarker)
+            allow(AreSearch::SyncLock)
                 .to receive(:where)
                 .and_call_original
 
-            allow(AreSearch::IndexMarker)
+            allow(AreSearch::SyncLock)
                 .to receive(:where)
                 .with(
                     id:          kind_of(Integer),
                     owner_token: kind_of(String),
                 )
-                .and_raise(RuntimeError, "marker delete failed")
+                .and_raise(RuntimeError, "sync lock delete failed")
 
             raised_error = nil
 
@@ -440,13 +408,13 @@ RSpec.describe AreSearch::IndexManager do
                 raised_error = e
             end
 
-            expect(raised_error.message).to eq("marker delete failed")
+            expect(raised_error.message).to eq("sync lock delete failed")
             expect(raised_error.cause.message).to eq("bulk failed")
         end
 
-        it "marker が残っている場合は未実行結果を設定する" do
+        it "sync lock が残っている場合は未実行結果を設定する" do
             result = build_reindex_result
-            create_index_marker(index_alias_name)
+            create_sync_lock(index_alias_name)
 
             expect_missing_reindex_alias(count: 1)
             expect(indices).not_to receive(:create)
@@ -464,12 +432,12 @@ RSpec.describe AreSearch::IndexManager do
 
             expect(result).to eq(
                 result:      :not_success,
-                message:     "マーカーが作成できませんでした",
+                message:     "同期ロックを取得できませんでした",
                 failed_ids:  [],
-                stop_phase:  :create_marker,
+                stop_phase:  :acquire_index_target_sync_lock,
                 done_phases: [:lock_index],
             )
-            expect(AreSearch::IndexMarker.marked?(index_alias_name)).to eq(true)
+            expect(AreSearch::SyncLock.index_target_locked?(index_alias_name)).to eq(true)
         end
 
         it "flock を取得できない場合は未実行結果を設定する" do
@@ -542,10 +510,11 @@ RSpec.describe AreSearch::IndexManager do
         response
     end
 
-    def create_index_marker(index_alias_name, operation: "reindex", message: nil)
-        AreSearch::IndexMarker.create!(
+    def create_sync_lock(index_alias_name, operation: "reindex", message: nil)
+        AreSearch::SyncLock.create!(
             index_alias_name: index_alias_name,
-            operation:     operation,
+            sync_stage_name:  AreSearch::SyncLock.index_target_lock_name,
+            operation:        operation,
             owner_token:   SecureRandom.uuid,
             owner_host:    "test-host",
             owner_pid:     12345,
@@ -559,15 +528,6 @@ RSpec.describe AreSearch::IndexManager do
             result: :not_success,
             message: '',
             failed_ids: [],
-            stop_phase: nil,
-            done_phases: [],
-        }
-    end
-
-    def build_guard_result
-        {
-            result: :not_success,
-            message: '',
             stop_phase: nil,
             done_phases: [],
         }
@@ -592,22 +552,7 @@ RSpec.describe AreSearch::IndexManager do
     end
 
     describe ".index_clean_up" do
-        it "index 操作が許可されていない場合は IndexOperationViolation を出す" do
-            AreSearch.index_operation_enabled = false
-
-            expect(indices).not_to receive(:get_alias)
-            expect(indices).not_to receive(:get)
-            expect(indices).not_to receive(:delete)
-
-            expect do
-                described_class.index_clean_up(index_alias_name)
-            end.to raise_error(
-                AreSearch::IndexOperationViolation,
-                /index 操作が許可されていません/,
-            )
-        end
-
-        it "削除中に例外が出た場合も marker を削除して例外を再送出する" do
+        it "削除中に例外が出た場合も sync lock を削除して例外を再送出する" do
             allow(indices)
                 .to receive(:get_alias)
                 .with(name: index_alias_name)
@@ -638,11 +583,11 @@ RSpec.describe AreSearch::IndexManager do
                 described_class.index_clean_up(index_alias_name)
             end.to raise_error(RuntimeError, "delete failed")
 
-            expect(AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)).to eq(nil)
+            expect(AreSearch::SyncLock.find_by(index_alias_name: index_alias_name)).to eq(nil)
         end
 
-        it "marker が残っている場合は未実行結果を返す" do
-            create_index_marker(index_alias_name, operation: "clean_up")
+        it "sync lock が残っている場合は未実行結果を返す" do
+            create_sync_lock(index_alias_name, operation: "clean_up")
 
             expect(indices).not_to receive(:get_alias)
             expect(indices).not_to receive(:get)
@@ -652,184 +597,12 @@ RSpec.describe AreSearch::IndexManager do
 
             expect(result).to eq(
                 result:             :not_success,
-                message:            "マーカーが作成できませんでした",
-                stop_phase:         :create_marker,
+                message:            "同期ロックを取得できませんでした",
+                stop_phase:         :acquire_index_target_sync_lock,
                 done_phases:        [:lock_index],
                 delete_index_names: [],
             )
-            expect(AreSearch::IndexMarker.marked?(index_alias_name)).to eq(true)
-        end
-    end
-
-    describe ".with_index_guard" do
-        before do
-            allow(indices)
-                .to receive(:exists_alias)
-                .with(name: index_alias_name)
-                .and_return(true)
-        end
-
-        it "flock と marker の内側で block を実行して成功結果を設定する" do
-            result = build_guard_result
-            marker_in_block = nil
-
-            described_class.with_index_guard(
-                index_alias_name,
-                result,
-                operation: "pdf_extract",
-            ) do
-                marker_in_block = AreSearch::IndexMarker.find_by(
-                    index_alias_name: index_alias_name,
-                )
-
-                "block result"
-            end
-
-            expect(result).to eq(
-                result:      :success,
-                message:     '',
-                stop_phase:  nil,
-                done_phases: [:lock_index, :create_marker],
-            )
-            expect(marker_in_block).not_to eq(nil)
-            expect(marker_in_block.operation).to eq("pdf_extract")
-            expect(AreSearch::IndexMarker.marked?(index_alias_name)).to eq(false)
-        end
-
-        it "block で例外が出た場合も marker を削除して例外を再送出する" do
-            result = build_guard_result
-
-            expect do
-                described_class.with_index_guard(
-                    index_alias_name,
-                    result,
-                    operation: "pdf_extract",
-                ) do
-                    raise RuntimeError, "extract failed"
-                end
-            end.to raise_error(RuntimeError, "extract failed")
-
-            expect(AreSearch::IndexMarker.marked?(index_alias_name)).to eq(false)
-        end
-
-        it "alias が存在しなければ marker を作成せず ArgumentError を出す" do
-            result = build_guard_result
-
-            allow(indices)
-                .to receive(:exists_alias)
-                .with(name: index_alias_name)
-                .and_return(false)
-
-            expect do
-                described_class.with_index_guard(
-                    index_alias_name,
-                    result,
-                    operation: "pdf_extract",
-                ) do
-                    raise "not reached"
-                end
-            end.to raise_error(
-                ArgumentError,
-                "indexが存在しません #{index_alias_name}",
-            )
-
-            expect(AreSearch::IndexMarker.marked?(index_alias_name)).to eq(false)
-        end
-
-        it "marker が残っている場合は block を実行せず未実行結果を設定する" do
-            result = build_guard_result
-            create_index_marker(index_alias_name, operation: "reindex")
-            block_called = false
-
-            described_class.with_index_guard(
-                index_alias_name,
-                result,
-                operation: "pdf_extract",
-            ) do
-                block_called = true
-            end
-
-            expect(result).to eq(
-                result:      :not_success,
-                message:     "マーカーが作成できませんでした",
-                stop_phase:  :create_marker,
-                done_phases: [:lock_index],
-            )
-            expect(block_called).to eq(false)
-            expect(AreSearch::IndexMarker.marked?(index_alias_name)).to eq(true)
-        end
-
-        it "flock を取得できなければ block を実行せず未実行結果を設定する" do
-            result = build_guard_result
-            lock_path = AreSearch.index_lock_file_path(index_alias_name)
-            FileUtils.mkdir_p(File.dirname(lock_path))
-            block_called = false
-
-            File.open(lock_path, File::RDWR | File::CREAT) do |lock_file|
-                locked = lock_file.flock(File::LOCK_EX | File::LOCK_NB)
-                expect(locked).to eq(0)
-
-                described_class.with_index_guard(
-                    index_alias_name,
-                    result,
-                    operation: "pdf_extract",
-                ) do
-                    block_called = true
-                end
-            end
-
-            expect(result).to eq(
-                result:      :not_success,
-                message:     "別の処理が実行中のためスキップしました",
-                stop_phase:  :lock_index,
-                done_phases: [],
-            )
-            expect(block_called).to eq(false)
-            expect(AreSearch::IndexMarker.marked?(index_alias_name)).to eq(false)
-        end
-
-        it "index 操作が許可されていない場合は IndexOperationViolation を出す" do
-            result = build_guard_result
-            AreSearch.index_operation_enabled = false
-
-            expect do
-                described_class.with_index_guard(
-                    index_alias_name,
-                    result,
-                    operation: "pdf_extract",
-                ) do
-                    "not reached"
-                end
-            end.to raise_error(
-                AreSearch::IndexOperationViolation,
-                /index 操作が許可されていません/,
-            )
-        end
-
-        it "operation が空なら ArgumentError を出す" do
-            result = build_guard_result
-
-            expect do
-                described_class.with_index_guard(
-                    index_alias_name,
-                    result,
-                    operation: nil,
-                ) do
-                    "not reached"
-                end
-            end.to raise_error(ArgumentError, "operation を指定してください")
-        end
-
-        it "block が無ければ ArgumentError を出す" do
-            result = build_guard_result
-
-            expect do
-                described_class.with_index_guard(
-                    index_alias_name,
-                    result,
-                    operation: "pdf_extract",
-                )
-            end.to raise_error(ArgumentError, "with_index_guard には block が必要です")
+            expect(AreSearch::SyncLock.index_target_locked?(index_alias_name)).to eq(true)
         end
     end
 

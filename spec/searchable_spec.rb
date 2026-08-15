@@ -935,5 +935,4 @@ RSpec.describe AreSearch::Searchable do
             record.are_search_index_or_delete!(index_target, "default")
         end
     end
-
 end

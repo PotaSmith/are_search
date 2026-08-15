@@ -41,9 +41,7 @@ namespace :are_search do
 
         models.each do |model|
             model.are_search_index_targets.each do |index_target|
-                stage_names = model.are_search_get_all_sync_stage_names(
-                    index_target.index_target_name,
-                )
+                stage_names = model.are_search_get_all_sync_stage_names(index_target)
                 defined_sync_stage_names.concat(stage_names)
             end
         end
@@ -55,7 +53,7 @@ namespace :are_search do
                 "定義されていない sync_stage_name があります: #{undefined_sync_stage_names.inspect}"
         end
 
-        lock_file_path = AreSearch.sync_lock_file_path
+        lock_file_path = AreSearch.sync_runner_lock_file_path
 
         # 通常同期の対象条件。
         normal_threshold = AreSearch.sync_request_delay.seconds.ago

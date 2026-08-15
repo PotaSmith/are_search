@@ -5,28 +5,30 @@ module AreSearch
         module CheckSyncRequestStatus
             extend self
 
-            # 現在残っている index marker を状態確認用の行データとして返す。
-            def index_marker_status_rows
+            # 現在残っている sync lock を状態確認用の行データとして返す。
+            def sync_lock_status_rows
                 rows = []
 
-                AreSearch::IndexMarker.order(:index_alias_name, :id).each do |marker|
+                AreSearch::SyncLock.order(:index_alias_name, :id).each do |sync_lock|
                     started_at = ""
-                    if marker.started_at != nil
-                        started_at = marker.started_at.strftime("%Y-%m-%d %H:%M:%S")
+                    if sync_lock.started_at != nil
+                        started_at = sync_lock.started_at.strftime("%Y-%m-%d %H:%M:%S")
                     end
 
                     rows << [
-                        marker.index_alias_name.to_s,
-                        marker.operation.to_s,
+                        sync_lock.index_alias_name.to_s,
+                        sync_lock.sync_stage_name.to_s,
+                        sync_lock.operation.to_s,
                         started_at,
-                        marker.owner_host.to_s,
-                        marker.owner_pid.to_s,
-                        marker.message.to_s,
+                        sync_lock.owner_host.to_s,
+                        sync_lock.owner_pid.to_s,
+                        sync_lock.message.to_s,
                     ]
                 end
 
                 rows
             end
+
 
             # sync request をモデル単位で集計し、テーブル名・モデル名・総数・エラー数を返す。
             def sync_request_status_rows

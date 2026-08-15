@@ -306,13 +306,13 @@ RSpec.describe AreSearch, "configuration" do
         end.not_to raise_error
     end
 
-    it "sync lock は lock_dir の sync 配下を使用する" do
+    it "sync runner lock は lock_dir の sync_runner 配下を使用する" do
         described_class.lock_dir = "/tmp/are_search_spec"
 
         expect(
-            described_class.sync_lock_file_path,
+            described_class.sync_runner_lock_file_path,
         ).to eq(
-            "/tmp/are_search_spec/sync/sync.lock",
+            "/tmp/are_search_spec/sync_runner/sync_runner.lock",
         )
     end
 
@@ -458,6 +458,26 @@ RSpec.describe AreSearch do
     end
 
     describe ".delete_physical_index!" do
+        before do
+            described_class.index_operation_enabled = true
+        end
+
+        it "index 操作が許可されていない場合は IndexOperationViolation を出す" do
+            described_class.index_operation_enabled = false
+
+            expect(AreSearch::IndexManager)
+                .not_to receive(:delete_physical_index!)
+
+            expect do
+                described_class.delete_physical_index!(
+                    "test__articles__default__2026_07_04_10_00_00_000000",
+                )
+            end.to raise_error(
+                AreSearch::IndexOperationViolation,
+                /index 操作が許可されていません/,
+            )
+        end
+
         it "物理 index 名でなければ拒否する" do
             expect(AreSearch::IndexManager)
                 .not_to receive(:delete_physical_index!)

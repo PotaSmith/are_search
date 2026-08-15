@@ -6,91 +6,6 @@ require "stringio"
 require "tmpdir"
 require_relative "../support/integration_support"
 
-RSpec.describe "AreSearch index guard integration", type: :model do
-    include AreSearchIntegrationSupport
-
-    self.use_transactional_tests = false
-
-    around do |example|
-        original_after_commit_mode = AreSearch.after_commit_mode
-        original_index_operation_enabled = AreSearch.index_operation_enabled
-        original_lock_dir = AreSearch.lock_dir
-
-        AreSearch.after_commit_mode = :none
-        AreSearch.index_operation_enabled = true
-
-        clear_are_search_integration_records
-        rebuild_empty_document_first_index
-
-        Dir.mktmpdir("are_search_index_guard_integration") do |dir|
-            AreSearch.lock_dir = dir
-            example.run
-        end
-    ensure
-        clear_are_search_integration_records
-        AreSearch.after_commit_mode = original_after_commit_mode
-        AreSearch.index_operation_enabled = original_index_operation_enabled
-        AreSearch.lock_dir = original_lock_dir
-    end
-
-    it "別の処理がindex flockを保持中はskipし解放後はmarker付きで実行する" do
-        index_alias_name = document_first_index_target.are_search_index_alias_name
-        lock_file_path = AreSearch.index_lock_file_path(index_alias_name)
-        FileUtils.mkdir_p(File.dirname(lock_file_path))
-
-        ready_reader, ready_writer = IO.pipe
-        release_reader, release_writer = IO.pipe
-
-        child_pid = fork do
-            ready_reader.close
-            release_writer.close
-
-            File.open(lock_file_path, File::RDWR | File::CREAT) do |lock_file|
-                lock_file.flock(File::LOCK_EX)
-                ready_writer.write("1")
-                ready_writer.flush
-                ready_writer.close
-                release_reader.read(1)
-            end
-
-            release_reader.close
-            exit! 0
-        end
-
-        ready_writer.close
-        release_reader.close
-        ready_reader.read(1)
-        ready_reader.close
-
-        block_called = false
-        locked_result = document_first_index_target.are_search_with_index_guard(operation: "integration") do
-            block_called = true
-        end
-
-        expect(block_called).to eq(false)
-        expect(locked_result[:result]).to eq(:not_success)
-        expect(locked_result[:stop_phase]).to eq(:lock_index)
-        expect(locked_result[:message]).to match(/別の処理が実行中/)
-        expect(AreSearch::IndexMarker.count).to eq(0)
-
-        release_writer.write("1")
-        release_writer.close
-        Process.wait(child_pid)
-
-        marker_seen_in_block = false
-        unlocked_result = document_first_index_target.are_search_with_index_guard(operation: "integration") do
-            marker_seen_in_block = document_first_index_target.are_search_index_marked?
-        end
-
-        expect(marker_seen_in_block).to eq(true)
-        expect(unlocked_result[:result]).to eq(:success)
-        expect(unlocked_result[:stop_phase]).to eq(nil)
-        expect(unlocked_result[:done_phases]).to eq([:lock_index, :create_marker])
-        expect(document_first_index_target.are_search_index_marked?).to eq(false)
-        expect(AreSearch::IndexMarker.count).to eq(0)
-    end
-end
-
 RSpec.describe "AreSearch create index integration", type: :model do
     self.use_transactional_tests = false
 
@@ -208,13 +123,13 @@ RSpec.describe "AreSearch reindex integration", type: :model do
             result:             :not_success,
             message:            "alias が存在しないため clean up を実行できません",
             stop_phase:         :check_alias,
-            done_phases:        [:lock_index, :create_marker],
+            done_phases:        [:lock_index, :acquire_index_target_sync_lock],
             delete_index_names: [],
         )
         expect(
             AreSearch.client.indices.exists(index: physical_index_name),
         ).to eq(true)
-        expect(AreSearch::IndexMarker.find_by(index_alias_name: index_alias_name)).to eq(nil)
+        expect(AreSearch::SyncLock.find_by(index_alias_name: index_alias_name)).to eq(nil)
     end
 
     it "別targetとtimestamp形式ではないindexはclean_upで削除しない" do
@@ -350,7 +265,7 @@ RSpec.describe "AreSearch reindex integration", type: :model do
         expect(result[:stop_phase]).to eq(:index_to_new_index)
         expect(result[:done_phases]).to include(
             :lock_index,
-            :create_marker,
+            :acquire_index_target_sync_lock,
             :create_new_index,
         )
         expect(result[:done_phases]).not_to include(:switch_alias)
@@ -460,7 +375,7 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
         end
     end
 
-    # defaultとnew_versionの各stageで同じ完成ドキュメントを生成できるようにする。
+    # defaultの通常・bulk用stageとnew_versionの各stageで同じ完成ドキュメントを生成できるようにする。
     # SearchableValidatorがarityを検査するため、RSpec mockではなく2引数の実メソッドとして差し替える。
     def replace_document_first_index_data
         DocumentFirst.send(
@@ -469,6 +384,8 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
         ) do |index_target_name, sync_stage_name|
             supported_stage = [
                 [:default, "default"],
+                [:default, "huge_data"],
+                [:default, "huge_data_for_reindex"],
                 [:new_version, "for_version_up"],
                 [:new_version, "default"],
             ].include?([index_target_name, sync_stage_name])
@@ -532,6 +449,27 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
         Rake::Task.define_task(:environment)
 
         load are_search_template_path("are_search_run_sync_requests.rake")
+    end
+
+    # Boundary操作の配布templateをDocumentFirst用設定で独立したRake applicationへ読み込む。
+    def load_sync_request_boundary_task
+        Rake.application = Rake::Application.new
+        Rake::Task.define_task(:environment)
+
+        load are_search_template_path("are_search_sync_request_boundary.rake")
+
+        stub_const(
+            "AreSearchSyncRequestBoundaryTask::INDEX_TARGET_MODEL_CLASS_NAME",
+            "DocumentFirst",
+        )
+        stub_const(
+            "AreSearchSyncRequestBoundaryTask::INDEX_TARGET_NAME",
+            "default",
+        )
+        stub_const(
+            "AreSearchSyncRequestBoundaryTask::SYNC_STAGE_NAME",
+            "huge_data_for_reindex",
+        )
     end
 
     it "巨大データ切り替え手順でbulk中の更新を差分回収して新IndexTargetへ移行する" do
@@ -894,6 +832,206 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
             index_target: new_version_index_target,
         )
         expect(after_old_index_delete.records.map(&:id)).to eq([second.id])
+    end
+
+    it "通常同期を継続したままbulk中の更新をBoundaryで差分回収する" do
+        apply_document_first_definition(
+            target_names: [:default],
+            all_sync_stage_names: {
+                default: [
+                    "default",
+                    "huge_data",
+                    "huge_data_for_reindex",
+                ],
+            },
+            enqueue_sync_stage_names: {
+                default: [
+                    "default",
+                    "huge_data",
+                    "huge_data_for_reindex",
+                ],
+            },
+            after_commit_sync_stage_names: {
+                default: ["default"],
+            },
+        )
+
+        initial_reindex = rebuild_empty_document_first_index
+        expect(initial_reindex[:result]).to eq(:success)
+
+        AreSearch::SyncRequestBoundaryTarget.delete_all
+
+        first = DocumentFirst.create!(
+            title:   "boundarybulk first",
+            body:    "first body",
+            status:  "published",
+            user_id: 911,
+        )
+        second = DocumentFirst.create!(
+            title:   "boundarybulkoldtoken",
+            body:    "second body",
+            status:  "published",
+            user_id: 912,
+        )
+
+        # 11-1: 通常rakeではdefaultとhuge_dataだけを処理し、差分回収stageは蓄積する。
+        load_run_sync_requests_task
+
+        expect do
+            Rake::Task["are_search:run_sync_requests"].invoke(
+                "default",
+                "huge_data",
+            )
+        end.to output(
+            /通常 2 件 強制 0 件/,
+        ).to_stdout
+
+        reindex_stage_scope = AreSearch::SyncRequest.where(
+            index_alias_name: document_first_index_alias_name(:default),
+            sync_stage_name:  "huge_data_for_reindex",
+        )
+        expect(reindex_stage_scope.count).to eq(2)
+
+        # 11-2, 11-3: Boundary taskを読み込み、bulk開始前に差分回収stageだけをclearする。
+        load_sync_request_boundary_task
+
+        expect do
+            Rake::Task["are_search:delete_sync_stage_all_sync_requests"].invoke
+        end.to output(
+            /sync_requestを削除しました。2件/,
+        ).to_stdout
+        expect(reindex_stage_scope.count).to eq(0)
+
+        default_index_target = DocumentFirst.are_search_index_target(:default)
+        updated_during_bulk = false
+
+        # 11-4: bulk用data生成直後に更新を割り込ませ、古いdataをElasticsearchへ送る。
+        allow_any_instance_of(DocumentFirst)
+            .to receive(:are_search_index_data_for_index!)
+            .and_wrap_original do |original_method, index_target, sync_stage_name|
+                record = original_method.receiver
+                data = original_method.call(index_target, sync_stage_name)
+
+                if updated_during_bulk == false &&
+                        record.id == second.id &&
+                        index_target.index_target_name == :default &&
+                        sync_stage_name == "huge_data_for_reindex"
+                    updated_during_bulk = true
+
+                    DocumentFirst.find(second.id).update!(
+                        title: "boundarybulkduringtoken",
+                    )
+                end
+
+                data
+            end
+
+        Dir.mktmpdir("are_search_boundary_bulk_integration") do |result_dir|
+            default_index_target.are_search_bulk_index(
+                "huge_data_for_reindex",
+                result_dir:      result_dir,
+                max_bulk_bytes:  1024 * 1024,
+                max_bulk_count:  10,
+                max_fail_count:  10,
+            )
+        end
+
+        expect(updated_during_bulk).to eq(true)
+        refresh_index_target(default_index_target)
+
+        stale_result = search_document_first(
+            "boundarybulkoldtoken",
+            index_target: default_index_target,
+        )
+        updated_result = search_document_first(
+            "boundarybulkduringtoken",
+            index_target: default_index_target,
+        )
+        expect(stale_result.records.map(&:id)).to eq([second.id])
+        expect(updated_result.records).to eq([])
+
+        during_bulk_request = sync_request_for(
+            second,
+            :default,
+            "huge_data_for_reindex",
+        )
+        expect(during_bulk_request).not_to eq(nil)
+
+        # 11-5: bulk完了時点を境界として保存する。
+        expect do
+            Rake::Task["are_search:set_sync_request_boundary"].invoke
+        end.to output(
+            /BoundaryTargetをセットしました。limit=/,
+        ).to_stdout
+
+        boundary_target = AreSearch::SyncRequestBoundaryTarget.find_by!(
+            index_alias_name: document_first_index_alias_name(:default),
+            sync_stage_name:  "huge_data_for_reindex",
+        )
+        expect(during_bulk_request.reload.request_sequence).to be <= boundary_target.sequence_limit
+
+        # set_sync_request_boundary後の更新は今回の差分回収対象に含めない。
+        first.update!(title: "boundarybulkaftertoken")
+
+        after_boundary_request = sync_request_for(
+            first,
+            :default,
+            "huge_data_for_reindex",
+        )
+        expect(after_boundary_request).not_to eq(nil)
+        expect(after_boundary_request.request_sequence).to be > boundary_target.sequence_limit
+
+        # 11-6: 今回の境界までを同期し、bulk中の古いdataを最新状態へ戻す。
+        allow($stdin)
+            .to receive(:gets)
+            .and_return("y\n")
+
+        boundary_run_task = Rake::Task["are_search:run_sync_request_before_boundary"]
+
+        expect do
+            boundary_run_task.invoke
+        end.to output(
+            /Boundary同期対象 実行前 1件.*Boundary同期対象 実行後 0件/m,
+        ).to_stdout
+
+        expect(
+            sync_request_for(second, :default, "huge_data_for_reindex"),
+        ).to eq(nil)
+        expect(
+            sync_request_for(first, :default, "huge_data_for_reindex"),
+        ).not_to eq(nil)
+
+        huge_data_scope = AreSearch::SyncRequest.where(
+            index_alias_name: document_first_index_alias_name(:default),
+            sync_stage_name:  "huge_data",
+        )
+        expect(huge_data_scope.count).to eq(2)
+
+        refresh_index_target(default_index_target)
+        recovered_result = search_document_first(
+            "boundarybulkduringtoken",
+            index_target: default_index_target,
+        )
+        expect(recovered_result.records.map(&:id)).to eq([second.id])
+
+        # 境界対象が0件なら再実行しても同期を開始しない。
+        boundary_run_task.reenable
+
+        expect do
+            boundary_run_task.invoke
+        end.to output(
+            /Boundary同期対象 実行前 0件/,
+        ).to_stdout
+
+        expect do
+            Rake::Task["are_search:clear_sync_request_boundary"].invoke
+        end.to output(/BoundaryTargetをクリアしました。/).to_stdout
+
+        expect(
+            AreSearch::SyncRequestBoundaryTarget.exists?(boundary_target.id),
+        ).to eq(false)
+    ensure
+        AreSearch::SyncRequestBoundaryTarget.delete_all
     end
 end
 

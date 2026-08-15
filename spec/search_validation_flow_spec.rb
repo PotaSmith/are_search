@@ -289,7 +289,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                         },
                     ],
                     model_relations: {
-                        model => AreSearch::IndexMarker.all,
+                        model => AreSearch::SyncLock.all,
                     },
                 )
             end.to raise_error(

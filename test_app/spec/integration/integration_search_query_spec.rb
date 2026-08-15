@@ -96,7 +96,7 @@ RSpec.describe "AreSearch search boundary integration", type: :model do
     def clear_records
         DocumentSecond.delete_all
         AreSearch::SyncRequest.delete_all
-        AreSearch::IndexMarker.delete_all
+        AreSearch::SyncLock.delete_all
     end
 
     # DocumentSecondのindexをrefreshする。
@@ -347,7 +347,7 @@ RSpec.describe "AreSearch search features integration", type: :model do
     def clear_records
         DocumentSecond.delete_all
         AreSearch::SyncRequest.delete_all
-        AreSearch::IndexMarker.delete_all
+        AreSearch::SyncLock.delete_all
     end
 
     # DocumentSecondのindexをrefreshする。

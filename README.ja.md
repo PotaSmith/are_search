@@ -29,7 +29,7 @@ AreSearch は、以下を目的にしています。
 
 AreSearch は、同期や index 操作の異常を gem 内部に隠しません。
 
-sync request、index marker、rake タスク、アラートメールを通じて、利用者が確認できる状態として残します。
+sync request、sync lock、rake タスク、アラートメールを通じて、利用者が確認できる状態として残します。
 何が正常で、何が未処理・失敗・固着・index 操作中なのかを、アプリ運用者が判断できるようにします。
 
 
@@ -55,7 +55,7 @@ tokenizer / analyzer / mappings を変える場合は、新しい IndexTarget �
 Gemfile に追加します。
 
 ```ruby
-gem "are_search", git: "https://github.com/PotaSmith/are_search.git", tag: "v0.8.0"
+gem "are_search", git: "https://github.com/PotaSmith/are_search.git", tag: "v0.9.0"
 ```
 
 開発中の最新版を直接使う場合は `branch: "main"` を指定できます。
@@ -193,7 +193,7 @@ result = AreSearch::Searcher.search(
 docs/guide_setup.txt                     セットアップ、初回導入
 docs/guide_index_targets_and_stages.txt  IndexTarget、sync stage、同期対象
 docs/guide_usage.txt                     検索オプション、検索結果の扱い
-docs/guide_operations.txt                reindex、同期、clean up、運用
+docs/guide_operations.txt                reindex、同期、clean up、sync lock、運用
 docs/guide_bulk_indexer.txt              大規模データのBulkIndexer運用
 docs/guide_reference.txt                 設定、内部動作、低レベルAPI
 ```

@@ -370,6 +370,10 @@ RSpec.describe AreSearch::Generators::SampleGenerator do
                 sample_dir,
                 "are_search_sync_limit_alert.rake.sample",
             )
+            sync_request_boundary_sample_path = File.join(
+                sample_dir,
+                "are_search_sync_request_boundary.rake.sample",
+            )
             ruby_sample_path = File.join(
                 sample_dir,
                 "are_search_bulk_index.rb.sample",
@@ -381,11 +385,13 @@ RSpec.describe AreSearch::Generators::SampleGenerator do
 
             expect(File.file?(run_sync_sample_path)).to eq(true)
             expect(File.file?(sync_limit_alert_sample_path)).to eq(true)
+            expect(File.file?(sync_request_boundary_sample_path)).to eq(true)
             expect(File.file?(ruby_sample_path)).to eq(true)
             expect(File.file?(shell_sample_path)).to eq(true)
 
             run_sync_sample = File.read(run_sync_sample_path)
             sync_limit_alert_sample = File.read(sync_limit_alert_sample_path)
+            sync_request_boundary_sample = File.read(sync_request_boundary_sample_path)
             ruby_sample = File.read(ruby_sample_path)
             shell_sample = File.read(shell_sample_path)
 
@@ -397,6 +403,18 @@ RSpec.describe AreSearch::Generators::SampleGenerator do
             )
             expect(sync_limit_alert_sample).to include(
                 "task sync_limit_alert: :environment",
+            )
+            expect(sync_request_boundary_sample).to include(
+                "task delete_sync_stage_all_sync_requests: :environment",
+            )
+            expect(sync_request_boundary_sample).to include(
+                "task set_sync_request_boundary: :environment",
+            )
+            expect(sync_request_boundary_sample).to include(
+                "task run_sync_request_before_boundary: :environment",
+            )
+            expect(sync_request_boundary_sample).to include(
+                "task clear_sync_request_boundary: :environment",
             )
             expect(ruby_sample).to include(
                 'ENV.fetch("ARE_SEARCH_BULK_RESULT_DIR")',
@@ -475,6 +493,310 @@ RSpec.describe AreSearch::Generators::SampleGenerator do
     end
 end
 
+RSpec.describe "are_search sync request boundary task" do
+    let(:model_class) do
+        class_double(
+            "SampleData",
+            name: "SampleData",
+        )
+    end
+    let(:index_target) do
+        double(
+            "index_target",
+            are_search_index_alias_name: "test__sample_data__name",
+        )
+    end
+    let(:application) do
+        double("application", eager_load!: true)
+    end
+
+    around do |example|
+        original_rake_operation_enabled = AreSearch.rake_operation_enabled
+        original_lock_dir = AreSearch.lock_dir
+        AreSearch.rake_operation_enabled = true
+        AreSearch.lock_dir = "/tmp/are_search_boundary_spec"
+
+        example.run
+    ensure
+        AreSearch.rake_operation_enabled = original_rake_operation_enabled
+        AreSearch.lock_dir = original_lock_dir
+    end
+
+    before do
+        Rake.application = Rake::Application.new
+        Rake::Task.define_task(:environment)
+
+        load File.expand_path(
+            "../lib/generators/are_search/templates/are_search_sync_request_boundary.rake",
+            __dir__,
+        )
+
+        stub_const("SampleData", model_class)
+
+        allow(model_class)
+            .to receive(:are_search_index_target)
+            .with("name")
+            .and_return(index_target)
+
+        allow(Rails)
+            .to receive(:application)
+            .and_return(application)
+
+        allow(ActiveRecord::Base)
+            .to receive(:descendants)
+            .and_return([model_class])
+
+        allow(model_class)
+            .to receive(:include?)
+            .with(AreSearch::Searchable)
+            .and_return(true)
+
+        allow(index_target)
+            .to receive(:are_search_find_sync_request_boundary_target!)
+            .with("sample") do
+                AreSearch::SyncRequestBoundaryTarget.find_by(
+                    index_alias_name: "test__sample_data__name",
+                    sync_stage_name:  "sample",
+                )
+            end
+
+        allow(index_target)
+            .to receive(:are_search_set_sync_request_boundary_target!)
+            .with("sample") do
+                AreSearch::SyncRequestBoundaryTarget.set_target!(
+                    "test__sample_data__name",
+                    "sample",
+                )
+            end
+
+        allow(index_target)
+            .to receive(:are_search_clear_sync_request_boundary_target!)
+            .with("sample") do
+                AreSearch::SyncRequestBoundaryTarget.where(
+                    index_alias_name: "test__sample_data__name",
+                    sync_stage_name:  "sample",
+                ).delete_all
+            end
+    end
+
+    after do
+        Rake.application = Rake::Application.new
+    end
+
+    # Boundary taskの対象選択に使う同期要求を作成する。
+    def create_boundary_sync_request(attrs = {})
+        defaults = {
+            ar_model_class_name: "SampleData",
+            index_target_name:   "name",
+            ar_instance_key:     "1",
+            index_alias_name:    "test__sample_data__name",
+            sync_stage_name:     "sample",
+            request_sequence:    10,
+            request_sequence_at: Time.zone.parse("2026-08-15 10:00:00"),
+        }
+
+        AreSearch::SyncRequest.create!(defaults.merge(attrs))
+    end
+
+    # 今回のbulk終了境界を作成する。
+    def create_boundary_target(attrs = {})
+        defaults = {
+            index_alias_name:      "test__sample_data__name",
+            sync_stage_name:       "sample",
+            sequence_limit:        20,
+            last_sync_started_at:  Time.zone.parse("2026-08-15 10:00:00"),
+            last_sync_ended_at:    Time.zone.parse("2026-08-15 10:00:00"),
+        }
+
+        AreSearch::SyncRequestBoundaryTarget.create!(defaults.merge(attrs))
+    end
+
+    describe "are_search:delete_sync_stage_all_sync_requests" do
+        it "対象IndexTargetとstageのSyncRequestだけを削除する" do
+            target_request = create_boundary_sync_request
+            other_stage_request = create_boundary_sync_request(
+                ar_instance_key:  "2",
+                sync_stage_name:  "default",
+                request_sequence: 11,
+            )
+            other_index_request = create_boundary_sync_request(
+                ar_instance_key:  "3",
+                index_alias_name: "test__sample_data__other",
+                request_sequence: 12,
+            )
+
+            expect do
+                Rake::Task["are_search:delete_sync_stage_all_sync_requests"].invoke
+            end.to output(/sync_requestを削除しました。1件/).to_stdout
+
+            expect(AreSearch::SyncRequest.exists?(target_request.id)).to eq(false)
+            expect(AreSearch::SyncRequest.exists?(other_stage_request.id)).to eq(true)
+            expect(AreSearch::SyncRequest.exists?(other_index_request.id)).to eq(true)
+        end
+    end
+
+    describe "are_search:set_sync_request_boundary" do
+        it "現在のrequest sequenceと時刻をBoundaryTargetへ保存する" do
+            created_at = Time.zone.parse("2026-08-15 11:00:00")
+
+            expect(AreSearch.database_specific)
+                .to receive(:next_request_sequence)
+                .and_return(42)
+            allow(Time.zone)
+                .to receive(:now)
+                .and_return(created_at)
+
+            expect do
+                Rake::Task["are_search:set_sync_request_boundary"].invoke
+            end.to output(/BoundaryTargetをセットしました。limit=42/).to_stdout
+
+            boundary_target = AreSearch::SyncRequestBoundaryTarget.find_by!(
+                index_alias_name: "test__sample_data__name",
+                sync_stage_name:  "sample",
+            )
+            expect(boundary_target.sequence_limit).to eq(42)
+        end
+
+        it "既存のBoundaryTargetがある場合は例外にする" do
+            boundary_target = create_boundary_target
+            created_at = boundary_target.created_at
+
+            expect(AreSearch.database_specific)
+                .not_to receive(:next_request_sequence)
+
+            expect do
+                Rake::Task["are_search:set_sync_request_boundary"].invoke
+            end.to raise_error(ArgumentError, "SyncRequestBoundaryTarget は既にに存在します: sample")
+
+            expect(AreSearch::SyncRequestBoundaryTarget.count).to eq(1)
+            expect(boundary_target.reload.sequence_limit).to eq(20)
+            expect(boundary_target.created_at).to eq(created_at)
+        end
+    end
+
+    describe "are_search:clear_sync_request_boundary" do
+        it "保存したBoundaryTargetを削除する" do
+            boundary_target = create_boundary_target
+
+            expect do
+                Rake::Task["are_search:clear_sync_request_boundary"].invoke
+            end.to output(/BoundaryTargetをクリアしました。/).to_stdout
+
+            expect(AreSearch::SyncRequestBoundaryTarget.exists?(boundary_target.id)).to eq(false)
+        end
+    end
+
+    describe "are_search:run_sync_request_before_boundary" do
+        it "境界以前のSyncRequestだけを同期対象にする" do
+            boundary_target = create_boundary_target
+            before_boundary = create_boundary_sync_request(
+                ar_instance_key:  "1",
+                request_sequence: 20,
+            )
+            after_boundary = create_boundary_sync_request(
+                ar_instance_key:     "2",
+                request_sequence:    21,
+                request_sequence_at: Time.zone.parse("2026-08-15 10:10:00"),
+            )
+            create_boundary_sync_request(
+                ar_instance_key:     "3",
+                sync_stage_name:     "default",
+                request_sequence:    10,
+                request_sequence_at: Time.zone.parse("2026-08-15 10:00:00"),
+            )
+
+            run_at = Time.zone.parse("2026-08-15 11:00:00")
+            allow(Time.zone)
+                .to receive(:now)
+                .and_return(run_at)
+            allow($stdin)
+                .to receive(:gets)
+                .and_return("y\n")
+
+            expect(AreSearch::SyncRequestRunner)
+                .to receive(:run) do |models:, normal_scope:, force_scope:, processing_token:, lock_file_path:|
+                    expect(models).to eq([model_class])
+                    expect(normal_scope.order(:id).pluck(:id)).to eq([before_boundary.id])
+                    expect(normal_scope.exists?(after_boundary.id)).to eq(false)
+                    expect(force_scope.count).to eq(0)
+                    expect(processing_token).to eq(AreSearch::SyncRequest::RAKE_PROCESSING_TOKEN)
+                    expect(lock_file_path).to eq(AreSearch.sync_runner_lock_file_path)
+
+                    {
+                        normal_count: 1,
+                        force_count:  0,
+                    }
+                end
+
+            expect do
+                Rake::Task["are_search:run_sync_request_before_boundary"].invoke
+            end.to output(/Boundary同期対象 実行前 1件.*Boundary同期対象 実行後 1件/m).to_stdout
+
+            boundary_target.reload
+            expect(boundary_target.last_sync_started_at).to eq(run_at)
+            expect(boundary_target.last_sync_ended_at).to eq(run_at)
+        end
+
+        it "境界後の新しい要求へupsertされた場合は同期対象にしない" do
+            create_boundary_target
+            sync_request = create_boundary_sync_request(
+                request_sequence:    10,
+                request_sequence_at: Time.zone.parse("2026-08-15 09:00:00"),
+            )
+            new_request_sequence_at = Time.zone.parse("2026-08-15 10:10:00")
+
+            AreSearch::SyncRequest.upsert(
+                {
+                    ar_model_class_name: "SampleData",
+                    index_target_name:   "name",
+                    ar_instance_key:     "1",
+                    index_alias_name:    "test__sample_data__name",
+                    sync_stage_name:     "sample",
+                    request_sequence:    21,
+                    request_sequence_at: new_request_sequence_at,
+                },
+                unique_by: [:index_alias_name, :ar_model_class_name, :ar_instance_key, :sync_stage_name],
+            )
+
+            sync_request.reload
+            expect(sync_request.request_sequence).to eq(21)
+            expect(sync_request.request_sequence_at).to eq(new_request_sequence_at)
+
+            expect(AreSearch::SyncRequestRunner)
+                .not_to receive(:run)
+
+            expect do
+                Rake::Task["are_search:run_sync_request_before_boundary"].invoke
+            end.to output(/Boundary同期対象 実行前 0件/).to_stdout
+        end
+
+        it "同期確認でy以外なら同期を開始しない" do
+            create_boundary_target
+            create_boundary_sync_request
+
+            allow($stdin)
+                .to receive(:gets)
+                .and_return("n\n")
+
+            expect(AreSearch::SyncRequestRunner)
+                .not_to receive(:run)
+
+            expect do
+                Rake::Task["are_search:run_sync_request_before_boundary"].invoke
+            end.to output(/同期を実行しますか？.*Boundary同期をキャンセルしました。/m).to_stdout
+        end
+
+        it "BoundaryTargetが無ければ同期を開始しない" do
+            expect(AreSearch::SyncRequestRunner)
+                .not_to receive(:run)
+
+            expect do
+                Rake::Task["are_search:run_sync_request_before_boundary"].invoke
+            end.to output(/SyncRequestBoundaryTargetがありません/).to_stdout
+        end
+    end
+end
+
 RSpec.describe "are_search run sync requests task" do
     let(:article_model) do
         class_double(
@@ -541,7 +863,7 @@ RSpec.describe "are_search run sync requests task" do
             .and_return([article_index_target])
         allow(article_model)
             .to receive(:are_search_get_all_sync_stage_names)
-            .with(:default)
+            .with(article_index_target)
             .and_return(["default", "with_external_file"])
 
         allow(document_model)
@@ -549,7 +871,7 @@ RSpec.describe "are_search run sync requests task" do
             .and_return([document_index_target])
         allow(document_model)
             .to receive(:are_search_get_all_sync_stage_names)
-            .with(:default)
+            .with(document_index_target)
             .and_return(["default"])
 
         allow(AreSearch)
@@ -725,7 +1047,7 @@ RSpec.describe "are_search run sync requests task" do
                     force_external.id,
                 ])
                 expect(processing_token).to eq("rake task")
-                expect(lock_file_path).to eq(AreSearch.sync_lock_file_path)
+                expect(lock_file_path).to eq(AreSearch.sync_runner_lock_file_path)
 
                 {
                     normal_count: 2,

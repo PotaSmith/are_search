@@ -16,7 +16,6 @@ RSpec.describe AreSearch::Searcher do
             index_target_name:                       :default,
             are_search_index_alias_name:          "test__articles__default",
             are_search_index_alias_exists?: true,
-            are_search_index_marked?:       false,
             are_search_index_mappings:            {
                 properties: {
                     title: { type: "text" },
@@ -32,7 +31,6 @@ RSpec.describe AreSearch::Searcher do
             index_target_name:                       :default,
             are_search_index_alias_name:          "test__documents__default",
             are_search_index_alias_exists?: true,
-            are_search_index_marked?:       false,
             are_search_index_mappings:            {
                 properties: {
                     name: { type: "text" },
@@ -76,31 +74,14 @@ RSpec.describe AreSearch::Searcher do
         end
     end
 
-    describe ".index_marked?" do
-        it "対象 index のいずれかに marker があれば true を返す" do
-            allow(article_index_target)
-                .to receive(:are_search_index_marked?)
-                .and_return(false)
-            allow(document_index_target)
-                .to receive(:are_search_index_marked?)
-                .and_return(true)
-
-            result = described_class.index_marked?([
-                article_index_target,
-                document_index_target,
-            ])
-
-            expect(result).to eq(true)
-        end
-    end
-
     describe ".index_ready?" do
-        it "marker が無く全 alias が存在すれば true を返す" do
-            allow(described_class)
-                .to receive(:index_marked?)
-                .and_return(false)
-            allow(described_class)
+        it "全 alias が存在すれば true を返す" do
+            expect(described_class)
                 .to receive(:check_index_exists?)
+                .with([
+                    article_index_target,
+                    document_index_target,
+                ])
                 .and_return(true)
 
             result = described_class.index_ready?([
@@ -111,12 +92,11 @@ RSpec.describe AreSearch::Searcher do
             expect(result).to eq(true)
         end
 
-        it "marker があれば alias を確認せず false を返す" do
+        it "alias が無ければ false を返す" do
             expect(described_class)
-                .to receive(:index_marked?)
-                .and_return(true)
-            expect(described_class)
-                .not_to receive(:check_index_exists?)
+                .to receive(:check_index_exists?)
+                .with([article_index_target])
+                .and_return(false)
 
             result = described_class.index_ready?([article_index_target])
 
@@ -125,7 +105,7 @@ RSpec.describe AreSearch::Searcher do
 
         it "状態確認で例外が出た場合は false を返す" do
             allow(described_class)
-                .to receive(:index_marked?)
+                .to receive(:check_index_exists?)
                 .and_raise(RuntimeError, "failed")
 
             result = described_class.index_ready?([article_index_target])

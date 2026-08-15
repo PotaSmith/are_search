@@ -10,7 +10,7 @@ require_relative "are_search/version"
 require_relative "are_search/es_adapter"
 
 require_relative "are_search/index_definition"
-require_relative "are_search/index_marker"
+require_relative "are_search/sync_lock"
 require_relative "are_search/index_manager"
 require_relative "are_search/index_target"
 require_relative "are_search/reindexer"
@@ -22,6 +22,7 @@ require_relative "are_search/database_specific"
 require_relative "are_search/postgresql_database_specific"
 require_relative "are_search/searchable"
 require_relative "are_search/sync_request"
+require_relative "are_search/sync_request_boundary_target"
 require_relative "are_search/sync_request_runner"
 require_relative "are_search/sync_job"
 
@@ -241,6 +242,14 @@ module AreSearch
         @index_operation_enabled = value
     end
 
+    def self.validate_index_operation_enabled!
+        return if AreSearch.index_operation_enabled
+
+        message = "[AreSearch] index 操作が許可されていません。AreSearch.index_operation_enabled が false になっています。"
+
+        raise AreSearch::IndexOperationViolation, message
+    end
+
     # sync request を回収する rake task の実行を許可しているか返す。
     def self.rake_operation_enabled
         @rake_operation_enabled
@@ -255,8 +264,7 @@ module AreSearch
     def self.validate_rake_operation_enabled!
         return if rake_operation_enabled
 
-        message = "[AreSearch] rake task の実行が許可されていません。" \
-            "AreSearch.rake_operation_enabled が false になっています。"
+        message = "[AreSearch] rake task の実行が許可されていません。AreSearch.rake_operation_enabled が false になっています。"
 
         raise AreSearch::RakeOperationViolation, message
     end
@@ -286,7 +294,7 @@ module AreSearch
     end
 
     # ロックファイル類のベースディレクトリ。
-    # 配下に locks/sync/ と locks/index/ をgem側の規約で作る。
+    # 配下に locks/sync_runner/ と locks/index/ をgem側の規約で作る。
     # 未設定の場合は Rails.root/tmp/are_search/locks を使う。
     # Rails.root に依存するため即値ではなく参照時に遅延評価する。
     def self.lock_dir
@@ -298,9 +306,9 @@ module AreSearch
     end
 
     # run_sync_requests rake タスクの多重起動を防ぐためのロックファイルパス。
-    # lock_dir/sync/sync.lock
-    def self.sync_lock_file_path
-        File.join(lock_dir, "sync", "sync.lock")
+    # lock_dir/sync_runner/sync_runner.lock
+    def self.sync_runner_lock_file_path
+        File.join(lock_dir, "sync_runner", "sync_runner.lock")
     end
 
     # index作成中、reindex、clean_up の多重起動防止用 flock ファイルパス（IndexTarget単位）。
@@ -401,20 +409,14 @@ module AreSearch
     end
 
     # 指定した物理 index を削除する。
-    # lock や marker は取得せず、IndexManager の低レベル削除処理へ委譲する。
+    # index lock や sync lock は取得せず、IndexManager の低レベル削除処理へ委譲する。
     def self.delete_physical_index!(physical_index_name)
+        AreSearch.validate_index_operation_enabled!
+
         AreSearch::IndexDefinition.valid_physical_index_name!(
             physical_index_name,
         )
 
         AreSearch::IndexManager.delete_physical_index!(physical_index_name)
-    end
-
-    def self.mark_index!(index_alias_name)
-        AreSearch::IndexMarker.create_manual!(index_alias_name)
-    end
-
-    def self.unmark_index!(index_alias_name)
-        AreSearch::IndexMarker.delete_manual!(index_alias_name)
     end
 end

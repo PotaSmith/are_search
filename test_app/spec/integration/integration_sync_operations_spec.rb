@@ -1072,41 +1072,41 @@ RSpec.describe "AreSearch sync hooks integration", type: :model do
         expect(DocumentFirst.exists?(document.id)).to eq(true)
     end
 
-    it "manual marker中はrake同期を残しunmark後にElasticsearchへ反映する" do
+    it "manual sync lock中はrake同期を残しrelease後にElasticsearchへ反映する" do
         AreSearch.after_commit_mode = :none
 
         document = DocumentFirst.create!(
-            title:   "syncmarkertoken",
-            body:    "manual marker body",
+            title:   "synclocktoken",
+            body:    "manual sync lock body",
             status:  "published",
             user_id: 1402,
         )
 
         expect(AreSearch::SyncRequest.count).to eq(1)
 
-        marker = AreSearch.mark_index!(document_first_index_target.are_search_index_alias_name)
-        expect(marker).not_to eq(nil)
-        expect(document_first_index_target.are_search_index_marked?).to eq(true)
+        sync_lock = document_first_index_target.are_search_acquire_sync_lock!
+        expect(sync_lock).not_to eq(nil)
+        expect(document_first_index_target.are_search_index_target_syncable?).to eq(false)
 
         load_run_sync_requests_task
         Rake::Task["are_search:run_sync_requests"].invoke("default")
 
         refresh_document_first_index
-        marked_result = search_document_first("syncmarkertoken")
-        expect(marked_result.records).to eq([])
+        locked_result = search_document_first("synclocktoken")
+        expect(locked_result.records).to eq([])
         expect(AreSearch::SyncRequest.count).to eq(1)
 
-        deleted_count = AreSearch.unmark_index!(document_first_index_target.are_search_index_alias_name)
+        deleted_count = document_first_index_target.are_search_release_sync_lock!
         expect(deleted_count).to eq(1)
-        expect(document_first_index_target.are_search_index_marked?).to eq(false)
+        expect(document_first_index_target.are_search_index_target_syncable?).to eq(true)
 
         task = Rake::Task["are_search:run_sync_requests"]
         task.reenable
         task.invoke("default")
 
         refresh_document_first_index
-        unmarked_result = search_document_first("syncmarkertoken")
-        expect(unmarked_result.records.map(&:id)).to eq([document.id])
+        unlocked_result = search_document_first("synclocktoken")
+        expect(unlocked_result.records.map(&:id)).to eq([document.id])
         expect(AreSearch::SyncRequest.count).to eq(0)
     end
 end

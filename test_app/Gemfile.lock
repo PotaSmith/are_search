@@ -8,7 +8,7 @@ GIT
 PATH
   remote: ..
   specs:
-    are_search (0.8.0)
+    are_search (0.9.0)
       actionmailer (>= 7.2)
       activejob (>= 7.2)
       activerecord (>= 7.2)

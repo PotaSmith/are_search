@@ -545,7 +545,7 @@ RSpec.describe "AreSearch multi index response integration", type: :model do
         DocumentFirst.delete_all
         DocumentSecond.delete_all
         AreSearch::SyncRequest.delete_all
-        AreSearch::IndexMarker.delete_all
+        AreSearch::SyncLock.delete_all
     end
 
     # 2つの検索対象indexをrefreshする。

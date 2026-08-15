@@ -10,8 +10,9 @@ module AreSearch
 
             # rake サンプルを、通常ロードされない一時領域へ生成する。
             def copy_rake_sample
-                copy_file "are_search_sync_limit_alert.rake",  "tmp/are_search/sample/are_search_sync_limit_alert.rake.sample"
-                copy_file "are_search_run_sync_requests.rake", "tmp/are_search/sample/are_search_run_sync_requests.rake.sample"
+                copy_file "are_search_sync_limit_alert.rake",      "tmp/are_search/sample/are_search_sync_limit_alert.rake.sample"
+                copy_file "are_search_run_sync_requests.rake",     "tmp/are_search/sample/are_search_run_sync_requests.rake.sample"
+                copy_file "are_search_sync_request_boundary.rake", "tmp/are_search/sample/are_search_sync_request_boundary.rake.sample"
             end
 
             # BulkIndexer の実行用サンプルを、通常ロードされない一時領域へ生成する。

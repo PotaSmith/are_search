@@ -776,5 +776,4 @@ RSpec.describe AreSearch::SearchOptionValidator do
             end
         end
     end
-
 end

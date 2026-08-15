@@ -10,8 +10,8 @@ RSpec.describe AreSearch::SyncRequest do
             ar_model_class_name: "Article",
             index_target_name:   "default",
             ar_instance_key:     "123",
-            index_alias_name:       "test_articles",
-            sync_stage_name:          "default",
+            index_alias_name:    "test_articles",
+            sync_stage_name:     "default",
             request_sequence:    10,
             request_sequence_at: Time.zone.now,
         }
@@ -26,9 +26,9 @@ RSpec.describe AreSearch::SyncRequest do
     end
     let(:base_key) do
         {
-            index_alias_name:   "test_articles",
-            ar_instance_key: "123",
-            sync_stage_name:      "default",
+            index_alias_name:  "test_articles",
+            ar_instance_key:   "123",
+            sync_stage_name:   "default",
         }
     end
 
@@ -148,10 +148,10 @@ RSpec.describe AreSearch::SyncRequest do
         let(:index_target) do
             double(
                 "index_target",
-                model_class:                       model,
-                index_target_name:                       :default,
-                are_search_index_alias_name:          current_index_name,
-                are_search_index_marked?:       index_marked,
+                model_class:                    model,
+                index_target_name:              :default,
+                are_search_index_alias_name:    current_index_name,
+                are_search_sync_stage_syncable?:           index_syncable,
                 are_search_index_alias_exists?: index_alias_exists,
             )
         end
@@ -163,7 +163,7 @@ RSpec.describe AreSearch::SyncRequest do
         let(:current_index_name) { "test__articles__default" }
         let(:request_index_name) { "test__articles__default" }
         let(:sync_stage_name) { "default" }
-        let(:index_marked) { false }
+        let(:index_syncable) { true }
         let(:index_alias_exists) { true }
         let(:processing_token) { "token-1" }
 
@@ -180,7 +180,7 @@ RSpec.describe AreSearch::SyncRequest do
 
             allow(model)
                 .to receive(:are_search_get_all_sync_stage_names)
-                .with(index_target_name)
+                .with(index_target)
                 .and_return([sync_stage_name])
 
             allow(model)
@@ -198,8 +198,8 @@ RSpec.describe AreSearch::SyncRequest do
                 ar_model_class_name: "Article",
                 index_target_name:   "default",
                 ar_instance_key:     "123",
-                index_alias_name:       "test__articles__default",
-                sync_stage_name:          "default",
+                index_alias_name:    "test__articles__default",
+                sync_stage_name:     "default",
                 request_sequence:    10,
                 request_sequence_at: Time.zone.now,
                 sync_try_count:   0,
@@ -211,9 +211,9 @@ RSpec.describe AreSearch::SyncRequest do
             AreSearch::SyncRequest.create!(defaults.merge(attrs))
         end
 
-        # 標準の同期キーでSyncRequest.are_search_find_and_try_syncを呼び出す。
+        # 標準の同期キーでSyncRequest.find_and_try_syncを呼び出す。
         def sync_record(reraise: false)
-            described_class.are_search_find_and_try_sync(
+            described_class.find_and_try_sync(
                 ar_model_class_name,
                 ar_instance_key,
                 request_index_name,
@@ -223,7 +223,7 @@ RSpec.describe AreSearch::SyncRequest do
             )
         end
 
-        describe ".are_search_find_and_try_sync" do
+        describe ".find_and_try_sync" do
             it "stageを含む同期キーでSyncRequestを取得する" do
                 create_sync_request(sync_stage_name: "with_external_file")
 
@@ -277,7 +277,7 @@ RSpec.describe AreSearch::SyncRequest do
 
                 allow(model)
                     .to receive(:are_search_get_all_sync_stage_names)
-                    .with(index_target_name)
+                    .with(index_target)
                     .and_return(["other"])
 
                 expect(model).not_to receive(:find_by)
@@ -293,12 +293,12 @@ RSpec.describe AreSearch::SyncRequest do
                 expect(reloaded.processing_token).to eq(nil)
             end
 
-            it "index操作中の場合は同期せずindex markedを残す" do
+            it "sync lock中は同期せずsync lockedを残す" do
                 sync_request = create_sync_request
 
                 allow(index_target)
-                    .to receive(:are_search_index_marked?)
-                    .and_return(true)
+                    .to receive(:are_search_sync_stage_syncable?)
+                    .and_return(false)
 
                 expect(model).not_to receive(:find_by)
 
@@ -307,7 +307,7 @@ RSpec.describe AreSearch::SyncRequest do
 
                 expect(result).to eq(false)
                 expect(reloaded.sync_try_count).to eq(0)
-                expect(reloaded.last_error).to eq("index marked")
+                expect(reloaded.last_error).to eq("sync locked")
                 expect(reloaded.last_error_at).not_to eq(nil)
             end
 
@@ -891,7 +891,7 @@ RSpec.describe AreSearch::SyncRequest do
 
                 allow(model)
                     .to receive(:are_search_get_all_sync_stage_names)
-                    .with(index_target_name)
+                    .with(index_target)
                     .and_return(["other"])
 
                 expect(model).not_to receive(:find_by)
@@ -910,15 +910,15 @@ RSpec.describe AreSearch::SyncRequest do
                 expect(reloaded.processing_token).to eq("token-1")
             end
 
-            it "index操作中の場合はforce同期せずindex markedを残す" do
+            it "sync lock中はforce同期せずsync lockedを残す" do
                 sync_request = create_sync_request(
                     processing_token: "token-1",
                     processing_at:    1.hour.ago,
                 )
 
                 allow(index_target)
-                    .to receive(:are_search_index_marked?)
-                    .and_return(true)
+                    .to receive(:are_search_sync_stage_syncable?)
+                    .and_return(false)
 
                 expect(model).not_to receive(:find_by)
                 expect(record).not_to receive(:are_search_index_or_delete!)
@@ -929,7 +929,7 @@ RSpec.describe AreSearch::SyncRequest do
                 expect(result).to eq(false)
                 expect(reloaded.force_attempted).to eq(false)
                 expect(reloaded.force_try_count).to eq(0)
-                expect(reloaded.last_error).to eq("index marked")
+                expect(reloaded.last_error).to eq("sync locked")
                 expect(reloaded.processing_token).to eq("token-1")
             end
 

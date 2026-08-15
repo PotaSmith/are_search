@@ -147,7 +147,7 @@ module AreSearch
         # destroyed? の場合は delete、それ以外の場合は index を実行する。
         #
         # sync_request・非同期同期（SyncJob）とは独立した低レベルコマンド。
-        # index marker と alias の存在は確認しない。
+        # sync lock と alias の存在は確認しない。
         # バッチでデータ加工して強制的に更新する、といった用途を想定している。
         # delete 対象がすでに存在しない場合の NotFound は are_search_delete! 側で無視する。
         # それ以外の Elasticsearch クライアント例外はそのまま伝播させる。
@@ -173,7 +173,7 @@ module AreSearch
         # typo 等で例外が出るかどうかを確認するのが目的
         def are_search_index_data_validate
             self.class.are_search_index_targets.each do |index_target|
-                self.class.are_search_get_all_sync_stage_names(index_target.index_target_name).each do |sync_stage_name|
+                self.class.are_search_get_all_sync_stage_names(index_target).each do |sync_stage_name|
                     next if are_search_indexable?(index_target.index_target_name, sync_stage_name) != true
 
                     mappings = index_target.are_search_index_mappings
@@ -206,7 +206,7 @@ module AreSearch
             request_sequence_at = Time.zone.now
 
             self.class.are_search_index_targets.each do |index_target|
-                self.class.are_search_get_sync_stage_names_on_enqueue(index_target.index_target_name).each do |sync_stage_name|
+                self.class.are_search_get_sync_stage_names_on_enqueue(index_target).each do |sync_stage_name|
                     are_search_upsert_sync_request_with_sequence(
                         index_target,
                         sync_stage_name,
@@ -224,7 +224,7 @@ module AreSearch
         end
 
         def are_search_upsert_sync_request_with_sequence(index_target, sync_stage_name, request_sequence, request_sequence_at)
-            all_sync_stage_names = self.class.are_search_get_all_sync_stage_names(index_target.index_target_name)
+            all_sync_stage_names = self.class.are_search_get_all_sync_stage_names(index_target)
 
             unless all_sync_stage_names.include?(sync_stage_name)
                 raise ArgumentError,
@@ -247,7 +247,7 @@ module AreSearch
             after_commit_mode = AreSearch.after_commit_mode
 
             self.class.are_search_index_targets.each do |index_target|
-                self.class.are_search_get_sync_stage_names_on_after_commit(index_target.index_target_name).each do |sync_stage_name|
+                self.class.are_search_get_sync_stage_names_on_after_commit(index_target).each do |sync_stage_name|
                     are_search_after_commit_per_stage(after_commit_mode, index_target, sync_stage_name)
                 end
             end
@@ -369,8 +369,8 @@ module AreSearch
             end
 
             # 指定 target に定義された全stageを、実行順のまま返す。
-            def are_search_get_all_sync_stage_names(index_target_name)
-                sync_stage_names = are_search_all_sync_stage_names[index_target_name]
+            def are_search_get_all_sync_stage_names(index_target)
+                sync_stage_names = are_search_all_sync_stage_names[index_target.index_target_name]
 
                 return [] if sync_stage_names.nil?
 
@@ -378,17 +378,16 @@ module AreSearch
             end
 
             # 指定 target で保存時に要求を作るstageを返す。
-            def are_search_get_sync_stage_names_on_enqueue(index_target_name)
-                sync_stage_names = are_search_sync_stage_names_on_enqueue[index_target_name]
+            def are_search_get_sync_stage_names_on_enqueue(index_target)
+                sync_stage_names = are_search_sync_stage_names_on_enqueue[index_target.index_target_name]
 
                 return [] if sync_stage_names.nil?
 
                 sync_stage_names
-
             end
 
-            def are_search_get_sync_stage_names_on_after_commit(index_target_name)
-                sync_stage_names = are_search_sync_stage_names_on_after_commit[index_target_name]
+            def are_search_get_sync_stage_names_on_after_commit(index_target)
+                sync_stage_names = are_search_sync_stage_names_on_after_commit[index_target.index_target_name]
 
                 return [] if sync_stage_names.nil?
 
@@ -400,7 +399,6 @@ module AreSearch
                 @are_search_index_targets = nil
                 @are_search_index_target_map = nil
             end
-
         end
     end
 end

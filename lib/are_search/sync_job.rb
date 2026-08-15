@@ -28,7 +28,7 @@ module AreSearch
 
             return if model.connection_db_config.database != database_name
 
-            AreSearch::SyncRequest.are_search_find_and_try_sync(
+            AreSearch::SyncRequest.find_and_try_sync(
                 ar_model_class_name,
                 ar_instance_key,
                 index_alias_name,

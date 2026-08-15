@@ -1,6 +1,49 @@
 # frozen_string_literal: true
 
 module AreSearch
+    class IndexTarget
+
+        # 単一の index target を Searcher で検索する。
+        # query・fields・query_type は1件の queries へ変換する。
+        # 指定された relation は、対象モデルを key にした model_relations へ変換して渡す。
+        #
+        # @return [SearchResult]
+        #
+        def are_search_search(query, **options)
+            unsupported_options = []
+            [:model_relations, :queries].each do |option_name|
+                if options.key?(option_name)
+                    unsupported_options << option_name
+                end
+            end
+            if unsupported_options.any?
+                raise ArgumentError,
+                    "are_search_search に未知のオプションが指定されています: #{unsupported_options.inspect}"
+            end
+
+            model = model_class
+            index_targets = [self]
+            relation_opt = options.delete(:relation)
+            query_options = {
+                query_string: query,
+            }
+            if options.key?(:fields)
+                query_options[:fields] = options.delete(:fields)
+            end
+            if options.key?(:query_type)
+                query_options[:query_type] = options.delete(:query_type)
+            end
+
+            if relation_opt.nil? == false
+                options[:model_relations] = {
+                    model => relation_opt,
+                }
+            end
+
+            AreSearch::Searcher.search(index_targets, queries: [query_options], **options)
+        end
+    end
+
     module Searcher
         extend self
 
@@ -104,8 +147,7 @@ module AreSearch
 
         def index_ready?(index_targets)
             begin
-                # 順序大事
-                index_marked?(index_targets) == false && check_index_exists?(index_targets) == true
+                check_index_exists?(index_targets) == true
             rescue StandardError
                 false
             end
@@ -114,12 +156,6 @@ module AreSearch
         def check_index_exists?(index_targets)
             index_targets.all? do |index_target|
                 index_target.are_search_index_alias_exists?
-            end
-        end
-
-        def index_marked?(index_targets)
-            index_targets.any? do |index_target|
-                index_target.are_search_index_marked?
             end
         end
 
@@ -447,6 +483,5 @@ module AreSearch
 
             index_to_index_targets[index_alias_name]
         end
-
     end
 end

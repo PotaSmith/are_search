@@ -29,7 +29,7 @@ AreSearch does not aim to be a feature-rich search framework.
 
 AreSearch does not hide synchronization or index operation problems inside the gem.
 
-Through sync requests, index markers, rake tasks, and alert emails, it leaves visible state that users can inspect.
+Through sync requests, sync locks, rake tasks, and alert emails, it leaves visible state that users can inspect.
 It is designed so that application operators can determine what is normal, what is pending, what failed, what is stuck, and what is currently under index operation.
 
 
@@ -55,7 +55,7 @@ The first switch should be the application-side search entry point, not the alia
 Add this to your Gemfile.
 
 ```ruby
-gem "are_search", git: "https://github.com/PotaSmith/are_search.git", tag: "v0.8.0"
+gem "are_search", git: "https://github.com/PotaSmith/are_search.git", tag: "v0.9.0"
 ```
 
 To use the latest development version directly, specify `branch: "main"`.
@@ -193,7 +193,7 @@ See the following files for detailed usage.
 docs/guide_setup.txt                     Setup and initial configuration
 docs/guide_index_targets_and_stages.txt  IndexTarget, sync stages, and synchronization targets
 docs/guide_usage.txt                     Search options and search result handling
-docs/guide_operations.txt                Reindexing, synchronization, cleanup, and operations
+docs/guide_operations.txt                Reindexing, synchronization, cleanup, sync locks, and operations
 docs/guide_bulk_indexer.txt              BulkIndexer operations for large datasets
 docs/guide_reference.txt                 Settings, internal behavior, and low-level APIs
 ```

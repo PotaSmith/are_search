@@ -16,5 +16,5 @@ module AreSearch
     class IndexOperationViolation < Error; end
     class RakeOperationViolation < Error; end
     class IndexLockUnavailable < Error; end
-    class IndexMarkerUnavailable < Error; end
+    class SyncLockUnavailable < Error; end
 end

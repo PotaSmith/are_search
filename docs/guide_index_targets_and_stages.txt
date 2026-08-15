@@ -279,7 +279,31 @@ are_search_upsert_sync_request で作成したstageは are_search:run_sync_reque
 force同期は異常中断時の補助処理として使用し、stage連鎖を進める用途には使用しない。
 
 
-# 10. reindex で使用するstageを選ぶ
+# 10. sync stage の新しい同期処理を開始させない
+================================================================
+
+特定の sync stage で新しい同期処理を開始させない場合は sync stage sync lock を使用する。
+
+    index_target = Article.are_search_index_target(:default)
+
+    index_target.are_search_acquire_sync_stage_lock!(
+        "with_external_file",
+    )
+
+この lock がある間、その IndexTarget の指定stageでは新しい同期処理を開始しない。
+他のstageの同期開始と検索には影響しない。
+
+解除する。
+
+    index_target.are_search_release_sync_stage_lock!(
+        "with_external_file",
+    )
+
+処理中だけsync lockを取得するblock形式の操作は guide_operations.txt を参照する。
+AreSearch.index_operation_enabled = true が必要。
+
+
+# 11. reindex で使用するstageを選ぶ
 ================================================================
 
 reindex は1つの IndexTarget に対して1つのstageを使用する。
@@ -291,7 +315,7 @@ are_search:reindex_all_for_es_version_up は各IndexTargetの末尾stageを使�
 reindex の実行方法は guide_operations.txt を参照する。
 
 
-# 11. rake でstageを分けて回収する
+# 12. rake でstageを分けて回収する
 ================================================================
 
 are_search:run_sync_requests は指定したstage名で要求を回収する。
@@ -300,7 +324,7 @@ are_search:run_sync_requests は指定したstage名で要求を回収する。
 stageごとの回収実行方法は guide_operations.txt を参照する。
 
 
-# 12. 最小構成
+# 13. 最小構成
 ================================================================
 
 単一target・単一stageなら次の定義だけでよい。

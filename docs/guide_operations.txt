@@ -2,7 +2,7 @@
 AreSearch 運用ガイド
 ================================================================
 
-このガイドは、index の状態確認、reindex、clean up、SyncRequest の回収、障害対応を扱う。
+このガイドは、index の状態確認、reindex、clean up、SyncRequest の回収、sync lock、障害対応を扱う。
 導入は guide_setup.txt、IndexTarget と sync stage は guide_index_targets_and_stages.txt、
 設定と低レベルAPIは guide_reference.txt を参照する。
 
@@ -10,7 +10,7 @@ AreSearch 運用ガイド
 # 1. index の準備状態を確認する
 ================================================================
 
-検索前やメンテナンス判定で、対象 index が検索可能か確認する。
+検索前やメンテナンス判定で、対象 index の alias が存在するか確認する。
 
     ready = AreSearch::Searcher.index_ready?(
         [
@@ -19,7 +19,8 @@ AreSearch 運用ガイド
         ]
     )
 
-marker が存在する、alias が存在しない、または状態確認に失敗した場合は false を返す。
+alias が存在しない、または状態確認に失敗した場合は false を返す。
+sync lock は判定対象にしない。
 検索を止める必要がある場合のメンテナンス表示はアプリ側で行う。
 
 
@@ -64,43 +65,7 @@ AreSearch.batch_size の詳細は guide_reference.txt を参照する。
 各IndexTargetの末尾stageを使用する。
 
 
-# 3. index guard を使った直接更新
-================================================================
-
-DBから復元できない検索データを複数レコードへ直接反映する場合は、対象 IndexTarget を guard して処理する。
-
-    index_target = Article.are_search_index_target(:default)
-
-    result = index_target.are_search_with_index_guard(
-        operation: "pdf_extract",
-    ) do
-        Article.find_each do |article|
-            # with_external_file stage が参照する一時データを用意する。
-            article.pdf_text_for_search = extract_pdf_text(article)
-
-            article.are_search_index_or_delete!(
-                index_target,
-                "with_external_file",
-            )
-        end
-    end
-
-are_search_with_index_guard の引数、戻り値、実行条件は guide_reference.txt を参照する。
-
-既存の未処理 sync request と直接更新を競合させたくない場合は、更新前に確認する。
-
-    sync_request_exists = AreSearch::SyncRequest.exists?(
-        ar_model_class_name: article.class.name,
-        ar_instance_key:     article.id.to_s,
-        index_alias_name:    index_target.are_search_index_alias_name,
-    )
-
-    next if sync_request_exists
-
-非同期Jobの登録だけを guard 内で行わず、実際の Elasticsearch 更新まで同じ block 内で完了させる。
-
-
-# 4. clean up
+# 3. clean up
 ================================================================
 
 alias が指していない古い物理 index を削除する。
@@ -112,7 +77,7 @@ alias が指していない古い物理 index を削除する。
         .are_search_clean_up
 
 実行後は result[:result] が :success であることを確認する。
-失敗した場合は are_search:check_index_status で alias、marker、物理 index の状態を確認する。
+失敗した場合は are_search:check_index_status で alias、sync lock、物理 index の状態を確認する。
 
 全target。
 
@@ -121,46 +86,48 @@ alias が指していない古い物理 index を削除する。
 現在 alias が指している物理 index は削除しない。
 
 
-# 5. index 状態を確認する
+# 4. index 状態を確認する
 ================================================================
 
     bundle exec rake are_search:check_index_status
 
-各 index target の alias、物理 index、marker などの状態と警告を表示する。
-reindex や clean up が実行できない場合、marker を削除する前にこのタスクで状態を確認する。
+各 index target の alias、物理 index、sync lock、index lock などの状態と警告を表示する。
+sync lock を強制解除する場合にも、このタスクで状態を確認する。
 
 このタスクは、AreSearch で作成された index を対象とする。
 
 
-# 6. manual marker
+# 5. manual sync lock
 ================================================================
 
-計画メンテナンス中に sync と index 操作を止める場合に使用する。
+計画メンテナンス中に、新しい同期処理やindex操作を開始させない場合に使用する。
 検索は自動停止しない。
 
-全targetに作成する。
+全targetの index target sync lock を操作する。
 
-    bundle exec rake are_search:mark_all
+    bundle exec rake are_search:acquire_sync_lock_all
+    bundle exec rake are_search:release_sync_lock_all
 
-全targetの manual marker を削除する。
+単一target全体を操作する。
 
-    bundle exec rake are_search:unmark_all
+    index_target = Article.are_search_index_target(:default)
 
-単一targetを操作する。
+    index_target.are_search_acquire_sync_lock!
+    index_target.are_search_release_sync_lock!
 
-    index_alias_name = Article
-        .are_search_index_target(:default)
-        .are_search_index_alias_name
+特定stageだけを操作する。
 
-    AreSearch.mark_index!(index_alias_name)
-    AreSearch.unmark_index!(index_alias_name)
+    sync_stage_name = "with_external_file"
 
-manual marker の解除には unmark_all または AreSearch.unmark_index! を使用する。
-reindex / clean up の異常終了で残った marker は、この操作ではなく「marker の手動解除」の手順で確認してから解除する。
+    index_target.are_search_acquire_sync_stage_lock!(sync_stage_name)
+    index_target.are_search_release_sync_stage_lock!(sync_stage_name)
+
+通常解除は manual sync lock だけを削除する。
+異常終了で残った別operationの sync lock は「sync lock を手動解除する」の手順で確認してから解除する。
 これらの操作には AreSearch.index_operation_enabled = true が必要。
 
 
-# 7. SyncRequest を定期回収する
+# 6. SyncRequest を定期回収する
 ================================================================
 
 SampleGenerator で生成した rake task のサンプルを利用側アプリケーションへコピーする。
@@ -208,18 +175,81 @@ SyncRequest の状態項目は guide_reference.txt の「SyncRequest の状態�
 
 重いstageを別時間帯に処理する場合は、stageごとに定期実行を分ける。
 
-現在残っている sync request と marker を確認する。
+現在残っている sync request、sync lock を確認する。
 
     bundle exec rake are_search:check_sync_request_status
 
 主な表示内容。
 
-    現在存在する index marker
+    現在存在する sync lock
     sync request の件数とエラー状況
 
 通知用タスク。
 
     bundle exec rake are_search:sync_limit_alert
+
+
+# 7. SyncRequest Boundary
+================================================================
+
+BulkIndexer 実行中の差分回収など、特定の時点までに発生した SyncRequest だけを後から同期する場合に使用する。
+SampleGenerator で生成した専用 rake task のサンプルを利用側アプリケーションへコピーする。
+
+    cp tmp/are_search/sample/are_search_sync_request_boundary.rake.sample \
+        lib/tasks/are_search_sync_request_boundary.rake
+
+コピーした rake ファイルで対象を指定する。
+
+    INDEX_TARGET_MODEL_CLASS_NAME = "Article"
+    INDEX_TARGET_NAME = "default"
+    SYNC_STAGE_NAME = "huge_data_for_reindex"
+
+タスクを実行する環境では AreSearch.rake_operation_enabled を有効にする。
+
+
+## 7-1. bulk開始前のSyncRequestを削除する
+----------------------------------------------------------------
+
+対象stageに現在溜まっているSyncRequestを削除する。
+
+    bundle exec rake are_search:delete_sync_stage_all_sync_requests
+
+削除後に作成されたSyncRequestは再び蓄積される。
+
+
+## 7-2. bulk完了時点を境界として保存する
+----------------------------------------------------------------
+
+bulkと必要なrecoverが完了した後に実行する。
+
+    bundle exec rake are_search:set_sync_request_boundary
+
+実行時点のrequest sequenceをBoundaryTargetへ保存する。
+
+
+## 7-3. 境界までのSyncRequestを同期する
+----------------------------------------------------------------
+
+    bundle exec rake are_search:run_sync_request_before_boundary
+
+保存した境界以前に作成されたSyncRequestを同期対象にする。
+コミット時期は問わないため多めに拾う可能性がある。
+実行前に対象件数を表示し、対象が存在する場合は確認後に同期する。
+
+    同期を実行しますか？ [y/N]:
+
+実行後にも対象件数を表示する。
+実行前の対象件数が0件になるまで同じコマンドを繰り返す。
+
+
+## 7-4. 差分回収後に境界を削除する
+----------------------------------------------------------------
+
+対象件数が0件になった後、今回保存したBoundaryTargetを削除する。
+
+    bundle exec rake are_search:clear_sync_request_boundary
+
+Boundary操作をBulkIndexerと組み合わせる具体的な手順は guide_bulk_indexer.txt を参照する。
 
 
 # 8. モデル設定を確認する
@@ -262,7 +292,7 @@ update_columns、update_all、delete_all、insert_all、upsert_all、SQL直接�
 ----------------------------------------------------------------
 
     1. bundle exec rake are_search:check_index_status を実行する
-    2. marker または lock が残っていないか確認する
+    2. sync lock、index lock の状態を確認する
     3. alias と物理 index の状態を確認する
 
 
@@ -272,24 +302,54 @@ update_columns、update_all、delete_all、insert_all、upsert_all、SQL直接�
     Article.are_search_index_target(:default).are_search_clean_up
 
 
-# 11. marker を手動解除する
+# 11. sync lock
 ================================================================
 
-異常終了で marker が残った場合は、先に check_index_status で次を確認する。
 
-    index 操作中のプロセスが存在しない
-    alias が正しい物理 index を指している
-    不完全な物理 index を削除してよい
+## 11-1. block形式でsync stage sync lockを使う
+----------------------------------------------------------------
 
-確認後、対象 index の marker を削除する。
+処理中だけ特定stageで新しい同期処理を開始させない場合は are_search_with_sync_stage_lock を使用する。
+AreSearch.index_operation_enabled = true が必要。
 
-    index_alias_name = Article
-        .are_search_index_target(:default)
-        .are_search_index_alias_name
+    index_target = Article.are_search_index_target(:default)
 
-    AreSearch::IndexMarker.delete_force!(index_alias_name)
+    index_target.are_search_with_sync_stage_lock(
+        "with_external_file",
+        operation: "bulk",
+    ) do
+        Article.find_each do |article|
+            article.are_search_index_or_delete!(
+                index_target,
+                "with_external_file",
+            )
+        end
+    end
 
-この操作は reindex / clean_up の marker も削除する。
+sync stage sync lock は、指定stageで新しい同期処理を開始させない。
+lock取得前にprocessingへ入ったSyncRequestはそのまま処理を継続する。
+既存processingと競合させられない処理では、利用側で終了を確認してから処理を開始する。
+
+
+## 11-2. sync lock を手動解除する
+----------------------------------------------------------------
+
+異常終了で sync lock が残った場合は、先に check_index_status または check_sync_request_status で状態を確認する。
+実行中の処理がないことを確認してから強制解除する。
+
+    index_target = Article.are_search_index_target(:default)
+    sync_stage_name = "with_external_file"
+
+IndexTarget全体の sync lock を強制解除する。
+
+    index_target.are_search_force_release_sync_lock!
+
+特定stageの sync lock を強制解除する。
+
+    index_target.are_search_force_release_sync_stage_lock!(sync_stage_name)
+
+強制解除は operation や所有者に関係なく対象lockを削除する。
+実行中の処理がある状態では使用しない。
 AreSearch.index_operation_enabled = true のプロセスでのみ実行する。
 
 

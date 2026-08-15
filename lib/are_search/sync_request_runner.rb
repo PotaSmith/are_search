@@ -22,7 +22,7 @@ module AreSearch
             # File.open のブロック形にすることで、ブロック離脱時の close で解放が保証され、
             # かつブロック内にいる間ファイルオブジェクトの参照が生きるためGCによる早期解放も防げる。
 
-            # sync_locks/ が存在しない場合に備えてディレクトリを作成する。
+            # locks/sync_runner/ が存在しない場合に備えてディレクトリを作成する。
             # これがないと下の File.open が Errno::ENOENT で失敗する。
             FileUtils.mkdir_p(File.dirname(lock_path))
 
@@ -72,7 +72,7 @@ module AreSearch
 
             requests.find_each do |sync_request|
                 # 対象モデルが reindex 中の場合は sync_request 側でスキップされる。
-                # last_error に "index marked" が記録され、*_try_count は増えない。
+                # last_error に "sync locked" が記録され、*_try_count は増えない。
                 sync_request.are_search_try_sync(processing_token, on_rake: true)
 
                 processed_count += 1
@@ -103,6 +103,5 @@ module AreSearch
 
             processed_count
         end
-
     end
 end

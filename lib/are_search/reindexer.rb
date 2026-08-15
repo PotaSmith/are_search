@@ -11,12 +11,12 @@ module AreSearch
 
         # 全件をElasticsearchに投入する（移行時・スキーマ変更時に実行する）。
         #
-        # flock と IndexMarker の管理は IndexManager.reindex に委ね、
+        # flock と SyncLock の管理は IndexManager.reindex に委ね、
         # その内側で create とバッチ投入を実行する。
         #
-        # flock または marker を取得できない場合も、未実行理由を result Hash に残す。
+        # flock または sync lock を取得できない場合も、未実行理由を result Hash に残す。
         #
-        # reindex の内側（flock 取得済み・IndexMarker 作成済み）で
+        # reindex の内側（flock 取得済み・SyncLock 作成済み）で
         # 新しい physical index を作成し、その physical index へ bulk 投入する。
         # block が true を返した場合のみ、IndexManager 側で alias の切り替えを試みる。
         #
@@ -30,7 +30,9 @@ module AreSearch
         #   :stop_phase  : 停止した処理段階。成功時は nil
         #   :done_phases : 完了した処理段階
         def are_search_reindex(stage_position:)
-            sync_stage_names = model_class.are_search_get_all_sync_stage_names(index_target_name)
+            AreSearch.validate_index_operation_enabled!
+
+            sync_stage_names = model_class.are_search_get_all_sync_stage_names(self)
 
             sync_stage_name = nil
 
@@ -46,6 +48,8 @@ module AreSearch
             AreSearch::Reindexer.reindex_index_target(self, sync_stage_name)
         end
     end
+
+    # 以下は直接呼ばない
 
     module Reindexer
         extend self
@@ -89,14 +93,6 @@ module AreSearch
             if model_class.superclass&.include?(AreSearch::Searchable)
                 raise AreSearch::Error,
                     "Searchable を継承した子クラスから reindex は実行できません: #{model_class.name}"
-            end
-
-            sync_stage_names = model_class.are_search_get_all_sync_stage_names(
-                index_target.index_target_name,
-            )
-            unless sync_stage_names.include?(sync_stage_name)
-                raise ArgumentError,
-                    "sync_stage_name が IndexTarget に定義されていません: #{sync_stage_name}"
             end
         end
 

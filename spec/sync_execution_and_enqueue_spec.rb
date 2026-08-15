@@ -232,9 +232,9 @@ RSpec.describe AreSearch::SyncJob do
         context "Job 作成時の database_name と worker の database_name が一致する場合" do
             let(:current_database_name) { "app_test" }
 
-            it "SyncRequest.are_search_find_and_try_sync に processing_token と reraise: true で委譲する" do
+            it "SyncRequest.find_and_try_sync に processing_token と reraise: true で委譲する" do
                 expect(AreSearch::SyncRequest)
-                    .to receive(:are_search_find_and_try_sync)
+                    .to receive(:find_and_try_sync)
                     .with(
                         ar_model_class_name,
                         ar_instance_key,
@@ -258,9 +258,9 @@ RSpec.describe AreSearch::SyncJob do
         context "Job 作成時の database_name と worker の database_name が一致しない場合" do
             let(:current_database_name) { "other_test" }
 
-            it "SyncRequest.are_search_find_and_try_sync を呼ばずに終了する" do
+            it "SyncRequest.find_and_try_sync を呼ばずに終了する" do
                 expect(AreSearch::SyncRequest)
-                    .not_to receive(:are_search_find_and_try_sync)
+                    .not_to receive(:find_and_try_sync)
 
                 result = described_class.new.perform(
                     database_name,
@@ -777,7 +777,7 @@ RSpec.describe AreSearch::Searchable do
             expect(sync_stage_names).to eq(["first", "second"])
         end
 
-        it "after_commit_mode が :none なら何もしない" do
+        it "after_commit_mode が :none なら同期しない" do
             model_class = build_searchable_class
             model_class.include(described_class)
             record = model_class.new
@@ -797,5 +797,4 @@ RSpec.describe AreSearch::Searchable do
             record.are_search_after_commit
         end
     end
-
 end

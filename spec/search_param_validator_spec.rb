@@ -1111,6 +1111,5 @@ RSpec.describe AreSearch::SearchParamValidator do
                 )
             end.to raise_error(ArgumentError)
         end
-
     end
 end

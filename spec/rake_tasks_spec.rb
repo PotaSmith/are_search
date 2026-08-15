@@ -143,19 +143,17 @@ RSpec.describe "are_search rake tasks" do
 
     describe "are_search:clean_up_all" do
         it "1 index の clean up が失敗しても残り index を処理する" do
-            allow(AreSearch::IndexManager)
-                .to receive(:index_clean_up)
-                .with("test__articles__default")
+            allow(article_index_target)
+                .to receive(:are_search_clean_up)
                 .and_raise(RuntimeError, "delete failed")
 
-            allow(AreSearch::IndexManager)
-                .to receive(:index_clean_up)
-                .with("test__documents__default")
+            allow(document_index_target)
+                .to receive(:are_search_clean_up)
                 .and_return(
                     result:             :success,
                     message:            '',
                     stop_phase:         nil,
-                    done_phases:        [:lock_index, :create_marker, :check_alias, :delete_indexes],
+                    done_phases:        [:lock_index, :acquire_index_target_sync_lock, :check_alias, :delete_indexes],
                     delete_index_names: [],
                 )
 
@@ -168,14 +166,12 @@ RSpec.describe "are_search rake tasks" do
         end
 
         it "index 操作が許可されていない場合は例外を再送出する" do
-            allow(AreSearch::IndexManager)
-                .to receive(:index_clean_up)
-                .with("test__articles__default")
+            allow(article_index_target)
+                .to receive(:are_search_clean_up)
                 .and_raise(AreSearch::IndexOperationViolation, "not allowed")
 
-            expect(AreSearch::IndexManager)
-                .not_to receive(:index_clean_up)
-                .with("test__documents__default")
+            expect(document_index_target)
+                .not_to receive(:are_search_clean_up)
 
             expect do
                 Rake::Task["are_search:clean_up_all"].invoke
@@ -184,7 +180,7 @@ RSpec.describe "are_search rake tasks" do
     end
 
     describe "are_search:check_index_status" do
-        it "Elasticsearch 状態の取得に失敗しても marker と lock を出力して次のindexへ進む" do
+        it "Elasticsearch 状態の取得に失敗しても sync lock と lock を出力して次のindexへ進む" do
             allow(AreSearch::EsAdapter)
                 .to receive(:indices_get_alias)
                 .and_return({})
@@ -203,7 +199,7 @@ RSpec.describe "are_search rake tasks" do
                 .and_raise(RuntimeError, "es down")
 
             expected_output = Regexp.new(
-                "index status: test__articles__default.*marker:\\s+none.*" \
+                "index status: test__articles__default.*sync lock:\\s+none.*" \
                     "elasticsearch: failed RuntimeError: es down.*index status: test__documents__default",
                 Regexp::MULTILINE,
             )
