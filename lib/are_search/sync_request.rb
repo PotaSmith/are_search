@@ -54,6 +54,7 @@ module AreSearch
                 sync_stage_name:     sync_stage_name,
             )
 
+            # 他で処理をしている。ここで処理してない事がわかるようにfalseを返す
             return false if sync_request.nil?
 
             sync_request.are_search_try_sync(processing_token, on_rake: false, reraise: reraise)
