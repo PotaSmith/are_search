@@ -2,53 +2,50 @@
 
 [English](./README.md) | [日本語](./README.ja.md)
 
-AreSearch is a search platform that implements search, synchronization, and operations for Rails and Elasticsearch while leaving room for applications to intervene directly in its configuration and processing.
+AreSearch is a gem for Rails that treats consistency between the database and Elasticsearch as its highest priority.
 
-It is not a gem for hiding Elasticsearch.
+Even well-known Elasticsearch gems are not designed to guarantee complete consistency.
+Some treat this as outside their scope, while others make efforts to address it but still leave gaps. AreSearch was developed because these were the only approaches I could find.
+
+AreSearch is also not a gem for hiding Elasticsearch.
 
 AreSearch does not consider learning gem-specific search methods to be valuable in itself.
 When using Elasticsearch, understanding Elasticsearch itself is more useful in the long term than learning notation specific to a gem.
 Just as relying only on Active Record without understanding SQL is risky, AreSearch avoids designs that depend only on search gem operations without understanding Elasticsearch.
 
-It provides Rails models with indexing, reindexing, asynchronous synchronization, and basic search helpers for Elasticsearch.
-
 ## Policy
 
-AreSearch is designed for the following purposes.
+AreSearch is designed with the following goals.
 
 * Make the relationship between Rails models and Elasticsearch indexes explicit
-* Make reindexing and alias switch failures detectable
-* Avoid reindexing a production index that is currently being used
-* Use IndexTarget to keep old and new indexes synchronized in parallel and switch between them
-* Leave Elasticsearch synchronization after DB updates in `are_search_sync_requests`
-* Avoid locking search logic too deeply inside the gem
-* Let the gem handle the tedious synchronization parts
-* Keep the code easy to fork or clone and adapt to each application when needed
+* Avoid making reindexing of a running production index part of normal operations
+* Use IndexTarget to keep old and new indexes synchronized in parallel and allow switching between them
+* Keep Elasticsearch synchronization requests after DB updates in `are_search_sync_requests`
+* Avoid locking search processing too deeply inside the gem
+* Let the gem handle the tedious synchronization work
+* Provide rake task samples for synchronization processes that may require operational customization
 
 AreSearch does not aim to be a feature-rich search framework.
 
 AreSearch does not hide synchronization or index operation problems inside the gem.
 
-Through sync requests, sync locks, rake tasks, and alert emails, it leaves visible state that users can inspect.
+Through sync requests, sync locks, rake tasks, and alert emails, it leaves state visible for users to inspect.
 It is designed so that application operators can determine what is normal, what is pending, what failed, what is stuck, and what is currently under index operation.
 
+## Database and synchronization request guarantees
 
-## Database and synchronization guarantees
+Changes to searchable records and the corresponding synchronization requests in `are_search_sync_requests` are written within the same transaction on the same database.
+As long as the searchable models and `are_search_sync_requests` exist in the same database, a state where only the searchable record change is committed without a sync request for reflecting that change in Elasticsearch cannot occur unless the transaction mechanism in Rails or the database itself is faulty.
 
-Changes to searchable records and the corresponding synchronization requests in `are_search_sync_requests` are written in the same transaction on the same database.
-As long as the searchable models and `are_search_sync_requests` use the same database, a state where a record change is committed without a sync request for reflecting that change in Elasticsearch cannot occur unless the transaction mechanism in Rails or the database itself is faulty.
-
-Even if direct synchronization from `after_commit`, job enqueueing, or Elasticsearch synchronization fails, the sync request remains in the database and can be processed later by the rake task.
+Even if direct synchronization from `after_commit`, Job enqueueing, or Elasticsearch synchronization fails, the sync request remains in the database. Remaining requests can be processed later through rake tasks.
 
 AreSearch uses PostgreSQL as its standard database, but database-specific processing can be replaced through configuration.
 
+## Do not depend on reindexing
 
-## Do not reindex an index that is being used
-
-AreSearch avoids directly reindexing a running production index for search improvements.
-When changing tokenizers, analyzers, or mappings, create a new IndexTarget and synchronize the old and new indexes in parallel.
-The first switch should be the application-side search entry point, not the alias. If there is a problem, you can return to the old index, which is still being synchronized.
-
+AreSearch avoids designs that periodically reindex a running production index.
+If a reindex finishes in 10 minutes, that may be acceptable, but if it takes three days or a week, reindexing is no longer practical.
+AreSearch allows index data to be updated without relying on reindexing by running multiple indexes in parallel and combining bulk indexing with boundary-based synchronization.
 
 ## Installation
 
@@ -83,7 +80,7 @@ rails generate are_search:install
 rails db:migrate
 ```
 
-The main generated files are as follows.
+The main generated files are:
 
 ```text
 config/initializers/are_search.rb
@@ -136,7 +133,7 @@ class Article < ApplicationRecord
 end
 ```
 
-An IndexTarget represents the destination Elasticsearch index, while a sync stage represents a path for generating the complete document written to that same IndexTarget.
+An IndexTarget represents the destination Elasticsearch index, while a sync stage represents a path for generating the complete document written to the same IndexTarget.
 
 Before the initial reindex, set `AreSearch.index_operation_enabled = true` in `config/initializers/are_search.rb` for the environment that performs index operations.
 Then specify the index target and run the initial reindex.
@@ -146,8 +143,6 @@ article_index = Article.are_search_index_target(:default)
 
 article_index.are_search_reindex(stage_position: :first)
 ```
-
-
 
 Run a search.
 

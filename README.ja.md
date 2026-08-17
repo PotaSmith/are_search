@@ -2,28 +2,28 @@
 
 [English](./README.md) | [日本語](./README.ja.md)
 
-AreSearchは、RailsとElasticsearchの検索・同期・運用を実装しつつ、利用側が構成や処理へ直接介入できる余地を残した検索基盤です。
+AreSearch は、Rails でデータベースと Elasticsearch との整合性を最重要に考えた gem です。
 
-Elasticsearch を隠すための gem ではありません。
+有名な Elasticsearch 用の gem を確認しても、完全な整合性を保証する設計にはなっていません。
+管轄外だと無視している gem や、頑張っても穴が塞ぎきれていない gem しか見つけられないため、開発されたのが AreSearch です。
+
+また、AreSearch は、Elasticsearch を隠すための gem ではありません。
 
 AreSearch は、gem 独自の検索方法を覚えることに価値があるとは考えていません。
 Elasticsearch を使うなら、gem 固有の記法よりも Elasticsearch 自体を理解する方が長く役立ちます。
 SQL を理解しないまま Active Record の使い方だけを覚える状態が危ういのと同じように、Elasticsearch を理解せず検索 gem の操作だけに依存する設計を AreSearch では避けます。
-
-Rails モデルから Elasticsearch への index、reindex、非同期同期、基本的な検索ヘルパーを提供します。
 
 ## 方針
 
 AreSearch は、以下を目的にしています。
 
 * Rails モデルと Elasticsearch index の対応を明示する
-* reindex と alias 切り替えの失敗を検知できる形にする
-* 動いている本番 index へ検索改善の reindex を直接かけない
+* 動いている本番 index への reindex を通常運用にしない
 * IndexTarget により、新旧 index を並行同期して切り替え可能にする
 * DB 更新後の Elasticsearch 同期を `are_search_sync_requests` に残す
 * 検索処理を gem に閉じ込めすぎない
 * 面倒な同期部分は gem が面倒を見る
-* 必要になれば fork / clone してアプリ側に合わせて変更できる形にする
+* 運用上カスタマイズが必要になりそうな同期処理は rake としてサンプル生成する
 
 多機能な検索フレームワークは目指していません。
 
@@ -43,11 +43,11 @@ sync request、sync lock、rake タスク、アラートメールを通じて、
 AreSearch は、標準のDBとしてPostgreSQLを使用しますが、DB固有処理は設定で差し替え可能です。
 
 
-## 使っている index を reindex しない
+## reindex を前提にしない
 
-AreSearch は、動いている本番 index に検索改善の reindex を直接かける設計を避けます。
-tokenizer / analyzer / mappings を変える場合は、新しい IndexTarget を作り、旧 index と新 index を並行同期させます。
-切り替えるのは alias ではなく、まずアプリ側の検索入口です。問題があれば、同期され続けている旧 index に戻せます。
+AreSearch は、動いている本番 index に定期的に reindex をかける設計を避けます。
+reindex が 10分で終わるならいいですが、3日、一週間かかるような場合、reindex は現実的ではありません。
+AreSearch では複数の index の同時稼働、境界設定による bulk 投入により reindex 無しでのデータ更新を可能にしています。
 
 
 ## Installation
@@ -146,8 +146,6 @@ article_index = Article.are_search_index_target(:default)
 
 article_index.are_search_reindex(stage_position: :first)
 ```
-
-
 
 検索します。
 
