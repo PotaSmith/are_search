@@ -4,7 +4,7 @@
 
 AreSearch は、Rails でデータベースと Elasticsearch との整合性を最重要に考えた gem です。
 
-有名な Elasticsearch 用の gem を確認しても、完全な整合性を保証する設計にはなっていません。
+有名な Elasticsearch 用の gem を確認しても、整合性を保証する設計にはなっていません。
 管轄外だと無視している gem や、頑張っても穴が塞ぎきれていない gem しか見つけられないため、開発されたのが AreSearch です。
 
 また、AreSearch は、Elasticsearch を隠すための gem ではありません。

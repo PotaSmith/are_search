@@ -4,7 +4,7 @@
 
 AreSearch is a gem for Rails that treats consistency between the database and Elasticsearch as its highest priority.
 
-Even well-known Elasticsearch gems are not designed to guarantee complete consistency.
+Even well-known Elasticsearch gems are not designed to guarantee consistency.
 Some treat this as outside their scope, while others make efforts to address it but still leave gaps. AreSearch was developed because these were the only approaches I could find.
 
 AreSearch is also not a gem for hiding Elasticsearch.
