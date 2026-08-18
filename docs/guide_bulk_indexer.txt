@@ -499,6 +499,13 @@ y を入力すると同期を開始する。
 
     bundle exec rake are_search:run_sync_request_before_boundary
 
+BoundaryTarget 以前のDBの更新は全て対象となる。
+
+コミットが遅れているデータがあとから増える可能性がある。
+後から増えたデータは、今回の例で言えば huge_data_for_reindex ではなく
+huge_data 側で拾うため差分回収の対象外だが、安全側に倒して処理をしている。
+そのため、一度でも実行前の対象件数が0件になれば、問題ない。
+
 実行前の対象件数が0件になるまで同じコマンドを繰り返す。
 
     [AreSearch] Boundary同期対象 実行前 0件
