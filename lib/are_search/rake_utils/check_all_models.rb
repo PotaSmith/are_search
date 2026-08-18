@@ -7,26 +7,131 @@ module AreSearch
 
             def model_check(klass, errors)
                 searchable_from_superclass = klass.superclass&.include?(AreSearch::Searchable)
-                declares_mappings_here = klass.singleton_class
-                    .public_instance_methods(false)
-                    .include?(:are_search_index_mappings)
                 declares_ar_table_name_here = klass.singleton_class
                     .public_instance_methods(false)
                     .include?(:are_search_ar_table_name)
-
-                if searchable_from_superclass && declares_mappings_here
-                    errors << "#{klass.name}: are_search_index_mappings は Searchable を include した上位クラスで定義してください。"
-                end
 
                 if searchable_from_superclass && declares_ar_table_name_here
                     errors << "#{klass.name}: are_search_ar_table_name は Searchable を include した上位クラスで定義してください。"
                 end
 
-                return if searchable_from_superclass
+                if searchable_from_superclass
+                    validate_properties_method_override(klass, errors)
+                    validate_sti_setting_methods(klass, errors)
+                    return
+                end
 
-                AreSearch::SearchableValidator.validate(klass, errors)
+                class_setting = AreSearch::IndexTarget.searchable_class_setting_for(klass)
+                if class_setting.nil?
+                    errors << "searchable_class_setting に #{klass.name.inspect} の設定がありません"
+                end
             rescue StandardError => e
                 errors << "#{klass.name} のモデル設定検査中に例外が発生しました: #{e.class}: #{e.message}"
+            end
+
+            # 同じaliasのmappingが子クラスだけ変わらないよう、
+            # properties生成メソッドのoverrideを禁止する。
+            def validate_properties_method_override(klass, errors)
+                class_setting = AreSearch::IndexTarget.searchable_class_setting_for(klass)
+                return if class_setting.instance_of?(Hash) == false
+
+                properties_methods = []
+
+                class_setting.each do |index_target_name, target_setting|
+                    next if index_target_name == :_callbacks
+                    next if target_setting.instance_of?(Hash) == false
+
+                    properties_method = target_setting[:properties_method]
+                    next if properties_method.instance_of?(Symbol) == false
+                    next if properties_methods.include?(properties_method)
+
+                    properties_methods << properties_method
+
+                    next unless klass.singleton_class.public_instance_methods(false).include?(properties_method)
+
+                    errors << "#{klass.name}: properties_method に指定された #{properties_method} は " \
+                        "Searchable を include した上位クラスで定義してください。"
+                end
+            end
+
+            # STI子クラスで実際に解決される設定メソッドの存在と引数数を確認する。
+            # properties_methodはoverride禁止のため、ここではそれ以外だけを対象にする。
+            def validate_sti_setting_methods(klass, errors)
+                class_setting = AreSearch::IndexTarget.searchable_class_setting_for(klass)
+                return if class_setting.instance_of?(Hash) == false
+
+                validate_sti_callback_methods(klass, class_setting[:_callbacks], errors)
+
+                class_setting.each do |index_target_name, target_setting|
+                    next if index_target_name == :_callbacks
+                    next if target_setting.instance_of?(Hash) == false
+
+                    validate_sti_instance_method(
+                        klass,
+                        target_setting[:indexable_method],
+                        0,
+                        "#{index_target_name.inspect}[:indexable_method]",
+                        errors,
+                    )
+
+                    stages = target_setting[:stages]
+                    next if stages.instance_of?(Hash) == false
+
+                    stages.each do |sync_stage_name, stage_setting|
+                        next if stage_setting.instance_of?(Hash) == false
+
+                        validate_sti_instance_method(
+                            klass,
+                            stage_setting[:data_method],
+                            0,
+                            "#{index_target_name.inspect}[:stages][#{sync_stage_name.inspect}][:data_method]",
+                            errors,
+                        )
+                    end
+                end
+            end
+
+            # STI子クラスで実際に解決されるsync callbackの存在と引数数を確認する。
+            def validate_sti_callback_methods(klass, callbacks, errors)
+                return if callbacks.instance_of?(Hash) == false
+
+                callbacks.each do |callback_name, method_name|
+                    validate_sti_class_method(
+                        klass,
+                        method_name,
+                        3,
+                        "_callbacks[#{callback_name.inspect}]",
+                        errors,
+                    )
+                end
+            end
+
+            # STI子クラスで解決されるpublic class methodが存在し、指定引数数か確認する。
+            def validate_sti_class_method(klass, method_name, arity, setting_name, errors)
+                return if method_name.instance_of?(Symbol) == false
+
+                unless klass.respond_to?(method_name)
+                    errors << "#{klass.name}: #{setting_name} に指定されたclass methodがありません: #{klass.name}.#{method_name}"
+                    return
+                end
+
+                unless klass.method(method_name).arity == arity
+                    errors << "#{klass.name}.#{method_name} は#{arity}引数で定義してください"
+                end
+            end
+
+            # STI子クラスで解決されるpublic instance methodが存在し、指定引数数か確認する。
+            def validate_sti_instance_method(klass, method_name, arity, setting_name, errors)
+                return if method_name.instance_of?(Symbol) == false
+
+                unless klass.public_method_defined?(method_name)
+                    errors << "#{klass.name}: #{setting_name} に指定されたinstance methodがありません: #{klass.name}##{method_name}"
+                    return
+                end
+
+                unless klass.instance_method(method_name).arity == arity
+                    errors << "#{klass.name}##{method_name} は#{arity}引数で定義してください"
+                end
             end
 
             def check_callback_order(errors)

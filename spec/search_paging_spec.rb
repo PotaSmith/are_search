@@ -29,19 +29,9 @@ RSpec.describe "search paging" do
                 "articles"
             end
 
-            def self.are_search_index_mappings
+            def self.default_properties
                 {
-                    default: {
-                        index_settings: {
-                            max_result_window: 30,
-                        },
-                        _source: {
-                            includes: [:title],
-                        },
-                        properties: {
-                            title: { type: "text" },
-                        },
-                    },
+                    title: { type: "text" },
                 }
             end
 
@@ -104,6 +94,29 @@ RSpec.describe "search paging" do
     end
     let(:document_index_settings) do
         { max_result_window: 50 }
+    end
+
+    around do |example|
+        original_searchable_class_setting = AreSearch.searchable_class_setting
+        AreSearch.searchable_class_setting = {
+            "Article" => {
+                default: {
+                    settings: {
+                        max_result_window: 30,
+                    },
+                    mappings: {
+                        _source: {
+                            includes: [:title],
+                        },
+                    },
+                    properties_method: :default_properties,
+                },
+            },
+        }
+
+        example.run
+    ensure
+        AreSearch.searchable_class_setting = original_searchable_class_setting
     end
 
     before do

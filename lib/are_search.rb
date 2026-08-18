@@ -99,6 +99,7 @@ module AreSearch
     @search_param_policy = AreSearch::SearchParamLengthPolicy
     @search_failure_mode = :empty_result
     @database_specific = AreSearch::PostgreSQLDatabaseSpecific
+    @searchable_class_setting = {}
     @client_block = nil
     @index_prefix = nil
     @sync_request_delay = 120
@@ -196,6 +197,28 @@ module AreSearch
         end
 
         @database_specific = database_specific_class
+    end
+
+    # SearchableモデルのIndexTarget・sync stage構成を返す。
+    def self.searchable_class_setting
+        @searchable_class_setting
+    end
+
+    # SearchableモデルのIndexTarget・sync stage構成を設定する。
+    def self.searchable_class_setting=(value)
+        @searchable_class_setting = value
+    end
+
+    # searchable_class_setting 全体を検査する。呼び出し時期は利用側で決める。
+    def self.validate_searchable_class_setting!
+        errors = []
+        AreSearch::SearchableValidator.validate_searchable_class_setting(searchable_class_setting, errors)
+
+        unless errors.empty?
+            raise ArgumentError, errors.join("\n")
+        end
+
+        true
     end
 
     def self.sync_request_delay

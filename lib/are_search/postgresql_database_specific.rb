@@ -32,7 +32,7 @@ module AreSearch
                     request_sequence:    request_sequence,
                     request_sequence_at: request_sequence_at,
                 },
-                unique_by: [:index_alias_name, :ar_model_class_name, :ar_instance_key, :sync_stage_name],
+                unique_by: [:index_alias_name, :sync_stage_name, :ar_instance_key],
             )
         end
     end

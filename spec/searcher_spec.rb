@@ -470,6 +470,11 @@ RSpec.describe AreSearch::Searcher do
                     "articles"
                 end
             end
+            allow(AreSearch::IndexTarget)
+                .to receive(:searchable_class_setting_for)
+                .with(model)
+                .and_return(default: {})
+
             first_index_target = AreSearch::IndexTarget.new(model, :default)
             second_index_target = AreSearch::IndexTarget.new(model, :default)
 
@@ -502,6 +507,15 @@ RSpec.describe AreSearch::Searcher do
                 .to receive(:include?)
                 .with(AreSearch::Searchable)
                 .and_return(true)
+
+            allow(AreSearch::IndexTarget)
+                .to receive(:searchable_class_setting_for)
+                .with(parent_model)
+                .and_return(default: {})
+            allow(AreSearch::IndexTarget)
+                .to receive(:searchable_class_setting_for)
+                .with(child_model)
+                .and_return(default: {})
 
             parent_index_target = AreSearch::IndexTarget.new(parent_model, :default)
             child_index_target = AreSearch::IndexTarget.new(child_model, :default)

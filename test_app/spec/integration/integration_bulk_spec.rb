@@ -340,33 +340,33 @@ RSpec.describe "AreSearch BulkIndexer indexable integration", type: :model do
         AreSearch.index_operation_enabled = original_index_operation_enabled
     end
 
-    # DocumentFirstのare_search_indexable?差し替え前状態を退避する。
+    # DocumentFirstのdefault_indexable?差し替え前状態を退避する。
     def save_document_first_indexable_definition
-        @document_first_indexable_direct = DocumentFirst.instance_methods(false).include?(:are_search_indexable?)
+        @document_first_indexable_direct = DocumentFirst.instance_methods(false).include?(:default_indexable?)
 
         if @document_first_indexable_direct
             DocumentFirst.send(
                 :alias_method,
                 :are_search_bulk_original_indexable,
-                :are_search_indexable?,
+                :default_indexable?,
             )
         end
     end
 
-    # DocumentFirstのare_search_indexable?を元の定義へ戻す。
+    # DocumentFirstのdefault_indexable?を元の定義へ戻す。
     def restore_document_first_indexable_definition
         if @document_first_indexable_direct
             DocumentFirst.send(
                 :alias_method,
-                :are_search_indexable?,
+                :default_indexable?,
                 :are_search_bulk_original_indexable,
             )
             DocumentFirst.send(:remove_method, :are_search_bulk_original_indexable)
             return
         end
 
-        if DocumentFirst.instance_methods(false).include?(:are_search_indexable?)
-            DocumentFirst.send(:remove_method, :are_search_indexable?)
+        if DocumentFirst.instance_methods(false).include?(:default_indexable?)
+            DocumentFirst.send(:remove_method, :default_indexable?)
         end
     end
 
@@ -374,13 +374,13 @@ RSpec.describe "AreSearch BulkIndexer indexable integration", type: :model do
     def apply_hidden_document_indexable_definition
         DocumentFirst.send(
             :define_method,
-            :are_search_indexable?,
-        ) do |_index_target_name, _sync_stage_name|
+            :default_indexable?,
+        ) do
             status != "hidden"
         end
     end
 
-    it "are_search_indexable?がfalseのレコードをbulk deleteとして正常処理する" do
+    it "indexable_methodがfalseのレコードをbulk deleteとして正常処理する" do
         apply_hidden_document_indexable_definition
 
         reindex_result = rebuild_empty_document_first_index
@@ -418,7 +418,7 @@ RSpec.describe "AreSearch BulkIndexer indexable integration", type: :model do
         end
     end
 
-    it "既存ドキュメントがare_search_indexable?の対象外になった場合はbulkで削除する" do
+    it "既存ドキュメントがindexable_methodの対象外になった場合はbulkで削除する" do
         apply_hidden_document_indexable_definition
 
         reindex_result = rebuild_empty_document_first_index

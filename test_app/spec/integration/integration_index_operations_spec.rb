@@ -244,9 +244,9 @@ RSpec.describe "AreSearch reindex integration", type: :model do
         )
 
         allow_any_instance_of(DocumentFirst)
-            .to receive(:are_search_index_data)
-            .and_wrap_original do |original_method, *args|
-                data = original_method.call(*args)
+            .to receive(:default_search_data)
+            .and_wrap_original do |original_method|
+                data = original_method.call
                 record = original_method.receiver
 
                 if record.id == failed_document.id
@@ -301,10 +301,8 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
         original_sync_request_delay = AreSearch.sync_request_delay
         original_rake_application = Rake.application
 
-        @base_index_mapping = DocumentFirst.are_search_index_mappings.fetch(:default)
-        @original_document_first_index_data =
-            DocumentFirst.instance_method(:are_search_index_data)
-        replace_document_first_index_data
+        @original_searchable_class_setting = AreSearch.searchable_class_setting
+        @base_target_setting = @original_searchable_class_setting.fetch("DocumentFirst").fetch(:default).deep_dup
 
         AreSearch.after_commit_mode = :direct
         AreSearch.index_operation_enabled = true
@@ -316,15 +314,8 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
 
         example.run
     ensure
-        if @original_document_first_index_data
-            DocumentFirst.send(
-                :define_method,
-                :are_search_index_data,
-                @original_document_first_index_data,
-            )
-        end
-
-        if @base_index_mapping
+        if @original_searchable_class_setting
+            AreSearch.searchable_class_setting = @original_searchable_class_setting
             reset_document_first_index_targets
             delete_document_first_target_index(:new_version)
             rebuild_empty_document_first_index
@@ -338,31 +329,34 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
         Rake.application = original_rake_application
     end
 
-    # 指定targetとstage構成をDocumentFirstへ適用し、IndexTargetのキャッシュを作り直す。
+    # 指定targetとstage構成を設定へ適用し、IndexTargetのキャッシュを作り直す。
     def apply_document_first_definition(
         target_names:,
         all_sync_stage_names:,
         enqueue_sync_stage_names:,
         after_commit_sync_stage_names:
     )
-        mappings = {}
+        setting = @original_searchable_class_setting.deep_dup
+        document_first_setting = {}
+
         target_names.each do |index_target_name|
-            mappings[index_target_name] = @base_index_mapping
+            target_setting = @base_target_setting.deep_dup
+            stage_settings = {}
+
+            all_sync_stage_names.fetch(index_target_name).each do |sync_stage_name|
+                stage_settings[sync_stage_name] = {
+                    data_method: :default_search_data,
+                    enqueue: enqueue_sync_stage_names.fetch(index_target_name, []).include?(sync_stage_name),
+                    after_commit: after_commit_sync_stage_names.fetch(index_target_name, []).include?(sync_stage_name),
+                }
+            end
+
+            target_setting[:stages] = stage_settings
+            document_first_setting[index_target_name] = target_setting
         end
 
-        allow(DocumentFirst)
-            .to receive(:are_search_index_mappings)
-            .and_return(mappings)
-        allow(DocumentFirst)
-            .to receive(:are_search_all_sync_stage_names)
-            .and_return(all_sync_stage_names)
-        allow(DocumentFirst)
-            .to receive(:are_search_sync_stage_names_on_enqueue)
-            .and_return(enqueue_sync_stage_names)
-        allow(DocumentFirst)
-            .to receive(:are_search_sync_stage_names_on_after_commit)
-            .and_return(after_commit_sync_stage_names)
-
+        setting["DocumentFirst"] = document_first_setting
+        AreSearch.searchable_class_setting = setting
         reset_document_first_index_targets
     end
 
@@ -372,34 +366,6 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
 
         DocumentFirst.descendants.each do |model_class|
             model_class.are_search_reset_index_targets!
-        end
-    end
-
-    # defaultの通常・bulk用stageとnew_versionの各stageで同じ完成ドキュメントを生成できるようにする。
-    # SearchableValidatorがarityを検査するため、RSpec mockではなく2引数の実メソッドとして差し替える。
-    def replace_document_first_index_data
-        DocumentFirst.send(
-            :define_method,
-            :are_search_index_data,
-        ) do |index_target_name, sync_stage_name|
-            supported_stage = [
-                [:default, "default"],
-                [:default, "huge_data"],
-                [:default, "huge_data_for_reindex"],
-                [:new_version, "for_version_up"],
-                [:new_version, "default"],
-            ].include?([index_target_name, sync_stage_name])
-
-            return {} if supported_stage == false
-
-            {
-                title:                     title,
-                body:                      body,
-                status:                    status,
-                user_id:                   user_id,
-                multi_response_both:       "first both",
-                multi_response_first_only: "first only",
-            }
         end
     end
 
@@ -456,6 +422,10 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
         Rake.application = Rake::Application.new
         Rake::Task.define_task(:environment)
 
+        if Object.const_defined?(:AreSearchSyncRequestBoundaryTask, false)
+            Object.send(:remove_const, :AreSearchSyncRequestBoundaryTask)
+        end
+
         load are_search_template_path("are_search_sync_request_boundary.rake")
 
         stub_const(
@@ -472,7 +442,7 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
         )
     end
 
-    it "巨大データ切り替え手順でbulk中の更新を差分回収して新IndexTargetへ移行する" do
+    it "巨大データ切り替え手順でsync lock中の更新を差分回収して新IndexTargetへ移行する" do
         apply_document_first_definition(
             target_names: [:default],
             all_sync_stage_names: {
@@ -511,19 +481,20 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
         )
         expect(initial_search.records.map(&:id)).to eq([second.id])
 
-        # 10-1: new_versionのfor_version_upをenqueueだけ行い、旧defaultは通常同期を続ける。
+        # 10-1: new_versionにも通常のdefault stageを追加し、旧defaultと並行してSyncRequestを作る。
         apply_document_first_definition(
             target_names: [:default, :new_version],
             all_sync_stage_names: {
                 default:     ["default"],
-                new_version: ["for_version_up"],
+                new_version: ["default"],
             },
             enqueue_sync_stage_names: {
                 default:     ["default"],
-                new_version: ["for_version_up"],
+                new_version: ["default"],
             },
             after_commit_sync_stage_names: {
-                default: ["default"],
+                default:     ["default"],
+                new_version: ["default"],
             },
         )
 
@@ -532,7 +503,7 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
         pre_bulk_request = sync_request_for(
             first,
             :new_version,
-            "for_version_up",
+            "default",
         )
         expect(pre_bulk_request).not_to eq(nil)
 
@@ -557,19 +528,29 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
         )
         expect(empty_count["count"]).to eq(0)
 
-        # 10-3: bulk用dataを作った直後にDB更新を割り込ませ、古いdataをnew_versionへ送る。
+        # 10-3: new_version/defaultをlockし、lock取得前からprocessing中の要求が残っていないことを確認する。
+        sync_stage_name = "default"
+        sync_lock = new_version_index_target.are_search_acquire_sync_stage_lock!(sync_stage_name)
+
+        expect(sync_lock).not_to eq(nil)
+        expect(new_version_index_target.are_search_sync_stage_syncable?(sync_stage_name)).to eq(false)
+        expect(
+            new_version_index_target.are_search_processing_sync_stage_sync_request_exists?(sync_stage_name),
+        ).to eq(false)
+
+        # 10-4: bulk用dataを作った直後にDB更新を割り込ませ、lock中のSyncRequestを残して古いdataを送る。
         updated_during_bulk = false
 
         allow_any_instance_of(DocumentFirst)
             .to receive(:are_search_index_data_for_index!)
-            .and_wrap_original do |original_method, index_target, sync_stage_name|
+            .and_wrap_original do |original_method, index_target, current_sync_stage_name|
                 record = original_method.receiver
-                data = original_method.call(index_target, sync_stage_name)
+                data = original_method.call(index_target, current_sync_stage_name)
 
                 if updated_during_bulk == false &&
                         record.id == second.id &&
                         index_target.index_target_name == :new_version &&
-                        sync_stage_name == "for_version_up"
+                        current_sync_stage_name == "default"
                     updated_during_bulk = true
 
                     DocumentFirst.find(second.id).update!(
@@ -582,7 +563,7 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
 
         Dir.mktmpdir("are_search_large_reindex_integration") do |result_dir|
             new_version_index_target.are_search_bulk_index(
-                "for_version_up",
+                sync_stage_name,
                 result_dir:      result_dir,
                 max_bulk_bytes:  1024 * 1024,
                 max_bulk_count:  10,
@@ -591,6 +572,7 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
         end
 
         expect(updated_during_bulk).to eq(true)
+        expect(new_version_index_target.are_search_sync_stage_syncable?(sync_stage_name)).to eq(false)
 
         default_index_target = DocumentFirst.are_search_index_target(:default)
         new_version_index_target = DocumentFirst.are_search_index_target(:new_version)
@@ -618,91 +600,30 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
         during_bulk_request = sync_request_for(
             second,
             :new_version,
-            "for_version_up",
+            "default",
         )
         expect(during_bulk_request).not_to eq(nil)
 
-        # 10-4前半: new_versionへdefaultを追加し、移行中だけ両stageをenqueueする。
-        apply_document_first_definition(
-            target_names: [:default, :new_version],
-            all_sync_stage_names: {
-                default:     ["default"],
-                new_version: ["for_version_up", "default"],
-            },
-            enqueue_sync_stage_names: {
-                default:     ["default"],
-                new_version: ["for_version_up", "default"],
-            },
-            after_commit_sync_stage_names: {
-                default:     ["default"],
-                new_version: ["default"],
-            },
-        )
+        # 10-5: lockを解除し、new_version/defaultに残った通常SyncRequestをrakeで回収する。
+        new_version_index_target.are_search_release_sync_stage_lock!(sync_stage_name)
+        expect(new_version_index_target.are_search_sync_stage_syncable?(sync_stage_name)).to eq(true)
 
-        first.update!(title: "largereindexdualstagetoken")
-
-        new_version_index_target = DocumentFirst.are_search_index_target(:new_version)
-        refresh_index_target(new_version_index_target)
-
-        dual_stage_search = search_document_first(
-            "largereindexdualstagetoken",
-            index_target: new_version_index_target,
-        )
-        expect(dual_stage_search.records.map(&:id)).to eq([first.id])
-
-        first_for_version_up_request = sync_request_for(
-            first,
-            :new_version,
-            "for_version_up",
-        )
-        expect(first_for_version_up_request).not_to eq(nil)
-        first_for_version_up_sequence = first_for_version_up_request.request_sequence
-
-        # 10-4後半: for_version_upの新規enqueueを止め、defaultだけを通常同期する。
-        apply_document_first_definition(
-            target_names: [:default, :new_version],
-            all_sync_stage_names: {
-                default:     ["default"],
-                new_version: ["for_version_up", "default"],
-            },
-            enqueue_sync_stage_names: {
-                default:     ["default"],
-                new_version: ["default"],
-            },
-            after_commit_sync_stage_names: {
-                default:     ["default"],
-                new_version: ["default"],
-            },
-        )
-
-        first.update!(title: "largereindexenqueueofftoken")
-
-        unchanged_for_version_up_request = sync_request_for(
-            first,
-            :new_version,
-            "for_version_up",
-        )
-        expect(unchanged_for_version_up_request.request_sequence).to eq(
-            first_for_version_up_sequence,
-        )
-
-        # 10-5: 蓄積したfor_version_upだけをrakeで回収し、bulk中の古いdataを最新状態へ補正する。
         load_run_sync_requests_task
 
         expect do
             Rake::Task["are_search:run_sync_requests"].invoke(
-                "for_version_up",
+                "default",
             )
         end.to output(
             /通常 2 件 強制 0 件/,
         ).to_stdout
 
-        remaining_for_version_up = AreSearch::SyncRequest.where(
+        remaining_new_version_requests = AreSearch::SyncRequest.where(
             ar_model_class_name: "DocumentFirst",
             index_alias_name:    document_first_index_alias_name(:new_version),
-            sync_stage_name:     "for_version_up",
+            sync_stage_name:     "default",
         )
-        expect(remaining_for_version_up.count).to eq(0)
+        expect(remaining_new_version_requests.count).to eq(0)
 
         new_version_index_target = DocumentFirst.are_search_index_target(:new_version)
         refresh_index_target(new_version_index_target)
@@ -718,23 +639,6 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
             index_target: new_version_index_target,
         )
         expect(stale_new_version.records).to eq([])
-
-        # 差分回収後はnew_versionからfor_version_upを外し、通常stageだけにする。
-        apply_document_first_definition(
-            target_names: [:default, :new_version],
-            all_sync_stage_names: {
-                default:     ["default"],
-                new_version: ["default"],
-            },
-            enqueue_sync_stage_names: {
-                default:     ["default"],
-                new_version: ["default"],
-            },
-            after_commit_sync_stage_names: {
-                default:     ["default"],
-                new_version: ["default"],
-            },
-        )
 
         # 10-6: 検索入口をnew_versionへ切り替えた後も旧defaultを並行同期する。
         second.update!(title: "largereindexswitchedtoken")
@@ -756,7 +660,7 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
         expect(old_entry_search.records.map(&:id)).to eq([second.id])
         expect(new_entry_search.records.map(&:id)).to eq([second.id])
 
-        # 10-7: 旧defaultへの新規要求を止め、new_versionだけを通常同期する。
+        # 10-7: 旧defaultのstage定義は残したままenqueueとafter_commitを止める。
         apply_document_first_definition(
             target_names: [:default, :new_version],
             all_sync_stage_names: {
@@ -764,9 +668,11 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
                 new_version: ["default"],
             },
             enqueue_sync_stage_names: {
+                default:     [],
                 new_version: ["default"],
             },
             after_commit_sync_stage_names: {
+                default:     [],
                 new_version: ["default"],
             },
         )

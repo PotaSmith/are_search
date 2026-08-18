@@ -471,75 +471,39 @@ RSpec.describe "AreSearch callback chain integration", type: :model do
         Rake.application = original_rake_application
     end
 
-    # callback chain用に差し替えるDocumentFirstの定義を退避する。
+    # callback chain用に差し替える設定を退避する。
     def save_document_first_definition
-        singleton_class = DocumentFirst.singleton_class
-        singleton_method_names = [
-            :are_search_all_sync_stage_names,
-            :are_search_sync_stage_names_on_enqueue,
-            :are_search_sync_stage_names_on_after_commit,
-            :are_search_before_sync_check,
-            :are_search_after_sync_callback,
-        ]
-
-        @document_first_direct_singleton_methods = {}
-
-        singleton_method_names.each do |method_name|
-            original_method_name = original_singleton_method_name(method_name)
-
-            @document_first_direct_singleton_methods[method_name] =
-                singleton_class.instance_methods(false).include?(method_name)
-
-            singleton_class.send(
-                :alias_method,
-                original_method_name,
-                method_name,
-            )
-        end
-
-        DocumentFirst.send(
-            :alias_method,
-            :are_search_callback_chain_original_index_data,
-            :are_search_index_data,
-        )
-
+        @original_searchable_class_setting = AreSearch.searchable_class_setting
         @document_first_definition_saved = true
     end
 
     # DocumentFirstへガイド記載の2stage callback chainを適用する。
     def apply_callback_chain_definition
-        singleton_class = DocumentFirst.singleton_class
+        setting = @original_searchable_class_setting.deep_dup
+        target_setting = setting.fetch("DocumentFirst").fetch(:default).deep_dup
+        target_setting[:stages] = {
+            "default" => {
+                data_method: :callback_chain_default_search_data,
+                enqueue: true,
+                after_commit: true,
+            },
+            "with_external_file" => {
+                data_method: :callback_chain_external_search_data,
+                enqueue: false,
+                after_commit: false,
+            },
+        }
+        setting["DocumentFirst"] = {
+            default: target_setting,
+            _callbacks: {
+                before_sync_check: :callback_chain_before_sync_check,
+                after_sync_callback: :callback_chain_after_sync_callback,
+            },
+        }
 
-        singleton_class.send(
+        DocumentFirst.singleton_class.send(
             :define_method,
-            :are_search_all_sync_stage_names,
-        ) do
-            {
-                default: ["default", "with_external_file"],
-            }
-        end
-
-        singleton_class.send(
-            :define_method,
-            :are_search_sync_stage_names_on_enqueue,
-        ) do
-            {
-                default: ["default"],
-            }
-        end
-
-        singleton_class.send(
-            :define_method,
-            :are_search_sync_stage_names_on_after_commit,
-        ) do
-            {
-                default: ["default"],
-            }
-        end
-
-        singleton_class.send(
-            :define_method,
-            :are_search_before_sync_check,
+            :callback_chain_before_sync_check,
         ) do |ar_instance_key, index_target, sync_request|
             if sync_request.sync_stage_name == "with_external_file"
                 return are_search_sync_request_exists?(
@@ -552,9 +516,9 @@ RSpec.describe "AreSearch callback chain integration", type: :model do
             true
         end
 
-        singleton_class.send(
+        DocumentFirst.singleton_class.send(
             :define_method,
-            :are_search_after_sync_callback,
+            :callback_chain_after_sync_callback,
         ) do |record, index_target, sync_request|
             return if record.nil?
             return if sync_request.sync_stage_name != "default"
@@ -567,75 +531,62 @@ RSpec.describe "AreSearch callback chain integration", type: :model do
 
         DocumentFirst.send(
             :define_method,
-            :are_search_index_data,
-        ) do |index_target_name, sync_stage_name|
-            case [index_target_name, sync_stage_name]
-            when [:default, "default"]
-                {
-                    title:                     title,
-                    body:                      "callbackdefaulttoken",
-                    status:                    status,
-                    user_id:                   user_id,
-                    multi_response_both:       "first both",
-                    multi_response_first_only: "first only",
-                }
-            when [:default, "with_external_file"]
-                {
-                    title:                     title,
-                    body:                      "callbackexternaltoken",
-                    status:                    status,
-                    user_id:                   user_id,
-                    multi_response_both:       "first both",
-                    multi_response_first_only: "first only",
-                }
-            else
-                {}
-            end
+            :callback_chain_default_search_data,
+        ) do
+            {
+                title:                     title,
+                body:                      "callbackdefaulttoken",
+                status:                    status,
+                user_id:                   user_id,
+                multi_response_both:       "first both",
+                multi_response_first_only: "first only",
+            }
         end
 
+        DocumentFirst.send(
+            :define_method,
+            :callback_chain_external_search_data,
+        ) do
+            {
+                title:                     title,
+                body:                      "callbackexternaltoken",
+                status:                    status,
+                user_id:                   user_id,
+                multi_response_both:       "first both",
+                multi_response_first_only: "first only",
+            }
+        end
+
+        AreSearch.searchable_class_setting = setting
         reset_document_first_index_targets
     end
 
-    # callback chain用に差し替えたDocumentFirstの定義を元へ戻す。
+    # callback chain用に差し替えた設定とメソッドを元へ戻す。
     def restore_document_first_definition
         return if @document_first_definition_saved != true
 
+        AreSearch.searchable_class_setting = @original_searchable_class_setting
+
         singleton_class = DocumentFirst.singleton_class
-
-        @document_first_direct_singleton_methods.each do |method_name, originally_direct|
-            original_method_name = original_singleton_method_name(method_name)
-
-            if originally_direct
-                singleton_class.send(
-                    :alias_method,
-                    method_name,
-                    original_method_name,
-                )
-            else
-                if singleton_class.instance_methods(false).include?(method_name)
-                    singleton_class.send(:remove_method, method_name)
-                end
+        [
+            :callback_chain_before_sync_check,
+            :callback_chain_after_sync_callback,
+        ].each do |method_name|
+            if singleton_class.instance_methods(false).include?(method_name)
+                singleton_class.send(:remove_method, method_name)
             end
-
-            singleton_class.send(:remove_method, original_method_name)
         end
 
-        DocumentFirst.send(
-            :alias_method,
-            :are_search_index_data,
-            :are_search_callback_chain_original_index_data,
-        )
-        DocumentFirst.send(
-            :remove_method,
-            :are_search_callback_chain_original_index_data,
-        )
+        [
+            :callback_chain_default_search_data,
+            :callback_chain_external_search_data,
+        ].each do |method_name|
+            if DocumentFirst.instance_methods(false).include?(method_name)
+                DocumentFirst.send(:remove_method, method_name)
+            end
+        end
 
         @document_first_definition_saved = false
-    end
-
-    # 退避用singleton method名を返す。
-    def original_singleton_method_name(method_name)
-        "are_search_callback_chain_original_#{method_name}".to_sym
     end
 
     # DocumentFirstとSTI子クラスのIndexTargetキャッシュを現在の定義へ揃える。
@@ -1001,33 +952,33 @@ RSpec.describe "AreSearch sync hooks integration", type: :model do
         Rake.application = original_rake_application
     end
 
-    # DocumentFirstのare_search_indexable?差し替え前状態を退避する。
+    # DocumentFirstのdefault_indexable?差し替え前状態を退避する。
     def save_document_first_indexable_definition
-        @document_first_indexable_direct = DocumentFirst.instance_methods(false).include?(:are_search_indexable?)
+        @document_first_indexable_direct = DocumentFirst.instance_methods(false).include?(:default_indexable?)
 
         if @document_first_indexable_direct
             DocumentFirst.send(
                 :alias_method,
                 :are_search_sync_hooks_original_indexable,
-                :are_search_indexable?,
+                :default_indexable?,
             )
         end
     end
 
-    # DocumentFirstのare_search_indexable?を元の定義へ戻す。
+    # DocumentFirstのdefault_indexable?を元の定義へ戻す。
     def restore_document_first_indexable_definition
         if @document_first_indexable_direct
             DocumentFirst.send(
                 :alias_method,
-                :are_search_indexable?,
+                :default_indexable?,
                 :are_search_sync_hooks_original_indexable,
             )
             DocumentFirst.send(:remove_method, :are_search_sync_hooks_original_indexable)
             return
         end
 
-        if DocumentFirst.instance_methods(false).include?(:are_search_indexable?)
-            DocumentFirst.send(:remove_method, :are_search_indexable?)
+        if DocumentFirst.instance_methods(false).include?(:default_indexable?)
+            DocumentFirst.send(:remove_method, :default_indexable?)
         end
     end
 
@@ -1035,8 +986,8 @@ RSpec.describe "AreSearch sync hooks integration", type: :model do
     def apply_hidden_document_indexable_definition
         DocumentFirst.send(
             :define_method,
-            :are_search_indexable?,
-        ) do |_index_target_name, _sync_stage_name|
+            :default_indexable?,
+        ) do
             status != "hidden"
         end
     end
@@ -1049,7 +1000,7 @@ RSpec.describe "AreSearch sync hooks integration", type: :model do
         load are_search_template_path("are_search_run_sync_requests.rake")
     end
 
-    it "are_search_indexable?がfalseへ変わると通常同期でElasticsearchから削除する" do
+    it "indexable_methodがfalseへ変わると通常同期でElasticsearchから削除する" do
         apply_hidden_document_indexable_definition
 
         document = DocumentFirst.create!(

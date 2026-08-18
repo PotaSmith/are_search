@@ -151,7 +151,7 @@ module AreSearch
                     "Searchable を継承した子クラスから bulk_index は実行できません: #{model_class.name}"
             end
 
-            sync_stage_names = model_class.are_search_get_all_sync_stage_names(@index_target)
+            sync_stage_names = @index_target.are_search_sync_stage_names
             unless sync_stage_names.include?(@sync_stage_name)
                 raise ArgumentError,
                     "sync_stage_name が IndexTarget に定義されていません: #{@sync_stage_name}"
@@ -190,7 +190,7 @@ module AreSearch
             end
         end
 
-        # recover 時は未解決の失敗IDだけ、通常時は各結果ファイルの最後のIDより後を対象にする。
+        # 通常実行時はcheckpointが無ければ全件、あれば最後のcheckpoint IDより後を対象にする。
         def build_index_relation
             model_class = @index_target.model_class
 
@@ -200,7 +200,7 @@ module AreSearch
             model_class.where("id > ?", last_key)
         end
 
-        # recover 時は未解決の失敗IDだけ、通常時は各結果ファイルの最後のIDより後を対象にする。
+        # recover時は未解決の失敗IDを対象にし、DBに存在しないIDはdata_skipとして記録する。
         def build_recover_relation
             model_class = @index_target.model_class
 
@@ -243,7 +243,7 @@ module AreSearch
         def append_buffer(record)
             key = record.id.to_s
 
-            if record.are_search_indexable?(@index_target.index_target_name, @sync_stage_name) == true
+            if @index_target.are_search_indexable?(record) == true
                 action = {
                     index: {
                         _index: @index_target.are_search_index_alias_name,
@@ -374,8 +374,7 @@ module AreSearch
                 @max_skip_count = max_skip_count
             end
 
-            # 保留中の1件分を送信待ちへ移し、新しい1件分を保持する。
-            # actionがnilの1件はskip対象として保持する。
+            # 保留中の1件分を送信待ちへ移し、新しいfailまたはskipの1件分を保持する。
             def append_no_sync_data(key, action, data)
                 unless [:fail, :skip].include?(action)
                     raise AreSearch::Error, "不正な内部操作です"
@@ -389,8 +388,7 @@ module AreSearch
                 @reserved_bytesize = 0
             end
 
-            # 保留中の1件分を送信待ちへ移し、新しい1件分を保持する。
-            # actionがnilの1件はskip対象として保持する。
+            # 保留中の1件分を送信待ちへ移し、新しいindex/deleteの1件分をシリアライズして保持する。
             def append_sync_data(key, action, data)
                 if [:fail, :skip].include?(action)
                     raise AreSearch::Error, "不正な内部操作です"

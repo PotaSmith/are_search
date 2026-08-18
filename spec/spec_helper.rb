@@ -73,9 +73,17 @@ ActiveRecord::Schema.define do
     end
 
     add_index :are_search_sync_requests,
-        [:index_alias_name, :ar_model_class_name, :ar_instance_key, :sync_stage_name],
-        unique: true,
-        name:   "idx_are_search_sync_requests_unique"
+        [:index_alias_name, :sync_stage_name, :ar_instance_key],
+        unique: true
+
+    add_index :are_search_sync_requests,
+        [:index_alias_name, :sync_stage_name, :request_sequence]
+
+    add_index :are_search_sync_requests,
+        [:sync_stage_name, :request_sequence_at]
+
+    add_index :are_search_sync_requests,
+        [:sync_stage_name, :processing_at]
 
 
     create_table :are_search_sync_locks, id: :integer, force: true do |t|
@@ -93,8 +101,7 @@ ActiveRecord::Schema.define do
 
     add_index :are_search_sync_locks,
         [:index_alias_name, :sync_stage_name],
-        unique: true,
-        name:   "idx_are_search_sync_locks_unique"
+        unique: true
 
 
     create_table :are_search_sync_request_boundary_targets, id: :integer, force: true do |t|
@@ -110,8 +117,7 @@ ActiveRecord::Schema.define do
 
     add_index :are_search_sync_request_boundary_targets,
         [:index_alias_name, :sync_stage_name],
-        unique: true,
-        name:   "idx_are_search_sync_request_boundary_targets_unique"
+        unique: true
 end
 
 RSpec.configure do |config|

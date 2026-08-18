@@ -2,7 +2,7 @@
 AreSearch IndexTarget・sync stage ガイド
 ================================================================
 
-このガイドは、IndexTarget と sync stage をどう分け、どの stage を保存時・after_commit・reindex・rake で使うかを扱う。
+このガイドは、IndexTarget と sync stage をどう分け、設定からどのメソッドを使用するかを扱う。
 導入は guide_setup.txt、検索は guide_usage.txt、運用操作は guide_operations.txt、設定一覧は guide_reference.txt を参照する。
 
 
@@ -12,7 +12,7 @@ AreSearch IndexTarget・sync stage ガイド
 AreSearch では同期先とデータ生成経路を分けて考える。
 
     IndexTarget
-        Elasticsearch の alias、mappings、index_settings、検索用途を表す。
+        Elasticsearch の alias、mappings、settings、検索用途を表す。
 
     sync stage
         同じ IndexTarget へ投入する完成ドキュメントの生成経路を表す。
@@ -26,35 +26,72 @@ AreSearch では同期先とデータ生成経路を分けて考える。
         sync stage を分ける。
 
 stage は部分更新のフィールド集合ではない。
-各stageの are_search_index_data は、そのstageで保存するドキュメント全体を返す。
+各stageの data_method は、そのstageで保存するドキュメント全体を返す。
 
 
 # 2. IndexTarget を定義する
 ================================================================
 
-IndexTarget は are_search_index_mappings の index_target_name ごとに作成される。
+IndexTarget は AreSearch.searchable_class_setting のモデル設定内へ定義する。
+index_target_name は Symbol で指定する。
 
-    def self.are_search_index_mappings
-        {
+    AreSearch.searchable_class_setting = {
+        "Article" => {
             default: {
-                index_settings: {
+                settings: {
                     max_result_window: 2_000,
                 },
-                properties: {
-                    id:    { type: "long" },
-                    title: { type: "text" },
+                mappings: {},
+                properties_method: :default_properties,
+                indexable_method: :default_indexable?,
+                stages: {
+                    "default" => {
+                        data_method: :default_search_data,
+                        enqueue: true,
+                        after_commit: true,
+                    },
                 },
             },
             autocomplete: {
-                index_settings: {
+                settings: {
                     max_result_window: 2_000,
                 },
-                properties: {
-                    id:         { type: "long" },
-                    title_edge: { type: "text" },
+                mappings: {},
+                properties_method: :autocomplete_properties,
+                indexable_method: :autocomplete_indexable?,
+                stages: {
+                    "default" => {
+                        data_method: :autocomplete_search_data,
+                        enqueue: true,
+                        after_commit: true,
+                    },
                 },
             },
+        },
+    }
+
+モデルには設定から参照するメソッドを定義する。
+
+    def self.default_properties
+        {
+            id:    { type: "long" },
+            title: { type: "text" },
         }
+    end
+
+    def self.autocomplete_properties
+        {
+            id:         { type: "long" },
+            title_edge: { type: "text" },
+        }
+    end
+
+    def default_indexable?
+        true
+    end
+
+    def autocomplete_indexable?
+        true
     end
 
 IndexTarget を取得する。
@@ -62,10 +99,18 @@ IndexTarget を取得する。
     default_index = Article.are_search_index_target(:default)
     autocomplete_index = Article.are_search_index_target(:autocomplete)
 
+検索側の取得名を固定してtargetを切り替える場合は index_target_name_alias を使用する。
+
+    index_target_name_alias: :current
+
+    current_index = Article.are_search_index_target_alias(:current)
+
+切り替え時は同じ index_target_name_alias を新しいtargetへ移す。設定方法の詳細は guide_reference.txt を参照する。
+
 1つのモデルに複数targetを定義すると、targetごとに次が分かれる。
 
     mappings
-    index_settings
+    settings
     aliasと物理index
     reindex
     sync request
@@ -74,149 +119,71 @@ IndexTarget を取得する。
 検索改善のために mappings や analyzer を変更する場合は、使用中targetを直接変更するだけでなく、
 新しいtargetを追加して新旧indexを並行同期し、検索入口を切り替える方法を選べる。
 
-STI では同じ Searchable 継承系統の上位モデルが定義した IndexTarget を使用する。
+STI では Searchable を持つ継承系統の上位モデルの設定を使用する。
 Searchable を継承した子クラスから reindex や BulkIndexer を実行しない。
 
 
-# 3. sync stage を定義する
+# 3. properties_method を定義する
 ================================================================
 
-sync stage は、同じ IndexTarget へ投入するデータ生成経路を識別する。
+properties_method には引数なしのクラスメソッドを指定する。
+戻り値は、その IndexTarget の properties 全体を表す Hash。
 
-    "default"
-    "with_external_file"
-
-例えば、通常のDBカラムだけで作るstageと、外部ファイルを読み込むstageを分けられる。
-
-    def are_search_index_data(index_target_name, sync_stage_name)
-        case [index_target_name, sync_stage_name]
-        when [:default, "default"]
-            {
-                id:       id,
-                title:    title,
-                fulltext: "",
-            }
-        when [:default, "with_external_file"]
-            {
-                id:       id,
-                title:    title,
-                fulltext: get_external_file_text,
-            }
-        else
-            {}
-        end
-    end
-
-どちらのstageも完成ドキュメント全体を返す。
-同じstage名を複数targetで使うことはできる。
-
-
-# 4. 使用可能な全stageを指定する
-================================================================
-
-全stageを are_search_all_sync_stage_names で定義する。このメソッドは必須。
-
-    def self.are_search_all_sync_stage_names
+    def self.default_properties
         {
-            default: ["default", "with_external_file"],
-            autocomplete: ["default"],
+            id:       { type: "long" },
+            title:    { type: "text" },
+            fulltext: { type: "text" },
         }
     end
 
-Array の順序は reindex で :first または :last を選ぶときに使用する。
-stage間の実行順を必要とする場合は、後述する before check / after callback または rake のstage分離を使用する。
+properties は mappings へ直接書かず、このメソッドから返す。
+STI 子クラスで properties_method をオーバーライドしない。
+
+
+# 4. sync stage を定義する
+================================================================
+
+sync stage は、同じ IndexTarget へ投入するデータ生成経路を識別する。
+stages の Hash に設定順で定義する。
+
+    stages: {
+        "default" => {
+            data_method: :default_search_data,
+            enqueue: true,
+            after_commit: true,
+        },
+        "with_external_file" => {
+            data_method: :with_external_file_search_data,
+            enqueue: true,
+            after_commit: false,
+        },
+    }
+
+各stageで指定する値。
+
+    data_method
+        完成ドキュメントを返す引数なしのインスタンスメソッド。
+
+    enqueue
+        保存・touch・削除時に SyncRequest を作る場合は true。
+
+    after_commit
+        commit後に直接同期またはJob登録を開始する場合は true。
+        true にする場合は enqueue も true にする。
+
+stageの定義順は reindex の stage_position: :first / :last で使用する。
+同じstage名を複数targetで使うことはできる。
 
 運用中にstageを削除する場合は、そのstageの既存SyncRequestが残っていないことを確認してから行う。
 
 
-# 5. 保存時にSyncRequestを作るstageを選ぶ
+# 5. stage ごとの投入データを定義する
 ================================================================
 
-保存・touch・削除時に sync request を作成するstageを are_search_sync_stage_names_on_enqueue で指定する。
-省略した場合は are_search_all_sync_stage_names と同じ設定を使用する。
+data_method に指定するインスタンスメソッドは、完成ドキュメント全体を Hash で返す。
 
-全stageの要求を作る場合は定義不要。
-一部だけ作る場合。
-
-    def self.are_search_sync_stage_names_on_enqueue
-        {
-            default: ["default"],
-            autocomplete: ["default"],
-        }
-    end
-
-制約。
-
-    are_search_all_sync_stage_names の部分集合
-    targetを省略した場合、そのtargetでは保存時に要求を作らない
-    空Arrayを指定した場合も、そのtargetでは要求を作らない
-
-
-# 6. after_commit で開始するstageを選ぶ
-================================================================
-
-commit後に直接同期またはJob登録を開始するstageを are_search_sync_stage_names_on_after_commit で指定する。
-省略した場合は are_search_all_sync_stage_names と同じ設定を使用する。
-
-    def self.are_search_sync_stage_names_on_after_commit
-        {
-            default: ["default"],
-            autocomplete: ["default"],
-        }
-    end
-
-制約。
-
-    are_search_sync_stage_names_on_enqueue の部分集合
-    targetを省略した場合、そのtargetではafter_commitから同期を開始しない
-    空Arrayを指定した場合も、そのtargetでは同期を開始しない
-
-開始方法は AreSearch.after_commit_mode に従う。詳細は guide_reference.txt を参照する。
-
-重いstageをrakeへ残したい場合は、enqueue対象には含め、after_commit対象から外す。
-
-
-# 7. stage ごとの投入データを定義する
-================================================================
-
-are_search_index_data の基本仕様は guide_reference.txt を参照する。
-stage ごとにデータ生成を分ける例。
-
-    def are_search_index_data(index_target_name, sync_stage_name)
-        case [index_target_name, sync_stage_name]
-        when [:default, "default"]
-            {
-                id:       id,
-                title:    title,
-                fulltext: "",
-            }
-        when [:default, "with_external_file"]
-            {
-                id:       id,
-                title:    title,
-                fulltext: get_external_file_text,
-            }
-        else
-            {}
-        end
-    end
-
-
-分岐が多くなる場合は、are_search_index_data を分岐だけにしてデータ生成を通常のモデルメソッドへ分けられる。
-
-    def are_search_index_data(index_target_name, sync_stage_name)
-        case [index_target_name, sync_stage_name]
-        when [:default, "default"]
-            std_data
-        when [:huge, "for_version_up"],
-             [:huge, "default"]
-            huge_data
-        else
-            {}
-        end
-    end
-
-    def std_data
+    def default_search_data
         {
             id:       id,
             title:    title,
@@ -224,7 +191,7 @@ stage ごとにデータ生成を分ける例。
         }
     end
 
-    def huge_data
+    def with_external_file_search_data
         {
             id:       id,
             title:    title,
@@ -232,23 +199,81 @@ stage ごとにデータ生成を分ける例。
         }
     end
 
-std_data や huge_data は AreSearch のAPIではない。利用側で自由に命名できる。
+複数stageで同じ完成ドキュメントを作る場合は、同じ data_method を指定してよい。
+
+    stages: {
+        "huge_data" => {
+            data_method: :huge_search_data,
+            enqueue: true,
+            after_commit: false,
+        },
+        "for_version_up" => {
+            data_method: :huge_search_data,
+            enqueue: true,
+            after_commit: false,
+        },
+    }
 
 
-# 8. target・stage ごとに index 対象を制御する
+# 6. 保存時とafter_commitの対象を選ぶ
 ================================================================
 
-対象レコードを target・stage ごとに index するか切り替える場合は are_search_indexable? を使用する。
-詳細は guide_reference.txt を参照する。
+enqueue と after_commit はstageごとに指定する。
+
+通常の軽いstageをcommit後に直接処理する例。
+
+    "default" => {
+        data_method: :default_search_data,
+        enqueue: true,
+        after_commit: true,
+    }
+
+重いstageを保存時に要求だけ残し、rakeで回収する例。
+
+    "with_external_file" => {
+        data_method: :with_external_file_search_data,
+        enqueue: true,
+        after_commit: false,
+    }
+
+保存時に要求自体を作らないstage。
+
+    "manual" => {
+        data_method: :manual_search_data,
+        enqueue: false,
+        after_commit: false,
+    }
+
+開始方法は AreSearch.after_commit_mode に従う。詳細は guide_reference.txt を参照する。
 
 
-# 9. stage の前後条件を指定できる
+# 7. target ごとに index 対象を制御する
 ================================================================
 
-stage間の待機条件が必要な場合は are_search_before_sync_check を使用する。
-デフォルトは true。
+indexable_method には引数なしのインスタンスメソッドを指定する。
+true の場合はindexし、それ以外はその target からdeleteする。
 
-    def self.are_search_before_sync_check(ar_instance_key, index_target, sync_request)
+    indexable_method: :default_indexable?
+
+    def default_indexable?
+        published?
+    end
+
+indexable_method は IndexTarget 単位の設定であり、stageごとには分かれない。
+
+
+# 8. stage の前後条件を指定する
+================================================================
+
+同期開始前に条件を確認する場合は、モデル設定の _callbacks に before_sync_check を指定する。
+
+    _callbacks: {
+        before_sync_check: :default_before_sync_check,
+    }
+
+指定するクラスメソッドは3引数を受け取る。
+
+    def self.default_before_sync_check(ar_instance_key, index_target, sync_request)
         if sync_request.sync_stage_name == "with_external_file"
             return are_search_sync_request_exists?(
                 ar_instance_key,
@@ -260,12 +285,16 @@ stage間の待機条件が必要な場合は are_search_before_sync_check を使
         true
     end
 
-一時的に同期を待機させたい場合は false を返す。後続の run_sync_requests で再判定されるため、待機条件として利用できる。
+false の間はその要求の同期を開始しない。後続の run_sync_requests で再判定される。
 
-同期完了後に別stageの要求を作る場合は are_search_after_sync_callback を使用する。
-デフォルトは何もしない。
+同期完了後に利用側処理を行う場合は after_sync_callback を指定する。
 
-    def self.are_search_after_sync_callback(record, index_target, sync_request)
+    _callbacks: {
+        before_sync_check: :default_before_sync_check,
+        after_sync_callback: :default_after_sync_callback,
+    }
+
+    def self.default_after_sync_callback(record, index_target, sync_request)
         return if record.nil?
         return unless sync_request.sync_stage_name == "default"
 
@@ -279,7 +308,7 @@ are_search_upsert_sync_request で作成したstageは are_search:run_sync_reque
 force同期は異常中断時の補助処理として使用し、stage連鎖を進める用途には使用しない。
 
 
-# 10. sync stage の新しい同期処理を開始させない
+# 9. sync stage の新しい同期処理を開始させない
 ================================================================
 
 特定の sync stage で新しい同期処理を開始させない場合は sync stage sync lock を使用する。
@@ -293,6 +322,13 @@ force同期は異常中断時の補助処理として使用し、stage連鎖を�
 この lock がある間、その IndexTarget の指定stageでは新しい同期処理を開始しない。
 他のstageの同期開始と検索には影響しない。
 
+lock取得前に processing に入った SyncRequest は処理を継続する。
+既存processingと競合させられない処理では、lock取得後に状態確認を実行する。
+
+    bundle exec rake are_search:check_sync_request_status
+
+対象モデル・IndexTarget・stageの「処理中」が0件であることを確認してから開始する。
+
 解除する。
 
     index_target.are_search_release_sync_stage_lock!(
@@ -303,19 +339,19 @@ force同期は異常中断時の補助処理として使用し、stage連鎖を�
 AreSearch.index_operation_enabled = true が必要。
 
 
-# 11. reindex で使用するstageを選ぶ
+# 10. reindex で使用するstageを選ぶ
 ================================================================
 
 reindex は1つの IndexTarget に対して1つのstageを使用する。
-stage_position: :first は先頭stage、:last は末尾stageを使用する。
+stage_position: :first は stages の先頭、:last は末尾stageを使用する。
 
 are_search:reindex_all_for_es_version_up は各IndexTargetの末尾stageを使用するため、
-最終状態を作るstageを are_search_all_sync_stage_names の末尾に置く。
+最終状態を作るstageを stages の末尾に置く。
 
 reindex の実行方法は guide_operations.txt を参照する。
 
 
-# 12. rake でstageを分けて回収する
+# 11. rake でstageを分けて回収する
 ================================================================
 
 are_search:run_sync_requests は指定したstage名で要求を回収する。
@@ -324,42 +360,12 @@ are_search:run_sync_requests は指定したstage名で要求を回収する。
 stageごとの回収実行方法は guide_operations.txt を参照する。
 
 
-# 13. 最小構成
+# 12. STI
 ================================================================
 
-単一target・単一stageなら次の定義だけでよい。
+AreSearch.searchable_class_setting は Searchable を include した継承系統の上位モデルにだけ定義する。
+STI 子クラスは上位モデルの設定を使用する。
 
-    def self.are_search_index_mappings
-        {
-            default: {
-                index_settings: {
-                    max_result_window: 2_000,
-                },
-                properties: {
-                    id:    { type: "long" },
-                    title: { type: "text" },
-                },
-            },
-        }
-    end
-
-    def self.are_search_all_sync_stage_names
-        {
-            default: ["default"],
-        }
-    end
-
-    def are_search_index_data(index_target_name, sync_stage_name)
-        case [index_target_name, sync_stage_name]
-        when [:default, "default"]
-            {
-                id:    id,
-                title: title,
-            }
-        else
-            {}
-        end
-    end
-
-are_search_sync_stage_names_on_enqueue と are_search_sync_stage_names_on_after_commit は省略できる。
-省略時はどちらも全stageを対象にする。
+properties_method は子クラスでオーバーライドできない。
+indexable_method、data_method、before_sync_check、after_sync_callback は、子クラスでオーバーライドされる可能性がある。
+are_search:check_all_models は STI 子クラスを含め設定を確認する。

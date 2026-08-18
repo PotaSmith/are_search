@@ -116,10 +116,9 @@ RSpec.describe AreSearch::Reindexer do
         allow(AreSearch).to receive(:client).and_return(client)
         stub_const("ProgressBar", progress_bar_class)
 
-        allow(model)
-            .to receive(:are_search_get_all_sync_stage_names)
-            .with(index_target)
-            .and_return([sync_stage_name])
+        allow(index_target)
+            .to receive(:are_search_indexable?)
+            .and_return(true)
 
         logger = instance_double("Logger", error: nil)
         allow(Rails).to receive(:logger).and_return(logger)
@@ -182,19 +181,9 @@ RSpec.describe AreSearch::Reindexer do
                 second_record = instance_double("Article", id: 2)
 
                 expect(first_record)
-                    .to receive(:are_search_indexable?)
-                    .with(:default, sync_stage_name)
-                    .and_return(true)
-
-                expect(first_record)
                     .to receive(:are_search_index_data_for_index!)
                     .with(index_target, sync_stage_name)
                     .and_return(id: 1, title: "first")
-
-                expect(second_record)
-                    .to receive(:are_search_indexable?)
-                    .with(:default, sync_stage_name)
-                    .and_return(true)
 
                 expect(second_record)
                     .to receive(:are_search_index_data_for_index!)
@@ -275,13 +264,11 @@ RSpec.describe AreSearch::Reindexer do
                 first_record = instance_double(
                     "Article",
                     id: 1,
-                    are_search_indexable?: true,
                     are_search_index_data_for_index!: { id: 1, title: "first" },
                 )
                 second_record = instance_double(
                     "Article",
                     id: 2,
-                    are_search_indexable?: true,
                     are_search_index_data_for_index!: { id: 2, title: "second" },
                 )
 
@@ -346,7 +333,6 @@ RSpec.describe AreSearch::Reindexer do
                 record = instance_double(
                     "Article",
                     id: 1,
-                    are_search_indexable?: true,
                     are_search_index_data_for_index!: { id: 1, title: "first" },
                 )
 
@@ -389,14 +375,17 @@ RSpec.describe AreSearch::Reindexer do
                 first_record = instance_double(
                     "Article",
                     id: 1,
-                    are_search_indexable?: true,
                     are_search_index_data_for_index!: { id: 1, title: "first" },
                 )
                 second_record = instance_double(
                     "Article",
                     id: 2,
-                    are_search_indexable?: false,
                 )
+
+                allow(index_target)
+                    .to receive(:are_search_indexable?)
+                    .with(second_record)
+                    .and_return(false)
 
                 allow(model).to receive(:find_in_batches) do |batch_size:, &block|
                     expect(batch_size).to eq(500)
@@ -446,19 +435,16 @@ RSpec.describe AreSearch::Reindexer do
                 first_record = instance_double(
                     "Article",
                     id: 1,
-                    are_search_indexable?: true,
                     are_search_index_data_for_index!: { id: 1, title: "first" },
                 )
                 second_record = instance_double(
                     "Article",
                     id: 2,
-                    are_search_indexable?: true,
                     are_search_index_data_for_index!: { id: 2, title: "second" },
                 )
                 third_record = instance_double(
                     "Article",
                     id: 3,
-                    are_search_indexable?: true,
                     are_search_index_data_for_index!: { id: 3, title: "third" },
                 )
 
@@ -528,7 +514,6 @@ RSpec.describe AreSearch::Reindexer do
                 record = instance_double(
                     "Article",
                     id: 1,
-                    are_search_indexable?: true,
                     are_search_index_data_for_index!: { id: 1, title: "first" },
                 )
 
@@ -568,7 +553,6 @@ RSpec.describe AreSearch::Reindexer do
                 record = instance_double(
                     "Article",
                     id: 1,
-                    are_search_indexable?: true,
                 )
 
                 allow(record)

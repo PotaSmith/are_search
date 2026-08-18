@@ -437,32 +437,20 @@ RSpec.describe "search option flow" do
                 AreSearch::IndexTarget.new(self, index_target_name)
             end
 
-            def self.are_search_index_mappings
+            def self.default_properties
                 {
-                    default: {
-                        index_settings: {
-                            max_result_window: 2_000,
-                        },
-                        _source: {
-                            includes: [:title],
-                        },
-                        properties: {
-                            title:  { type: "text" },
-                            body:   { type: "text" },
-                            status: { type: "keyword", store: true },
-                            count:  { type: "integer" },
-                        },
-                    },
-                    mlt_source: {
-                        index_settings: {
-                            max_result_window: 2_000,
-                        },
-                        properties: {
-                            title:  { type: "integer" },
-                            body:   { type: "text" },
-                            status: { type: "keyword", store: true },
-                        },
-                    },
+                    title:  { type: "text" },
+                    body:   { type: "text" },
+                    status: { type: "keyword", store: true },
+                    count:  { type: "integer" },
+                }
+            end
+
+            def self.mlt_source_properties
+                {
+                    title:  { type: "integer" },
+                    body:   { type: "text" },
+                    status: { type: "keyword", store: true },
                 }
             end
 
@@ -482,6 +470,36 @@ RSpec.describe "search option flow" do
 
     let(:mlt_source_index_target) do
         AreSearch::IndexTarget.new(article_model, :mlt_source)
+    end
+
+    around do |example|
+        original_searchable_class_setting = AreSearch.searchable_class_setting
+        AreSearch.searchable_class_setting = {
+            "Article" => {
+                default: {
+                    settings: {
+                        max_result_window: 2_000,
+                    },
+                    mappings: {
+                        _source: {
+                            includes: [:title],
+                        },
+                    },
+                    properties_method: :default_properties,
+                },
+                mlt_source: {
+                    settings: {
+                        max_result_window: 2_000,
+                    },
+                    mappings: {},
+                    properties_method: :mlt_source_properties,
+                },
+            },
+        }
+
+        example.run
+    ensure
+        AreSearch.searchable_class_setting = original_searchable_class_setting
     end
 
     before do

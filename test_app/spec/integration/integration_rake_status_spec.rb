@@ -419,7 +419,8 @@ RSpec.describe "AreSearch rake status operations integration", type: :model do
         sequence,
         model_class: DocumentFirst,
         instance_key: nil,
-        last_error: nil
+        last_error: nil,
+        processing: false
     )
         index_target = model_class.are_search_index_target(:default)
         now = Time.zone.now
@@ -432,6 +433,8 @@ RSpec.describe "AreSearch rake status operations integration", type: :model do
             index_target_name:   "default",
             request_sequence:    sequence,
             request_sequence_at: now,
+            processing_token:    processing ? "status test" : nil,
+            processing_at:       processing ? now : nil,
             last_error:          last_error,
             last_error_at:       last_error.nil? ? nil : now,
         )
@@ -491,7 +494,7 @@ RSpec.describe "AreSearch rake status operations integration", type: :model do
         expect(output).to include("release_sync_lock_all skipped: #{document_alias_name}")
     end
 
-    it "check_sync_request_statusは実DBのsync lock・モデル別件数・エラー集計を出力する" do
+    it "check_sync_request_statusは実DBのsync lock・同期経路別件数・エラー集計を出力する" do
         article_alias_name = DocumentFirst.are_search_index_target(:default).are_search_index_alias_name
 
         AreSearch::SyncLock.create!(
@@ -505,7 +508,7 @@ RSpec.describe "AreSearch rake status operations integration", type: :model do
             message:          "maintenance",
         )
 
-        create_sync_request(1, last_error: "sync locked")
+        create_sync_request(1, last_error: "sync locked", processing: true)
         create_sync_request(2, last_error: "sync locked")
         create_sync_request(3)
         create_sync_request(4, model_class: DocumentSecond, last_error: "timeout")
@@ -517,10 +520,10 @@ RSpec.describe "AreSearch rake status operations integration", type: :model do
         expect(output).to include("[AreSearch] sync request status")
         expect(output).to include(article_alias_name)
         expect(output).to include(AreSearch::SyncLock.index_target_lock_name)
-        expect(output).to match(/document_firsts\s+DocumentFirst\s+3\s+2/)
-        expect(output).to match(/document_seconds\s+DocumentSecond\s+1\s+1/)
-        expect(output).to match(/document_firsts\s+sync locked\s+2/)
-        expect(output).to match(/document_seconds\s+timeout\s+1/)
+        expect(output).to match(/DocumentFirst\s+default\s+default\s+3\s+1\s+2/)
+        expect(output).to match(/DocumentSecond\s+default\s+default\s+1\s+0\s+1/)
+        expect(output).to match(/DocumentFirst\s+default\s+default\s+sync locked\s+2/)
+        expect(output).to match(/DocumentSecond\s+default\s+default\s+timeout\s+1/)
         expect(output).to include("maintenance")
     end
 

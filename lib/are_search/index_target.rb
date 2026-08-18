@@ -5,11 +5,62 @@ module AreSearch
 
         attr_reader :model_class, :index_target_name
 
-        # SearchableValidator で検査済みのモデルと index_target_name を保持する。
+        class << self
+
+            # 指定モデルが使用する searchable_class_setting を継承元まで辿って返す。
+            def searchable_class_setting_for(model_class)
+                setting_model_class = searchable_class_setting_model_class(model_class)
+                return nil if setting_model_class.nil?
+
+                AreSearch.searchable_class_setting[setting_model_class.name]
+            end
+
+            # 指定モデルが使用する searchable_class_setting の定義元クラスを返す。
+            def searchable_class_setting_model_class(model_class)
+                current_model_class = model_class
+
+                while current_model_class
+                    if AreSearch.searchable_class_setting.instance_of?(Hash) &&
+                            AreSearch.searchable_class_setting.key?(current_model_class.name)
+                        return current_model_class
+                    end
+
+                    parent_model_class = current_model_class.superclass
+                    break if parent_model_class.nil?
+                    break if parent_model_class.include?(AreSearch::Searchable) == false
+
+                    current_model_class = parent_model_class
+                end
+
+                nil
+            end
+
+            # 指定モデルに定義されたIndexTarget名を設定順で返す。
+            def index_target_names(model_class)
+                class_setting = searchable_class_setting_for(model_class)
+                return [] if class_setting.instance_of?(Hash) == false
+
+                index_target_names = []
+
+                class_setting.each_key do |key|
+                    next if key == :_callbacks
+
+                    index_target_names << key
+                end
+
+                index_target_names
+            end
+        end
+
+        # SearchableValidator で検査済みのモデル・index_target_name・設定を保持する。
         def initialize(model_class, index_target_name = :default)
             @model_class = model_class
             @index_target_name = index_target_name
             @ar_table_name = model_class.are_search_ar_table_name
+
+            class_setting = self.class.searchable_class_setting_for(model_class)
+            @target_setting = class_setting[index_target_name]
+            @callbacks_setting = class_setting[:_callbacks] || {}
         end
 
         # 同じモデルと index_target_name を持つ IndexTarget を同一targetとして扱う。
@@ -44,28 +95,23 @@ module AreSearch
             ].join(AreSearch::IndexDefinition::INDEX_NAME_DELIMITER)
         end
 
-        # index作成時の index settings
+        # index作成時の settings を返す。analysis は AreSearch 側の設定で上書きする。
         def are_search_index_settings
-            target_mappings[:index_settings]
+            settings = @target_setting[:settings].dup
+            settings[:analysis] = AreSearch.analyzer_settings[:analysis]
+
+            settings
         end
 
-        # ユーザが定義した are_search_index_mappings
+        # 設定されたmappingsを複製し、properties生成メソッドの結果を設定する。
         def are_search_index_mappings
-            mappings = {}
-
-            target_mappings.each do |key, value|
-                next if key == :index_settings
-
-                if key == :properties
-                    new_properties = {}
-                    value.each do |property_key, property_value|
-                        new_properties[property_key] = property_value
-                    end
-                    mappings[key] = new_properties
-                else
-                    mappings[key] = value
-                end
+            mappings = @target_setting[:mappings].dup
+            properties = model_class.public_send(@target_setting[:properties_method])
+            new_properties = {}
+            properties.each do |property_key, property_value|
+                new_properties[property_key] = property_value
             end
+            mappings[:properties] = new_properties
 
             mappings
         end
@@ -81,6 +127,62 @@ module AreSearch
             mappings[:properties][AreSearch::IndexDefinition::RESERVED_AR_INSTANCE_KEY_FIELD_NAME] = AreSearch::IndexDefinition::RESERVED_INDEX_FIELD_NAME_SETTING
 
             mappings
+        end
+
+        # このIndexTargetに定義された全stageを設定順で返す。
+        def are_search_sync_stage_names
+            @target_setting[:stages].keys
+        end
+
+        # 保存時にSyncRequestを作るstageを設定順で返す。
+        def are_search_sync_stage_names_on_enqueue
+            sync_stage_names = []
+
+            @target_setting[:stages].each do |sync_stage_name, stage_setting|
+                sync_stage_names << sync_stage_name if stage_setting[:enqueue] == true
+            end
+
+            sync_stage_names
+        end
+
+        # after_commitで同期を開始するstageを設定順で返す。
+        def are_search_sync_stage_names_on_after_commit
+            sync_stage_names = []
+
+            @target_setting[:stages].each do |sync_stage_name, stage_setting|
+                sync_stage_names << sync_stage_name if stage_setting[:after_commit] == true
+            end
+
+            sync_stage_names
+        end
+
+        # このIndexTargetでレコードをindex対象にするかモデルメソッドへ問い合わせる。
+        def are_search_indexable?(record)
+            record.public_send(@target_setting[:indexable_method])
+        end
+
+        # 指定stageのindex data生成を設定されたモデルメソッドへ委譲する。
+        def are_search_index_data(record, sync_stage_name)
+            validate_defined_sync_stage_name!(sync_stage_name)
+
+            data_method = @target_setting[:stages][sync_stage_name][:data_method]
+            record.public_send(data_method)
+        end
+
+        # 同期前callbackが設定されていればモデルのクラスメソッドへ委譲する。
+        def are_search_before_sync_check(ar_instance_key, sync_request)
+            method_name = @callbacks_setting[:before_sync_check]
+            return true if method_name.nil?
+
+            model_class.public_send(method_name, ar_instance_key, self, sync_request)
+        end
+
+        # 同期後callbackが設定されていればモデルのクラスメソッドへ委譲する。
+        def are_search_after_sync_callback(record, sync_request)
+            method_name = @callbacks_setting[:after_sync_callback]
+            return if method_name.nil?
+
+            model_class.public_send(method_name, record, self, sync_request)
         end
 
         # 対象の Elasticsearch alias が存在するかを返す。
@@ -115,14 +217,13 @@ module AreSearch
         def validate_defined_sync_stage_name!(sync_stage_name)
             AreSearch::IndexDefinition.valid_sync_stage_name!(sync_stage_name)
 
-            sync_stage_names = model_class.are_search_get_all_sync_stage_names(self)
-            unless sync_stage_names.include?(sync_stage_name)
+            unless are_search_sync_stage_names.include?(sync_stage_name)
                 raise ArgumentError, "sync_stage_name が IndexTarget に定義されていません: #{sync_stage_name}"
             end
         end
 
         # 利用側の _source 設定をコピーし、予約フィールドを includes に追加する。
-        # 元の are_search_index_mappings 定義は変更しない。
+        # 元の searchable_class_setting は変更しない。
         def add_reserved_source_includes!(mappings)
             source_settings = {}
 
@@ -158,10 +259,6 @@ module AreSearch
             end
 
             false
-        end
-
-        def target_mappings
-            model_class.are_search_index_mappings[index_target_name]
         end
     end
 end

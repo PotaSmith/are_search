@@ -31,6 +31,27 @@ module AreSearch
                 reraise: reraise,
             )
         end
+
+        # このIndexTargetで処理中のSyncRequestが存在するか返す。
+        def are_search_processing_sync_request_exists?
+            AreSearch::SyncRequest.where(
+                index_alias_name: are_search_index_alias_name,
+            ).where.not(
+                processing_token: nil,
+            ).exists?
+        end
+
+       # このIndexTargetの指定stageで処理中のSyncRequestが存在するか返す。
+         def are_search_processing_sync_stage_sync_request_exists?(sync_stage_name)
+            validate_defined_sync_stage_name!(sync_stage_name)
+
+            AreSearch::SyncRequest.where(
+                index_alias_name: are_search_index_alias_name,
+                sync_stage_name:  sync_stage_name,
+            ).where.not(
+                processing_token: nil,
+            ).exists?
+        end
     end
 
     # 以下は、are_search_try_sync、are_search_try_force_sync 以外直接呼ばない
@@ -87,7 +108,7 @@ module AreSearch
 
             begin
                 # 他の sync_stage_name で sync_request が存在しないか等のチェックを行うための callback
-                return false unless index_target.model_class.are_search_before_sync_check(ar_instance_key, index_target, self)
+                return false unless index_target.are_search_before_sync_check(ar_instance_key, self)
 
                 # 同期前のカウント更新
                 # 落ちてもなにもしない
@@ -103,7 +124,7 @@ module AreSearch
                 # callback処理
                 # 落ちてもなにもしない
                 return true unless update_callback_try_no_sequence
-                index_target.model_class.are_search_after_sync_callback(record, index_target, self)
+                index_target.are_search_after_sync_callback(record, self)
 
                 # 同期済みの SyncRequest 削除判定と、残った行の状態リセット。
                 # 同じトランザクションにすることで、どちらかが失敗した場合は削除を確定しない。
@@ -149,7 +170,7 @@ module AreSearch
             return false unless check_index_target_ready?(index_target)
 
             # 他の sync_stage_name で sync_request が存在しないか等のチェックを行うための callback
-            return false unless index_target.model_class.are_search_before_sync_check(ar_instance_key, index_target, self)
+            return false unless index_target.are_search_before_sync_check(ar_instance_key, self)
 
             # force が処理したフラグ
             updated_count = sync_request_relation_no_sequence
@@ -204,9 +225,9 @@ module AreSearch
         #
         # SyncRequest の取り方
         #
-        # 4キーで取る場合           : 更新があった場合 = 対象    他での同期成功 = 対象
+        # 3キーで取る場合           : 更新があった場合 = 対象    他での同期成功 = 対象
         # idで取る場合              : 更新があった場合 = 対象    他での同期成功 = 対象外
-        # 4キーとsequenceで取る場合 : 更新があった場合 = 対象外  他での同期成功 = 対象   構造的にありえない
+        # 3キーとsequenceで取る場合 : 更新があった場合 = 対象外  他での同期成功 = 対象   構造的にありえない
         # idとsequenceで取る場合    : 更新があった場合 = 対象外  他での同期成功 = 対象外
         #
 
@@ -304,7 +325,7 @@ module AreSearch
 
         # SyncRequestのstageが、処理時点のIndexTargetに存在するか確認する。
         def check_sync_stage_name?(index_target)
-            sync_stage_names = index_target.model_class.are_search_get_all_sync_stage_names(index_target)
+            sync_stage_names = index_target.are_search_sync_stage_names
 
             return true if sync_stage_names.include?(self.sync_stage_name)
 
@@ -342,10 +363,9 @@ end
 #
 # 1行は、次の同期キーに対する未完了要求を保持する。
 #
-#     ar_model_class_name
-#     ar_instance_key
 #     index_alias_name
 #     sync_stage_name
+#     ar_instance_key
 #
 # 同じ同期キーへの新しい要求は新しい行を作らず、既存行へupsertする。
 # そのため、1行の中で要求の世代、処理中状態、force処理状態を管理する。
@@ -492,8 +512,3 @@ end
 #
 # updated_at
 #     Railsが管理する行の更新時刻。
-#
-#
-# SyncRequest の処理フェーズと各フィールドの役割は、
-# docs/guide_reference.txt 末尾の
-# 「SyncRequest のライフサイクル」を参照する。

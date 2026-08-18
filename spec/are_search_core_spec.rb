@@ -22,6 +22,7 @@ RSpec.describe AreSearch, "configuration" do
         original_search_body_policy = described_class.search_body_policy
         original_search_param_policy = described_class.search_param_policy
         original_database_specific = described_class.database_specific
+        original_searchable_class_setting = described_class.searchable_class_setting
         original_thread_client = Thread.current.thread_variable_get(:are_search_client)
         original_thread_client_pid = Thread.current.thread_variable_get(:are_search_client_pid)
 
@@ -47,6 +48,7 @@ RSpec.describe AreSearch, "configuration" do
         described_class.search_body_policy = original_search_body_policy
         described_class.search_param_policy = original_search_param_policy
         described_class.database_specific = original_database_specific
+        described_class.searchable_class_setting = original_searchable_class_setting
         Thread.current.thread_variable_set(:are_search_client, original_thread_client)
         Thread.current.thread_variable_set(:are_search_client_pid, original_thread_client_pid)
     end
@@ -190,6 +192,47 @@ RSpec.describe AreSearch, "configuration" do
                 "database_specific は AreSearch::DatabaseSpecific の継承クラスを指定してください",
             )
         end
+    end
+
+    it "searchable_class_setting を設定して取得できる" do
+        setting = {
+            "Article" => {
+                default: {},
+            },
+        }
+
+        described_class.searchable_class_setting = setting
+
+        expect(described_class.searchable_class_setting).to equal(setting)
+    end
+
+    it "validate_searchable_class_setting! は設定全体をValidatorへ渡す" do
+        setting = {
+            "Article" => {
+                default: {},
+            },
+        }
+        described_class.searchable_class_setting = setting
+
+        expect(AreSearch::SearchableValidator)
+            .to receive(:validate_searchable_class_setting) do |actual_setting, errors|
+                expect(actual_setting).to equal(setting)
+                expect(errors).to eq([])
+            end
+
+        expect(described_class.validate_searchable_class_setting!).to eq(true)
+    end
+
+    it "validate_searchable_class_setting! はValidatorのエラーをArgumentErrorにする" do
+        allow(AreSearch::SearchableValidator)
+            .to receive(:validate_searchable_class_setting) do |_setting, errors|
+                errors << "first error"
+                errors << "second error"
+            end
+
+        expect do
+            described_class.validate_searchable_class_setting!
+        end.to raise_error(ArgumentError, "first error\nsecond error")
     end
 
     it "client は同一スレッド内でキャッシュされる" do
@@ -560,7 +603,7 @@ RSpec.describe AreSearch::PostgreSQLDatabaseSpecific do
                         request_sequence:    42,
                         request_sequence_at: request_sequence_at,
                     },
-                    unique_by: [:index_alias_name, :ar_model_class_name, :ar_instance_key, :sync_stage_name],
+                    unique_by: [:index_alias_name, :sync_stage_name, :ar_instance_key],
                 )
 
             described_class.upsert(

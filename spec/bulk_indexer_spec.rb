@@ -59,10 +59,12 @@ RSpec.describe AreSearch::BulkIndexer do
         allow(model_class)
             .to receive(:superclass)
             .and_return(nil)
-        allow(model_class)
-            .to receive(:are_search_get_all_sync_stage_names)
-            .with(index_target)
+        allow(index_target)
+            .to receive(:are_search_sync_stage_names)
             .and_return([sync_stage_name])
+        allow(index_target)
+            .to receive(:are_search_indexable?)
+            .and_return(true)
     end
 
     # 指定したレコードをrelationのfind_eachから順番に返す。
@@ -116,34 +118,22 @@ RSpec.describe AreSearch::BulkIndexer do
             )
 
             allow(success_record)
-                .to receive(:are_search_indexable?)
-                .with(:default, sync_stage_name)
-                .and_return(true)
-            allow(success_record)
                 .to receive(:are_search_index_data_for_index!)
                 .with(index_target, sync_stage_name)
                 .and_return(id: 1, title: "success")
 
             allow(bulk_failure_record)
-                .to receive(:are_search_indexable?)
-                .with(:default, sync_stage_name)
-                .and_return(true)
-            allow(bulk_failure_record)
                 .to receive(:are_search_index_data_for_index!)
                 .with(index_target, sync_stage_name)
                 .and_return(id: 2, title: "failure")
 
-            allow(delete_record)
+            allow(index_target)
                 .to receive(:are_search_indexable?)
-                .with(:default, sync_stage_name)
+                .with(delete_record)
                 .and_return(false)
             expect(delete_record)
                 .not_to receive(:are_search_index_data_for_index!)
 
-            allow(data_failure_record)
-                .to receive(:are_search_indexable?)
-                .with(:default, sync_stage_name)
-                .and_return(true)
             allow(data_failure_record)
                 .to receive(:are_search_index_data_for_index!)
                 .with(index_target, sync_stage_name)
@@ -308,10 +298,6 @@ RSpec.describe AreSearch::BulkIndexer do
                 .and_return(relation)
             allow_find_each(relation, [record])
             allow(record)
-                .to receive(:are_search_indexable?)
-                .with(:default, sync_stage_name)
-                .and_return(true)
-            allow(record)
                 .to receive(:are_search_index_data_for_index!)
                 .with(index_target, sync_stage_name)
                 .and_return(id: 1)
@@ -339,15 +325,11 @@ RSpec.describe AreSearch::BulkIndexer do
                 .and_return(relation)
             allow_find_each(relation, [failed_record, success_record])
 
-            allow(failed_record)
+            allow(index_target)
                 .to receive(:are_search_indexable?)
-                .with(:default, sync_stage_name)
+                .with(failed_record)
                 .and_raise(RuntimeError, "indexable failed")
 
-            allow(success_record)
-                .to receive(:are_search_indexable?)
-                .with(:default, sync_stage_name)
-                .and_return(true)
             allow(success_record)
                 .to receive(:are_search_index_data_for_index!)
                 .with(index_target, sync_stage_name)
@@ -410,10 +392,6 @@ RSpec.describe AreSearch::BulkIndexer do
                 .and_return(relation)
             allow_find_each(relation, [record])
 
-            allow(record)
-                .to receive(:are_search_indexable?)
-                .with(:default, sync_stage_name)
-                .and_return(true)
             allow(record)
                 .to receive(:are_search_index_data_for_index!)
                 .with(index_target, sync_stage_name)
@@ -671,8 +649,8 @@ RSpec.describe AreSearch::BulkIndexer do
                 .to receive(:name)
                 .and_return("ChildArticle")
 
-            expect(model_class)
-                .not_to receive(:are_search_get_all_sync_stage_names)
+            expect(index_target)
+                .not_to receive(:are_search_sync_stage_names)
             expect(model_class)
                 .not_to receive(:all)
             expect(AreSearch::EsAdapter)
@@ -687,9 +665,8 @@ RSpec.describe AreSearch::BulkIndexer do
         end
 
         it "IndexTargetに存在しないstageは拒否する" do
-            allow(model_class)
-                .to receive(:are_search_get_all_sync_stage_names)
-                .with(index_target)
+            allow(index_target)
+                .to receive(:are_search_sync_stage_names)
                 .and_return(["other"])
 
             expect do

@@ -5,16 +5,28 @@ require "tmpdir"
 require "fileutils"
 
 RSpec.describe AreSearch::IndexTarget do
-    let(:target_mappings) do
+    let(:target_properties) do
         {
-            default: {
-                index_settings: {
-                    max_result_window: 2_000,
-                },
-                dynamic:    "strict",
-                properties: {
-                    id:    { type: "long" },
-                    title: { type: "text" },
+            id:    { type: "long" },
+            title: { type: "text" },
+        }
+    end
+
+    let(:target_setting) do
+        {
+            settings: {
+                max_result_window: 2_000,
+            },
+            mappings: {
+                dynamic: "strict",
+            },
+            properties_method: :default_properties,
+            indexable_method: :default_indexable?,
+            stages: {
+                "default" => {
+                    data_method: :default_search_data,
+                    enqueue: true,
+                    after_commit: true,
                 },
             },
         }
@@ -26,7 +38,7 @@ RSpec.describe AreSearch::IndexTarget do
             name:                     "Article",
             superclass:               nil,
             are_search_ar_table_name: "articles",
-            are_search_index_mappings:   target_mappings,
+            default_properties:       target_properties,
         )
     end
 
@@ -36,18 +48,18 @@ RSpec.describe AreSearch::IndexTarget do
 
     around do |example|
         original_index_operation_enabled = AreSearch.index_operation_enabled
+        original_searchable_class_setting = AreSearch.searchable_class_setting
         AreSearch.index_operation_enabled = true
+        AreSearch.searchable_class_setting = {
+            "Article" => {
+                default: target_setting,
+            },
+        }
 
         example.run
     ensure
         AreSearch.index_operation_enabled = original_index_operation_enabled
-    end
-
-    before do
-        allow(model_class)
-            .to receive(:are_search_get_all_sync_stage_names)
-            .with(index_target)
-            .and_return(["default"])
+        AreSearch.searchable_class_setting = original_searchable_class_setting
     end
 
     describe "同一性" do
@@ -80,12 +92,29 @@ RSpec.describe AreSearch::IndexTarget do
                 "OtherArticle",
                 name:                     "OtherArticle",
                 are_search_ar_table_name: "articles",
-                are_search_index_mappings:   target_mappings,
             )
+            AreSearch.searchable_class_setting["OtherArticle"] = {
+                default: target_setting,
+            }
             first_index_target = described_class.new(model_class, :default)
             second_index_target = described_class.new(other_model_class, :default)
 
             expect(first_index_target).not_to eq(second_index_target)
+        end
+    end
+
+    describe "設定参照" do
+        it "initializeでsearchable_class_settingを一度だけ解決して保持する" do
+            expect(described_class)
+                .to receive(:searchable_class_setting_for)
+                .once
+                .and_call_original
+
+            initialized_index_target = described_class.new(model_class, :default)
+
+            expect(initialized_index_target.are_search_sync_stage_names).to eq(["default"])
+            expect(initialized_index_target.are_search_sync_stage_names_on_enqueue).to eq(["default"])
+            expect(initialized_index_target.are_search_sync_stage_names_on_after_commit).to eq(["default"])
         end
     end
 
@@ -103,13 +132,13 @@ RSpec.describe AreSearch::IndexTarget do
         it "are_search_ar_table_name と index_target_name の組み合わせが異なる index 名を区別する" do
             user_event_model = double(
                 "UserEvent",
+                name:                     "Article",
                 are_search_ar_table_name: "user",
-                are_search_index_mappings: { events_daily: target_mappings[:default] },
             )
             user_events_daily_model = double(
                 "UserEventsDaily",
+                name:                     "Article",
                 are_search_ar_table_name: "user_events",
-                are_search_index_mappings: { daily: target_mappings[:default] },
             )
 
             user_event_index = described_class.new(user_event_model, :events_daily)
@@ -121,8 +150,27 @@ RSpec.describe AreSearch::IndexTarget do
 
     end
 
+    describe "#are_search_index_settings" do
+        it "設定settingsを複製しanalysisをAreSearch設定で上書きする" do
+            settings = index_target.are_search_index_settings
+
+            expect(settings).to eq(
+                max_result_window: 2_000,
+                analysis: AreSearch.analyzer_settings[:analysis],
+            )
+            expect(settings).not_to equal(target_setting[:settings])
+        end
+
+        it "返したsettingsを変更しても元設定を汚さない" do
+            settings = index_target.are_search_index_settings
+            settings[:max_result_window] = 3_000
+
+            expect(target_setting[:settings][:max_result_window]).to eq(2_000)
+        end
+    end
+
     describe "#are_search_index_mappings" do
-        it "index_settings を除外し予約フィールドを含めない" do
+        it "設定mappingsへpropertiesを追加し予約フィールドを含めない" do
             mappings = index_target.are_search_index_mappings
 
             expect(mappings).to eq(
@@ -143,13 +191,11 @@ RSpec.describe AreSearch::IndexTarget do
         it "properties を元定義とは別 Hash で返す" do
             mappings = index_target.are_search_index_mappings
 
-            expect(mappings[:properties]).not_to equal(
-                target_mappings[:default][:properties],
-            )
+            expect(mappings[:properties]).not_to equal(target_properties)
 
             mappings[:properties][:extra] = { type: "keyword" }
 
-            expect(target_mappings[:default][:properties]).not_to have_key(:extra)
+            expect(target_properties).not_to have_key(:extra)
         end
     end
 
@@ -174,20 +220,32 @@ RSpec.describe AreSearch::IndexTarget do
         end
 
         context "利用側が _source を指定している場合" do
-            let(:target_mappings) do
+            let(:target_properties) do
                 {
-                    default: {
-                        index_settings: {
-                            max_result_window: 2_000,
-                        },
+                    id:    { type: "long" },
+                    title: { type: "text" },
+                    body:  { type: "text" },
+                }
+            end
+
+            let(:target_setting) do
+                {
+                    settings: {
+                        max_result_window: 2_000,
+                    },
+                    mappings: {
                         _source: {
                             includes: [:title],
                             excludes: [:body],
                         },
-                        properties: {
-                            id:    { type: "long" },
-                            title: { type: "text" },
-                            body:  { type: "text" },
+                    },
+                    properties_method: :default_properties,
+                    indexable_method: :default_indexable?,
+                    stages: {
+                        "default" => {
+                            data_method: :default_search_data,
+                            enqueue: true,
+                            after_commit: true,
                         },
                     },
                 }
@@ -209,7 +267,7 @@ RSpec.describe AreSearch::IndexTarget do
             it "予約フィールドを追加しても元の _source 定義を汚さない" do
                 index_target.are_search_index_mappings_for_index
 
-                expect(target_mappings[:default][:_source]).to eq(
+                expect(target_setting[:mappings][:_source]).to eq(
                     includes: [:title],
                     excludes: [:body],
                 )
@@ -219,12 +277,10 @@ RSpec.describe AreSearch::IndexTarget do
         it "予約フィールド mapping を足しても元定義を汚さない" do
             index_target.are_search_index_mappings_for_index
 
-            original_properties = target_mappings[:default][:properties]
-
-            expect(original_properties).not_to have_key(
+            expect(target_properties).not_to have_key(
                 AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME,
             )
-            expect(original_properties).not_to have_key(
+            expect(target_properties).not_to have_key(
                 AreSearch::IndexDefinition::RESERVED_AR_INSTANCE_KEY_FIELD_NAME,
             )
         end
@@ -366,6 +422,90 @@ RSpec.describe AreSearch::IndexTarget do
                 .and_return(false)
 
             expect(index_target.are_search_sync_stage_syncable?("default")).to eq(true)
+        end
+    end
+
+    describe "processing中SyncRequestの存在確認" do
+        before do
+            allow(AreSearch)
+                .to receive(:index_prefix)
+                .and_return("test")
+        end
+
+        it "対象IndexTargetでprocessing_tokenを持つSyncRequestだけを判定する" do
+            AreSearch::SyncRequest.create!(
+                ar_model_class_name: "Article",
+                index_target_name:   "default",
+                ar_instance_key:     "1",
+                index_alias_name:    "test__articles__default",
+                sync_stage_name:     "default",
+                request_sequence:    1,
+                request_sequence_at: Time.zone.now,
+                processing_token:    nil,
+            )
+            AreSearch::SyncRequest.create!(
+                ar_model_class_name: "Article",
+                index_target_name:   "other",
+                ar_instance_key:     "2",
+                index_alias_name:    "test__articles__other",
+                sync_stage_name:     "default",
+                request_sequence:    2,
+                request_sequence_at: Time.zone.now,
+                processing_token:    "other-token",
+            )
+
+            expect(index_target.are_search_processing_sync_request_exists?).to eq(false)
+
+            AreSearch::SyncRequest.create!(
+                ar_model_class_name: "Article",
+                index_target_name:   "default",
+                ar_instance_key:     "3",
+                index_alias_name:    "test__articles__default",
+                sync_stage_name:     "default",
+                request_sequence:    3,
+                request_sequence_at: Time.zone.now,
+                processing_token:    "target-token",
+            )
+
+            expect(index_target.are_search_processing_sync_request_exists?).to eq(true)
+        end
+
+        it "対象stageでprocessing_tokenを持つSyncRequestだけを判定する" do
+            AreSearch::SyncRequest.create!(
+                ar_model_class_name: "Article",
+                index_target_name:   "default",
+                ar_instance_key:     "1",
+                index_alias_name:    "test__articles__default",
+                sync_stage_name:     "default",
+                request_sequence:    1,
+                request_sequence_at: Time.zone.now,
+                processing_token:    nil,
+            )
+            AreSearch::SyncRequest.create!(
+                ar_model_class_name: "Article",
+                index_target_name:   "default",
+                ar_instance_key:     "2",
+                index_alias_name:    "test__articles__default",
+                sync_stage_name:     "with_external_file",
+                request_sequence:    2,
+                request_sequence_at: Time.zone.now,
+                processing_token:    "other-stage-token",
+            )
+
+            expect(index_target.are_search_processing_sync_stage_sync_request_exists?("default")).to eq(false)
+
+            AreSearch::SyncRequest.create!(
+                ar_model_class_name: "Article",
+                index_target_name:   "default",
+                ar_instance_key:     "3",
+                index_alias_name:    "test__articles__default",
+                sync_stage_name:     "default",
+                request_sequence:    3,
+                request_sequence_at: Time.zone.now,
+                processing_token:    "target-stage-token",
+            )
+
+            expect(index_target.are_search_processing_sync_stage_sync_request_exists?("default")).to eq(true)
         end
     end
 
@@ -562,16 +702,10 @@ RSpec.describe AreSearch::IndexTarget do
                     super
                 end
 
-                def self.are_search_index_mappings
+                def self.default_properties
                     {
-                        default: {
-                            index_settings: {
-                                max_result_window: 2_000,
-                            },
-                            properties: {
-                                title: { type: "text" },
-                            },
-                        },
+                        id:    { type: "long" },
+                        title: { type: "text" },
                     }
                 end
             end
@@ -637,17 +771,10 @@ RSpec.describe AreSearch::IndexTarget do
                     super
                 end
 
-                def self.are_search_index_mappings
+                def self.default_properties
                     {
-                        default: {
-                            index_settings: {
-                                max_result_window: 2_000,
-                            },
-                            properties: {
-                                id:    { type: "long" },
-                                title: { type: "text" },
-                            },
-                        },
+                        id:    { type: "long" },
+                        title: { type: "text" },
                     }
                 end
             end
@@ -744,7 +871,7 @@ RSpec.describe AreSearch::IndexTarget do
         end
 
         it "Searchable を継承した子クラスからは拒否する" do
-            searchable_parent = double("searchable_parent")
+            searchable_parent = double("searchable_parent", name: "Article")
             allow(searchable_parent)
                 .to receive(:include?)
                 .with(AreSearch::Searchable)
@@ -755,7 +882,6 @@ RSpec.describe AreSearch::IndexTarget do
                 name:                     "SpecialArticle",
                 superclass:               searchable_parent,
                 are_search_ar_table_name: "articles",
-                are_search_index_mappings:   target_mappings,
             )
             child_index_target = described_class.new(
                 child_model_class,
@@ -789,7 +915,10 @@ RSpec.describe AreSearch::IndexTarget do
             expect(AreSearch::IndexManager)
                 .to receive(:reindex) do |index_alias_name, index_settings, mappings, operation, result, &block|
                     expect(index_alias_name).to eq("test__articles__default")
-                    expect(index_settings).to eq(max_result_window: 2_000)
+                    expect(index_settings).to eq(
+                        max_result_window: 2_000,
+                        analysis: AreSearch.analyzer_settings[:analysis],
+                    )
                     expect(mappings).to eq(index_target.are_search_index_mappings_for_index)
                     expect(operation).to eq("create_index")
                     expect(block.call).to eq(true)
@@ -813,6 +942,31 @@ RSpec.describe AreSearch::IndexTarget do
     end
 
     describe "#are_search_reindex" do
+        let(:target_setting) do
+            {
+                settings: {
+                    max_result_window: 2_000,
+                },
+                mappings: {
+                    dynamic: "strict",
+                },
+                properties_method: :default_properties,
+                indexable_method: :default_indexable?,
+                stages: {
+                    "default" => {
+                        data_method: :default_search_data,
+                        enqueue: true,
+                        after_commit: true,
+                    },
+                    "with_external_file" => {
+                        data_method: :with_external_file_search_data,
+                        enqueue: false,
+                        after_commit: false,
+                    },
+                },
+            }
+        end
+
         it "index 操作が許可されていない場合は IndexOperationViolation を出す" do
             AreSearch.index_operation_enabled = false
 
@@ -834,11 +988,6 @@ RSpec.describe AreSearch::IndexTarget do
         end
 
         it "firstならallの先頭stageでreindexする" do
-            allow(model_class)
-                .to receive(:are_search_get_all_sync_stage_names)
-                .with(index_target)
-                .and_return(["default", "with_external_file"])
-
             expect(AreSearch::Reindexer)
                 .to receive(:reindex_index_target)
                 .with(index_target, "default")
@@ -850,11 +999,6 @@ RSpec.describe AreSearch::IndexTarget do
         end
 
         it "lastならallの末尾stageでreindexする" do
-            allow(model_class)
-                .to receive(:are_search_get_all_sync_stage_names)
-                .with(index_target)
-                .and_return(["default", "with_external_file"])
-
             expect(AreSearch::Reindexer)
                 .to receive(:reindex_index_target)
                 .with(index_target, "with_external_file")
@@ -866,11 +1010,6 @@ RSpec.describe AreSearch::IndexTarget do
         end
 
         it "firstとlast以外は拒否する" do
-            allow(model_class)
-                .to receive(:are_search_get_all_sync_stage_names)
-                .with(index_target)
-                .and_return(["default"])
-
             expect(AreSearch::Reindexer)
                 .not_to receive(:reindex_index_target)
 
@@ -883,21 +1022,12 @@ RSpec.describe AreSearch::IndexTarget do
     describe "#are_search_delete!" do
         let(:searchable_model_class) do
             Class.new do
-                def self.are_search_ar_table_name
-                    "articles"
+                def self.name
+                    "Article"
                 end
 
-                def self.are_search_index_mappings
-                    {
-                        default: {
-                            index_settings: {
-                                max_result_window: 2_000,
-                            },
-                            properties: {
-                                title: { type: "text" },
-                            },
-                        },
-                    }
+                def self.are_search_ar_table_name
+                    "articles"
                 end
             end
         end
@@ -952,12 +1082,12 @@ RSpec.describe AreSearch::IndexTarget do
     describe "#are_search_sync" do
         let(:searchable_model_class) do
             Class.new do
-                def self.are_search_ar_table_name
-                    "articles"
+                def self.name
+                    "Article"
                 end
 
-                def self.are_search_get_all_sync_stage_names(_index_target_name)
-                    ["default"]
+                def self.are_search_ar_table_name
+                    "articles"
                 end
             end
         end

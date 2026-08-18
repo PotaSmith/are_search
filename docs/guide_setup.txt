@@ -23,6 +23,7 @@ Gemfile に追加する。
 主に以下のファイルが生成される。
 
     config/initializers/are_search.rb
+    config/are_search_searchable.rb
     db/migrate/xxxxxxxxxxxxxx_create_are_search_tables.rb
 
 AreSearch は標準のDB固有処理として PostgreSQL 向け実装を使用する。
@@ -36,7 +37,10 @@ are_search_sync_requests を別データベースへ分離しない。
 # 2. イニシャライザ
 ================================================================
 
-config/initializers/are_search.rb で Elasticsearch クライアントと index_prefix を設定する。
+config/initializers/are_search.rb で searchable_class_setting の設定ファイルを読み込み、
+Elasticsearch クライアントと index_prefix を設定する。
+
+    load Rails.root.join("config", "are_search_searchable.rb")
 
     AreSearch.setup(
         index_prefix: "#{ConfVars.get(:are_search, :index_prefix)}_#{Rails.env}"
@@ -69,6 +73,7 @@ index target の alias 名は以下の形式になる。
 
     {index_prefix}__{are_search_ar_table_name}__{index_target_name}__{timestamp}
 
+are_search_ar_table_name は既定では Active Record の table_name を使用する。
 index_prefix、are_search_ar_table_name、index_target_name の名前制約は guide_reference.txt を参照する。
 index_prefix に空文字列は指定できない。
 
@@ -81,80 +86,84 @@ Elasticsearch::Client.new の設定:
     https://www.elastic.co/docs/reference/elasticsearch/clients/ruby/advanced-config
 
 
-# 3. モデル定義
+# 3. モデル定義とIndexTarget設定
 ================================================================
 
-検索対象モデルへ AreSearch::Searchable を include し、mappings、sync stage、投入データを定義する。
+検索対象モデルへ AreSearch::Searchable を include し、設定から参照するメソッドを定義する。
 
     class Article < ApplicationRecord
         include AreSearch::Searchable
 
-        def self.are_search_ar_table_name
-            "search_articles"
-        end
-
-        def self.are_search_index_mappings
+        def self.default_properties
             {
-                default: {
-                    index_settings: {
-                        max_result_window: 2_000,
-                    },
-                    properties: {
-                        id:         { type: "long" },
-                        user_id:    { type: "long" },
-                        updated_at: { type: "date" },
-                        title: {
-                            type:            "text",
-                            analyzer:        "cjk_index_analyzer",
-                            search_analyzer: "cjk_search_analyzer",
-                        },
-                        body: {
-                            type:            "text",
-                            analyzer:        "cjk_index_analyzer",
-                            search_analyzer: "cjk_search_analyzer",
-                        },
-                        status: { type: "keyword" },
-                    },
+                id:         { type: "long" },
+                user_id:    { type: "long" },
+                updated_at: { type: "date" },
+                title: {
+                    type:            "text",
+                    analyzer:        "cjk_index_analyzer",
+                    search_analyzer: "cjk_search_analyzer",
                 },
+                body: {
+                    type:            "text",
+                    analyzer:        "cjk_index_analyzer",
+                    search_analyzer: "cjk_search_analyzer",
+                },
+                status: { type: "keyword" },
             }
         end
 
-        def self.are_search_all_sync_stage_names
+        def default_indexable?
+            true
+        end
+
+        def default_search_data
             {
-                default: ["default"],
+                id:         id,
+                user_id:    user_id,
+                updated_at: updated_at,
+                title:      title,
+                body:       body,
+                status:     status,
             }
-        end
-
-        def are_search_index_data(index_target_name, sync_stage_name)
-            case [index_target_name, sync_stage_name]
-            when [:default, "default"]
-                {
-                    id:         id,
-                    user_id:    user_id,
-                    updated_at: updated_at,
-                    title:      title,
-                    body:       body,
-                    status:     status,
-                }
-            else
-                {}
-            end
         end
     end
 
-are_search_ar_table_name は index 名に使用する Active Record 側の識別名。
-既定では table_name を返す。
-変更する場合は Searchable を include した継承系統の上位モデルでオーバーライドする。
-STI の子クラスではオーバーライドできない。
+config/are_search_searchable.rb で、モデルごとの IndexTarget と sync stage を設定する。
+生成される config/initializers/are_search.rb の先頭からこのファイルを読み込む。
 
-モデル定義の各APIの詳細は guide_reference.txt、IndexTarget と sync stage の使い分けは
+    AreSearch.searchable_class_setting = {
+        "Article" => {
+            default: {
+                settings: {
+                    max_result_window: 2_000,
+                },
+                mappings: {},
+                properties_method: :default_properties,
+                indexable_method: :default_indexable?,
+                stages: {
+                    "default" => {
+                        data_method: :default_search_data,
+                        enqueue: true,
+                        after_commit: true,
+                    },
+                },
+            },
+        },
+    }
+
+properties_method はクラスメソッド、indexable_method と data_method は引数なしのインスタンスメソッドを指定する。
+stages の enqueue は保存時に SyncRequest を作るか、after_commit は commit 後に同期を開始するかを指定する。
+
+設定の詳細は guide_reference.txt、IndexTarget と sync stage の使い分けは
 guide_index_targets_and_stages.txt を参照する。
 
 
 # 4. モデル設定を確認する
 ================================================================
 
-Searchable を include している全モデルを確認する。
+AreSearch.searchable_class_setting は Rails の after_initialize で検査される。
+さらに Searchable を include している全モデルと STI 子クラスの設定メソッドを確認する。
 
     bundle exec rake are_search:check_all_models
 
@@ -260,3 +269,4 @@ BulkIndexer サンプルの配置、設定、実行方法は guide_bulk_indexer.
     guide_operations.txt                reindex、同期、clean up、sync lock、障害対応
     guide_bulk_indexer.txt              大規模データの投入と切り替え
     guide_reference.txt                 設定、データ定義、メソッド一覧
+

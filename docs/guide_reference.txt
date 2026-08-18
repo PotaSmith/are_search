@@ -12,7 +12,7 @@ AreSearch リファレンス
 ================================================================
 
 Elasticsearch client と index_prefix は AreSearch.setup で指定する。
-その他の設定は AreSearch.setup 後に指定できる。
+その他の設定は AreSearch.setup の前後に関係なく指定できる。
 
     AreSearch.sync_request_delay             = 120
     AreSearch.max_sync_try_count             = 100
@@ -29,6 +29,7 @@ Elasticsearch client と index_prefix は AreSearch.setup で指定する。
     AreSearch.analyzer_settings              = AreSearch.analyzer_settings
     AreSearch.logger                         = Rails.logger
     AreSearch.database_specific              = AreSearch::PostgreSQLDatabaseSpecific
+    AreSearch.searchable_class_setting       = {}
 
 
 ## 1-1. setup
@@ -154,7 +155,7 @@ index 作成時に Elasticsearch の settings へ渡す analyzer 設定。
     cjk_index_analyzer
     cjk_search_analyzer
 
-変更する場合は are_search_index_mappings から参照する analyzer をすべて定義する。
+変更する場合は properties_method が返す field 定義から参照する analyzer をすべて定義する。
 変更後は対象targetの reindex が必要。
 
 
@@ -268,142 +269,180 @@ sync request の採番と登録で使用するDB固有処理を指定する。
     AreSearch.database_specific = ApplicationDatabaseSpecific
 
 
-# 2. index_settings
+# 2. searchable_class_setting
 ================================================================
 
-index_settings は are_search_index_mappings の target ごとに指定する。
-定義例は「3. are_search_index_mappings」を参照する。
-Elasticsearch の index 設定を指定できる。
+Searchableモデルの IndexTarget・sync stage 構成は AreSearch.searchable_class_setting へまとめて指定する。
+生成される config/are_search_searchable.rb に定義する。
+生成される config/initializers/are_search.rb の先頭からこのファイルを読み込む。
+
+    AreSearch.searchable_class_setting = {
+        "Article" => {
+            default: {
+                index_target_name_alias: :current,
+                settings: {
+                    max_result_window: 2_000,
+                },
+                mappings: {
+                    _source: {
+                        includes: [:title],
+                    },
+                },
+                properties_method: :default_properties,
+                indexable_method: :default_indexable?,
+                stages: {
+                    "default" => {
+                        data_method: :default_search_data,
+                        enqueue: true,
+                        after_commit: true,
+                    },
+                },
+            },
+            _callbacks: {
+                before_sync_check: :default_before_sync_check,
+                after_sync_callback: :default_after_sync_callback,
+            },
+        },
+    }
+
+トップレベルのkeyはモデルクラス名の String。
+モデル設定内では IndexTarget 名を Symbol で指定し、_callbacks だけを予約keyとして使用する。
+
+Rails の after_initialize で searchable_class_setting 全体を検査する。
+STIでは Searchable を include した継承系統の上位モデルだけを設定し、子クラスはその設定を使用する。
 
 
-## 2-1. max_result_window
+## 2-1. index_target_name_alias
 ----------------------------------------------------------------
 
-page / per_page で取得できる範囲の上限。
-複数target検索では対象targetの最小値を使用する。
+IndexTargetを別名から取得する場合に指定する。省略できる。
 
-page と per_page から算出した開始位置が max_result_window の範囲内か確認する。
+    index_target_name_alias: :current
+
+取得する。
+
+    Article.are_search_index_target_alias(:current)
+
+同じモデル設定内で alias 名は重複できない。
+
+
+## 2-2. settings
+----------------------------------------------------------------
+
+Elasticsearch index の settings を Hash で指定する。必須。
+analysis は AreSearch.analyzer_settings を使用するため、ここでは指定できない。
+
+    settings: {
+        max_result_window: 2_000,
+    }
+
+max_result_window は正の Integer で指定する。
+複数target検索では対象targetの最小値を使用する。
 設定変更後は対象targetを reindex して新しい設定を使用する。
 
 
-# 3. are_search_index_mappings
-================================================================
+## 2-3. mappings
+----------------------------------------------------------------
 
-クラスメソッドで index_target_name ごとの定義を返す。
+properties 以外の Elasticsearch mappings を Hash で指定する。必須。
+properties は properties_method の戻り値を使用するため、ここでは指定できない。
 
-    def self.are_search_index_mappings
-        {
-            default: {
-                index_settings: {
-                    max_result_window: 2_000,
-                },
-                _source: {
-                    includes: [:title],
-                },
-                properties: {
-                    id:    { type: "long" },
-                    title: { type: "text" },
-                },
-            },
-        }
-    end
-
-注意点。
-
-    _source は有効な構成を使用する
-    field_name は検索body policyでも検査する
-
-元のフィールド値を _source 以外から取得する機能で使用する場合は store: true を指定できる。
-
-    body: {
-        type:  "text",
-        store: true,
+    mappings: {
+        _source: {
+            includes: [:title],
+        },
     }
 
-STIでは Searchable を持つ継承系統の上位モデルで定義する。
+Hash key は Symbol で指定する。
+_source.enabled に false は指定できない。
 
 
-# 4. are_search_index_data
-================================================================
+## 2-4. properties_method
+----------------------------------------------------------------
 
-インスタンスメソッドで、targetとstageの組み合わせに投入する完成ドキュメントを返す。
+IndexTarget の properties を返す、引数なしのクラスメソッド名を指定する。必須。
 
-    def are_search_index_data(index_target_name, sync_stage_name)
-        case [index_target_name, sync_stage_name]
-        when [:default, "default"]
-            {
-                id:    id,
-                title: title,
-            }
-        else
-            {}
-        end
-    end
+    properties_method: :default_properties
 
-各stageは部分更新ではなく完成ドキュメント全体を返す。
-
-
-# 5. are_search_indexable?
-================================================================
-
-レコードをtarget・stageごとに index するか指定できる。
-デフォルトは true。
-
-    def are_search_indexable?(index_target_name, sync_stage_name)
-        case [index_target_name, sync_stage_name]
-        when [:default, "default"]
-            published?
-        else
-            true
-        end
-    end
-
-同期対象にしない場合は false を返す。
-その target の検索対象から外す用途で使用する。
-
-
-# 6. sync stage の設定とコールバック
-================================================================
-
-利用可能なstage、保存時に要求を作るstage、commit後に開始するstageをクラスメソッドで指定する。
-
-    def self.are_search_all_sync_stage_names
+    def self.default_properties
         {
-            default: ["default"],
+            id:    { type: "long" },
+            title: { type: "text", store: true },
         }
     end
 
-    def self.are_search_sync_stage_names_on_enqueue
-        {
-            default: ["default"],
-        }
+戻り値は Hash。field_name と Hash key は Symbol で指定する。
+各fieldには :type が必要。field_name は search body policy でも検査する。
+STI 子クラスでは properties_method をオーバーライドできない。
+
+
+## 2-5. indexable_method
+----------------------------------------------------------------
+
+その IndexTarget へレコードを index するか返す、引数なしのインスタンスメソッド名を指定する。必須。
+
+    indexable_method: :default_indexable?
+
+    def default_indexable?
+        published?
     end
 
-    def self.are_search_sync_stage_names_on_after_commit
-        {
-            default: ["default"],
-        }
-    end
+true の場合はindexし、それ以外はその IndexTarget からdeleteする。
+indexable_method は IndexTarget 単位であり、stageごとには分かれない。
 
-are_search_sync_stage_names_on_enqueue を省略すると are_search_all_sync_stage_names と同じstageを使用する。
-are_search_sync_stage_names_on_after_commit を省略すると are_search_all_sync_stage_names と同じstageを使用する。
 
-保存時に要求を作るstageだけを are_search_sync_stage_names_on_enqueue に含める。
-commit後に直接同期またはJob登録を開始するstageだけを are_search_sync_stage_names_on_after_commit に含める。
+## 2-6. stages
+----------------------------------------------------------------
 
-同期開始前に条件を確認する場合は are_search_before_sync_check を定義する。
-デフォルトは true。
+IndexTargetで使用する sync stage を Hash で設定順に定義する。1件以上必要。
 
-    def self.are_search_before_sync_check(ar_instance_key, index_target, sync_request)
+    stages: {
+        "default" => {
+            data_method: :default_search_data,
+            enqueue: true,
+            after_commit: true,
+        },
+        "with_external_file" => {
+            data_method: :with_external_file_search_data,
+            enqueue: true,
+            after_commit: false,
+        },
+    }
+
+各stageには data_method、enqueue、after_commit が必要。
+
+    data_method
+        完成ドキュメントを返す引数なしのインスタンスメソッド名。
+
+    enqueue
+        保存・touch・削除時に SyncRequest を作る場合は true。
+
+    after_commit
+        commit後に direct 同期またはJob登録を開始する場合は true。
+        true の場合は enqueue も true にする。
+
+stageの定義順は reindex の stage_position: :first / :last で使用する。
+
+
+## 2-7. _callbacks
+----------------------------------------------------------------
+
+モデル単位の同期callbackを指定する。省略できる。
+
+    _callbacks: {
+        before_sync_check: :default_before_sync_check,
+        after_sync_callback: :default_after_sync_callback,
+    }
+
+指定するメソッドはいずれもクラスメソッドで、3引数を受け取る。
+
+    def self.default_before_sync_check(ar_instance_key, index_target, sync_request)
         ready?
     end
 
 false の間はその要求の同期を開始しない。
 
-同期後に利用側処理を行う場合は are_search_after_sync_callback を定義する。
-デフォルトでは何もしない。
-
-    def self.are_search_after_sync_callback(record, index_target, sync_request)
+    def self.default_after_sync_callback(record, index_target, sync_request)
         return if record.nil?
 
         record.are_search_upsert_sync_request(
@@ -413,6 +452,56 @@ false の間はその要求の同期を開始しない。
     end
 
 are_search_upsert_sync_request は指定した IndexTarget・stage の sync request を登録または更新する。
+
+
+# 3. properties_method の戻り値
+================================================================
+
+properties_method は、その IndexTarget の properties 全体を返す。
+元のフィールド値を _source 以外から取得する機能で使用する場合は store: true を指定できる。
+
+    body: {
+        type:  "text",
+        store: true,
+    }
+
+properties 自体は searchable_class_setting の mappings へ指定しない。
+
+
+# 4. data_method の戻り値
+================================================================
+
+data_method は、指定stageへ投入する完成ドキュメント全体を Hash で返す。
+
+    def default_search_data
+        {
+            id:    id,
+            title: title,
+        }
+    end
+
+各stageは部分更新ではない。
+複数stageで同じ完成ドキュメントを使用する場合は、同じ data_method を指定できる。
+
+
+# 5. indexable_method
+================================================================
+
+indexable_method は IndexTarget 単位の対象判定。
+
+    def default_indexable?
+        published?
+    end
+
+true のレコードは data_method の完成ドキュメントを index する。
+true 以外のレコードはその IndexTarget からdeleteする。
+
+
+# 6. sync stage とコールバック
+================================================================
+
+保存時・after_commit の対象は stages 内の enqueue / after_commit でstageごとに指定する。
+重いstageをrakeへ残す場合は enqueue: true、after_commit: false にする。
 
 指定したsync requestが存在するか確認する場合は are_search_sync_request_exists? を使用する。
 
@@ -444,6 +533,8 @@ IndexTargetからalias名、index設定、mappingを取得できる。
 
     article_index.are_search_search("Rails", fields: [:title, :body])
     article_index.are_search_index_target_syncable?
+    article_index.are_search_processing_sync_request_exists?
+    article_index.are_search_processing_sync_stage_sync_request_exists?("default")
     article_index.are_search_index_alias_exists?
     article_index.are_search_create_index
     article_index.are_search_reindex(stage_position: :first)
@@ -462,6 +553,9 @@ are_search_create_index は、その IndexTarget 用の空の物理indexを作�
 
 are_search_bulk_index は、指定stageの完成ドキュメントを既存aliasへbulk投入する。
 recover: true を指定すると、同じ result_dir に記録された未解決の失敗IDを再処理する。
+
+are_search_processing_sync_request_exists? は、そのIndexTargetで processing_token を持つSyncRequestが存在するか返す。
+are_search_processing_sync_stage_sync_request_exists? は、指定stageに限定して同じ確認を行う。
 
 stageを使用する直接操作。
 
@@ -629,7 +723,7 @@ AreSearch は次の名前を共通形式で検査する。
     index_prefix
     are_search_ar_table_name
     index_target_name
-    are_search_index_mappings の field_name
+    properties_method が返す field_name
     sync_stage_name
 
 共通形式。
@@ -680,8 +774,8 @@ are_search_ar_table_name はデフォルトで Active Record の table_name を�
 
 この値は IndexTarget の alias 名と物理 index 名の要素に使用する。
 
-Searchableモデルの静的定義は最初に are_search_index_targets を取得するときに検査する。
-are_search:check_all_models でも同じ定義検査を行う。
+Searchableモデルの設定は Rails の after_initialize で検査する。
+are_search:check_all_models では STI 子クラスで解決される設定メソッドも含めて確認する。
 
 
 # 12. SyncRequest の状態確認
@@ -690,7 +784,7 @@ are_search:check_all_models でも同じ定義検査を行う。
 rakeで同期要求を回収するときは、are_search_sync_requests の状態項目を確認できる。
 
     request_sequence / request_sequence_at
-        同期要求の世代と、その要求が作成された時刻を確認する。
+        同期要求の世代と、その要求が発生または更新された時刻を確認する。
 
     processing_token / processing_at
         現在処理対象として扱われているかと、その処理開始時刻を確認する。
@@ -739,3 +833,4 @@ AreSearch の区切り規則で index 名の要素を連結する。
         "articles",
         "*",
     )
+

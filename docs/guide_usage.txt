@@ -167,23 +167,24 @@ mlt.fields は text または keyword 型フィールドを Symbol の Array で
         基準レコードが保存されている IndexTarget。
         instance から同じtargetを解決したときに、同じElasticsearch aliasを指す必要がある。
 
-_source から取得する例。
+_source から取得する場合は、IndexTarget の mappings で対象fieldを _source に含める。
 
-    _source: {
-        includes: [:title],
-    },
-    properties: {
-        title: { type: "text" },
-    }
-
-store: true を使用する例。
-
-    properties: {
-        body: {
-            type:  "text",
-            store: true,
+    mappings: {
+        _source: {
+            includes: [:title],
         },
     }
+
+store: true を使用する場合は、properties_method の戻り値で指定する。
+
+    def self.default_properties
+        {
+            body: {
+                type:  "text",
+                store: true,
+            },
+        }
+    end
 
 mlt.fields と like 以外の Symbol key は Elasticsearch の More Like This パラメーターとして渡す。
 min_term_freq、min_doc_freq、max_query_terms の既定値はそれぞれ 2、5、25。
@@ -694,7 +695,7 @@ fields は必須で、text または keyword 型フィールドを指定する�
         require_field_match: false,
     }
 
-fields に指定するフィールドは 検索元となるデータの設定では store: true または _source 含める。
+fields に指定するフィールドは、検索元となるデータの設定で store: true を指定するか _source に含める。
 
     body: {
         type:  "text",

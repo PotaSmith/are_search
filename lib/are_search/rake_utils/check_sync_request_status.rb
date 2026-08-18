@@ -30,67 +30,61 @@ module AreSearch
             end
 
 
-            # sync request をモデル単位で集計し、テーブル名・モデル名・総数・エラー数を返す。
+            # sync request をモデル・IndexTarget・stage単位で集計し、総数・処理中数・エラー数を返す。
             def sync_request_status_rows
                 total_counts = AreSearch::SyncRequest
-                    .group(:ar_model_class_name)
+                    .group(:ar_model_class_name, :index_target_name, :sync_stage_name)
+                    .count
+
+                processing_counts = AreSearch::SyncRequest
+                    .where.not(processing_token: nil)
+                    .group(:ar_model_class_name, :index_target_name, :sync_stage_name)
                     .count
 
                 error_counts = AreSearch::SyncRequest
                     .where.not(last_error: [nil, ""])
-                    .group(:ar_model_class_name)
+                    .group(:ar_model_class_name, :index_target_name, :sync_stage_name)
                     .count
 
                 rows = []
 
-                total_counts.each do |model_class_name, data_count|
+                total_counts.each do |group_values, data_count|
                     rows << [
-                        sync_request_model_ar_table_name(model_class_name),
-                        model_class_name.to_s,
+                        group_values[0].to_s,
+                        group_values[1].to_s,
+                        group_values[2].to_s,
                         data_count.to_s,
-                        error_counts.fetch(model_class_name, 0).to_s,
+                        processing_counts.fetch(group_values, 0).to_s,
+                        error_counts.fetch(group_values, 0).to_s,
                     ]
                 end
 
-                rows.sort_by! { |row| [row[0], row[1]] }
+                rows.sort_by! { |row| [row[0], row[1], row[2]] }
 
                 rows
             end
 
-            # sync request のエラーをテーブル名と内容で集計し、件数上位を返す。
+            # sync request のエラーをモデル・IndexTarget・stage・内容で集計し、件数上位を返す。
             def sync_request_error_status_rows(limit)
-                model_error_counts = AreSearch::SyncRequest
+                error_counts = AreSearch::SyncRequest
                     .where.not(last_error: [nil, ""])
-                    .group(:ar_model_class_name, :last_error)
+                    .group(:ar_model_class_name, :index_target_name, :sync_stage_name, :last_error)
                     .count
-
-                table_error_counts = {}
-
-                model_error_counts.each do |group_values, count|
-                    model_class_name = group_values[0]
-                    last_error = group_values[1]
-                    ar_table_name = sync_request_model_ar_table_name(model_class_name)
-                    table_error_key = [ar_table_name, last_error.to_s]
-
-                    if table_error_counts.key?(table_error_key) == false
-                        table_error_counts[table_error_key] = 0
-                    end
-
-                    table_error_counts[table_error_key] += count
-                end
 
                 rows = []
 
-                table_error_counts.each do |table_error_key, count|
+                error_counts.each do |group_values, count|
                     rows << [
-                        table_error_key[0],
-                        table_error_key[1],
+                        group_values[0].to_s,
+                        group_values[1].to_s,
+                        group_values[2].to_s,
+                        group_values[3].to_s,
                         count.to_s,
                     ]
                 end
 
                 rows.sort_by! do |row|
-                    [-row[2].to_i, row[0], row[1]]
+                    [-row[4].to_i, row[0], row[1], row[2], row[3]]
                 end
 
                 rows.first(limit)
@@ -131,18 +125,6 @@ module AreSearch
             end
 
             private
-
-            # sync request のモデル名から状態表示用の Active Record 識別名を取得する。
-            # モデルを解決できない場合はハイフンを返す。
-            def sync_request_model_ar_table_name(model_class_name)
-                model = model_class_name.to_s.safe_constantize
-
-                if model != nil && model.respond_to?(:are_search_ar_table_name)
-                    return model.are_search_ar_table_name.to_s
-                end
-
-                "-"
-            end
 
             # 端末表示上の文字幅を返す。
             # ASCII は1桁、それ以外は日本語表示を前提に2桁として数える。

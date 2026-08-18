@@ -120,10 +120,7 @@ RSpec.describe AreSearch::IndexManager do
                 .to receive(:create) do |args|
                     created_index = args[:index]
                     expect(args[:body]).to eq(
-                        settings: {
-                            analysis: {},
-                            index:    index_settings,
-                        },
+                        settings: index_settings,
                         mappings: mappings,
                     )
                 end

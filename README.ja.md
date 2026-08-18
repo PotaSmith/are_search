@@ -4,8 +4,8 @@
 
 AreSearch は、Rails でデータベースと Elasticsearch との整合性を最重要に考えた gem です。
 
-有名な Elasticsearch 用の gem を確認しても、整合性を保証する設計にはなっていません。
-管轄外だと無視している gem や、頑張っても穴が塞ぎきれていない gem しか見つけられないため、開発されたのが AreSearch です。
+一般的な Elasticsearch 用の gem は、整合性を保証する設計にはなっていません。
+管轄外だと無視している gem や、頑張っても穴が塞ぎきれていない gem しか見当たらないため、開発されたのが AreSearch です。
 
 また、AreSearch は、Elasticsearch を隠すための gem ではありません。
 
@@ -87,53 +87,64 @@ rails db:migrate
 
 ```text
 config/initializers/are_search.rb
+config/are_search_searchable.rb
 db/migrate/xxxxxxxxxxxxxx_create_are_search_tables.rb
 ```
 
 ## Usage
 
-モデルに `AreSearch::Searchable` を include します。
+モデルに `AreSearch::Searchable` を include し、設定から参照するメソッドを定義します。
 
 ```ruby
 class Article < ApplicationRecord
     include AreSearch::Searchable
 
-    def self.are_search_index_mappings
+    def self.default_properties
         {
-            default: {
-                index_settings: {
-                    max_result_window: 2_000,
-                },
-                properties: {
-                    id:     { type: "long" },
-                    title:  { type: "text", analyzer: "cjk_index_analyzer", search_analyzer: "cjk_search_analyzer" },
-                    body:   { type: "text", analyzer: "cjk_index_analyzer", search_analyzer: "cjk_search_analyzer" },
-                    status: { type: "keyword" },
-                },
-            },
+            id:     { type: "long" },
+            title:  { type: "text", analyzer: "cjk_index_analyzer", search_analyzer: "cjk_search_analyzer" },
+            body:   { type: "text", analyzer: "cjk_index_analyzer", search_analyzer: "cjk_search_analyzer" },
+            status: { type: "keyword" },
         }
     end
 
-    def self.are_search_all_sync_stage_names
-        {
-            default: ["default"],
-        }
+    def default_indexable?
+        true
     end
 
-    def are_search_index_data(index_target_name, sync_stage_name)
-        case [index_target_name, sync_stage_name]
-        when [:default, "default"]
-            {
-                id:     id,
-                title:  title,
-                body:   body,
-                status: status,
-            }
-        else
-            {}
-        end
+    def default_search_data
+        {
+            id:     id,
+            title:  title,
+            body:   body,
+            status: status,
+        }
     end
 end
+```
+
+`config/are_search_searchable.rb` で IndexTarget と sync stage を設定します。
+
+```ruby
+AreSearch.searchable_class_setting = {
+    "Article" => {
+        default: {
+            settings: {
+                max_result_window: 2_000,
+            },
+            mappings: {},
+            properties_method: :default_properties,
+            indexable_method: :default_indexable?,
+            stages: {
+                "default" => {
+                    data_method: :default_search_data,
+                    enqueue: true,
+                    after_commit: true,
+                },
+            },
+        },
+    },
+}
 ```
 
 IndexTarget は同期先の Elasticsearch index を表し、sync stage は同じ IndexTarget へ投入する完成ドキュメントの生成経路を表します。

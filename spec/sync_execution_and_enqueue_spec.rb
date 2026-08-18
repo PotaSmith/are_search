@@ -280,6 +280,33 @@ end
 RSpec.describe AreSearch::Searchable do
     let(:logger) { double("logger") }
 
+    around do |example|
+        original_searchable_class_setting = AreSearch.searchable_class_setting
+        AreSearch.searchable_class_setting = {
+            "Article" => {
+                default: {
+                    settings: {
+                        max_result_window: 2_000,
+                    },
+                    mappings: {},
+                    properties_method: :default_properties,
+                    indexable_method: :default_indexable?,
+                    stages: {
+                        "default" => {
+                            data_method: :default_search_data,
+                            enqueue: true,
+                            after_commit: true,
+                        },
+                    },
+                },
+            },
+        }
+
+        example.run
+    ensure
+        AreSearch.searchable_class_setting = original_searchable_class_setting
+    end
+
     before do
         allow(logger).to receive(:debug)
         allow(Rails).to receive(:logger).and_return(logger)
@@ -339,26 +366,21 @@ RSpec.describe AreSearch::Searchable do
                 Struct.new(:human).new("Article")
             end
 
-            def self.are_search_index_mappings
+            def self.name
+                "Article"
+            end
+
+            def self.default_properties
                 {
-                    default: {
-                        index_settings: {
-                            max_result_window: 2_000,
-                        },
-                        properties: {
-                            title: { type: "text" },
-                        },
-                    },
+                    title: { type: "text" },
                 }
             end
 
-            def self.are_search_all_sync_stage_names
-                {
-                    default: ["default"],
-                }
+            def default_indexable?
+                true
             end
 
-            def are_search_index_data(_index_target_name, _sync_stage_name)
+            def default_search_data
                 { title: "hello" }
             end
 
@@ -374,9 +396,10 @@ RSpec.describe AreSearch::Searchable do
             record = model_class.new
             errors = double("errors")
 
-            allow(record)
+            index_target = model_class.are_search_index_target(:default)
+            allow(index_target)
                 .to receive(:are_search_index_data)
-                .with(:default, "default")
+                .with(record, "default")
                 .and_return(
                     title: "hello",
                     are_search_reserved_ar_instance_key: "123",
@@ -410,9 +433,14 @@ RSpec.describe AreSearch::Searchable do
             data = { title: "hello" }
             errors = double("errors")
 
-            allow(record = model_class.new)
+            record = model_class.new
+            index_target = model_class.are_search_index_target(:default)
+            allow(index_target)
+                .to receive(:are_search_index_mappings)
+                .and_return(mappings)
+            allow(index_target)
                 .to receive(:are_search_index_data)
-                .with(:default, "default")
+                .with(record, "default")
                 .and_return(data)
 
             allow(record)
@@ -435,12 +463,13 @@ RSpec.describe AreSearch::Searchable do
             model_class.include(described_class)
             record = model_class.new
 
-            allow(record)
+            index_target = model_class.are_search_index_target(:default)
+            allow(index_target)
                 .to receive(:are_search_indexable?)
-                .with(:default, "default")
+                .with(record)
                 .and_return(false)
 
-            expect(record)
+            expect(index_target)
                 .not_to receive(:are_search_index_data)
 
             record.are_search_index_data_validate
@@ -456,9 +485,10 @@ RSpec.describe AreSearch::Searchable do
             record = model_class.new
             record.id = 123
 
-            allow(record)
+            index_target = model_class.are_search_index_target(:default)
+            allow(index_target)
                 .to receive(:are_search_index_data)
-                .with(:default, "default")
+                .with(record, "default")
                 .and_return(data)
 
             allow(record)
@@ -481,9 +511,10 @@ RSpec.describe AreSearch::Searchable do
             model_class.include(described_class)
             record = model_class.new
 
-            allow(record)
+            index_target = model_class.are_search_index_target(:default)
+            allow(index_target)
                 .to receive(:are_search_index_data)
-                .with(:default, "default")
+                .with(record, "default")
                 .and_raise(RuntimeError, "data failed")
 
             expect(AreSearch::IndexDataValidator)
@@ -503,46 +534,36 @@ RSpec.describe AreSearch::Searchable do
             request_sequence_at = Time.zone.now
             database_specific = class_double(AreSearch::DatabaseSpecific)
 
-            allow(model_class)
-                .to receive(:are_search_index_mappings)
-                .and_return(
-                    {
-                        default: {
-                            index_settings: {
-                                max_result_window: 2_000,
-                            },
-                            properties: {
-                                title: { type: "text" },
-                            },
-                        },
-                        archive: {
-                            index_settings: {
-                                max_result_window: 2_000,
-                            },
-                            properties: {
-                                title: { type: "text" },
+            AreSearch.searchable_class_setting = {
+                "Article" => {
+                    default: {
+                        settings: { max_result_window: 2_000 },
+                        mappings: {},
+                        properties_method: :default_properties,
+                        indexable_method: :default_indexable?,
+                        stages: {
+                            "default" => {
+                                data_method: :default_search_data,
+                                enqueue: true,
+                                after_commit: false,
                             },
                         },
                     },
-                )
-
-            allow(model_class)
-                .to receive(:are_search_all_sync_stage_names)
-                .and_return(
-                    default: ["default"],
-                    archive: ["default"],
-                )
-
-            allow(model_class)
-                .to receive(:are_search_sync_stage_names_on_enqueue)
-                .and_return(
-                    default: ["default"],
-                    archive: ["default"],
-                )
-
-            allow(model_class)
-                .to receive(:are_search_sync_stage_names_on_after_commit)
-                .and_return({})
+                    archive: {
+                        settings: { max_result_window: 2_000 },
+                        mappings: {},
+                        properties_method: :default_properties,
+                        indexable_method: :default_indexable?,
+                        stages: {
+                            "default" => {
+                                data_method: :default_search_data,
+                                enqueue: true,
+                                after_commit: false,
+                            },
+                        },
+                    },
+                },
+            }
 
             allow(AreSearch)
                 .to receive(:index_prefix)
@@ -615,7 +636,7 @@ RSpec.describe AreSearch::Searchable do
                 )
             end.to raise_error(
                 ArgumentError,
-                /are_search_all_sync_stage_names\[:default\] に存在しない stage/,
+                /IndexTarget :default に存在しない stage/,
             )
         end
     end
@@ -750,9 +771,28 @@ RSpec.describe AreSearch::Searchable do
             record = model_class.new
             record.id = 123
 
-            allow(model_class)
-                .to receive(:are_search_all_sync_stage_names)
-                .and_return(default: ["first", "second"])
+            AreSearch.searchable_class_setting = {
+                "Article" => {
+                    default: {
+                        settings: { max_result_window: 2_000 },
+                        mappings: {},
+                        properties_method: :default_properties,
+                        indexable_method: :default_indexable?,
+                        stages: {
+                            "first" => {
+                                data_method: :default_search_data,
+                                enqueue: true,
+                                after_commit: true,
+                            },
+                            "second" => {
+                                data_method: :default_search_data,
+                                enqueue: true,
+                                after_commit: true,
+                            },
+                        },
+                    },
+                },
+            }
 
             allow(AreSearch)
                 .to receive(:after_commit_mode)

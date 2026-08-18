@@ -21,7 +21,7 @@ module AreSearch
         # block が true を返した場合のみ、IndexManager 側で alias の切り替えを試みる。
         #
         # stage_position には :first または :last を指定する。
-        # are_search_all_sync_stage_names に定義された順序から、reindexに使うstageを選ぶ。
+        # IndexTargetに定義されたstage順から、reindexに使うstageを選ぶ。
         #
         # @return [Hash]
         #   :result      : :success または :not_success
@@ -32,7 +32,7 @@ module AreSearch
         def are_search_reindex(stage_position:)
             AreSearch.validate_index_operation_enabled!
 
-            sync_stage_names = model_class.are_search_get_all_sync_stage_names(self)
+            sync_stage_names = are_search_sync_stage_names
 
             sync_stage_name = nil
 
@@ -130,7 +130,7 @@ module AreSearch
             ids = []
 
             batch.each do |record|
-                next if record.are_search_indexable?(index_target.index_target_name, sync_stage_name) != true
+                next if index_target.are_search_indexable?(record) != true
 
                 body << { index: { _index: physical_index_name, _id: record.id.to_s } }
                 body << record.are_search_index_data_for_index!(index_target, sync_stage_name)

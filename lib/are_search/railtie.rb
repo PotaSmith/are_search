@@ -2,6 +2,10 @@
 
 module AreSearch
     class Railtie < Rails::Railtie
+        config.after_initialize do
+            AreSearch.validate_searchable_class_setting!
+        end
+
         generators do
             require "generators/are_search/install_generator"
             require "generators/are_search/sample_generator"
@@ -11,3 +15,4 @@ module AreSearch
         end
     end
 end
+

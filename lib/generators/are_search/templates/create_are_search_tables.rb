@@ -40,8 +40,17 @@ class <%= migration_class_name %> < ActiveRecord::Migration[<%= ActiveRecord::Mi
         end
 
         add_index :are_search_sync_requests,
-            [:ar_model_class_name, :ar_instance_key, :index_alias_name, :sync_stage_name],
+            [:index_alias_name, :sync_stage_name, :ar_instance_key],
             unique: true
+
+        add_index :are_search_sync_requests,
+            [:index_alias_name, :sync_stage_name, :request_sequence]
+
+        add_index :are_search_sync_requests,
+            [:sync_stage_name, :request_sequence_at]
+
+        add_index :are_search_sync_requests,
+            [:sync_stage_name, :processing_at]
 
 
         create_table :are_search_sync_locks, id: :bigserial do |t|

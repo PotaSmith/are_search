@@ -4,8 +4,8 @@
 
 AreSearch is a gem for Rails that treats consistency between the database and Elasticsearch as its highest priority.
 
-Even well-known Elasticsearch gems are not designed to guarantee consistency.
-Some treat this as outside their scope, while others make efforts to address it but still leave gaps. AreSearch was developed because these were the only approaches I could find.
+General-purpose Elasticsearch gems are not designed to guarantee consistency.
+I could only find gems that either treat consistency as outside their scope or try to address it but still leave gaps. AreSearch was developed in response to this.
 
 AreSearch is also not a gem for hiding Elasticsearch.
 
@@ -84,53 +84,64 @@ The main generated files are:
 
 ```text
 config/initializers/are_search.rb
+config/are_search_searchable.rb
 db/migrate/xxxxxxxxxxxxxx_create_are_search_tables.rb
 ```
 
 ## Usage
 
-Include `AreSearch::Searchable` in your model.
+Include `AreSearch::Searchable` in the model and define the methods referenced by the configuration.
 
 ```ruby
 class Article < ApplicationRecord
     include AreSearch::Searchable
 
-    def self.are_search_index_mappings
+    def self.default_properties
         {
-            default: {
-                index_settings: {
-                    max_result_window: 2_000,
-                },
-                properties: {
-                    id:     { type: "long" },
-                    title:  { type: "text", analyzer: "cjk_index_analyzer", search_analyzer: "cjk_search_analyzer" },
-                    body:   { type: "text", analyzer: "cjk_index_analyzer", search_analyzer: "cjk_search_analyzer" },
-                    status: { type: "keyword" },
-                },
-            },
+            id:     { type: "long" },
+            title:  { type: "text", analyzer: "cjk_index_analyzer", search_analyzer: "cjk_search_analyzer" },
+            body:   { type: "text", analyzer: "cjk_index_analyzer", search_analyzer: "cjk_search_analyzer" },
+            status: { type: "keyword" },
         }
     end
 
-    def self.are_search_all_sync_stage_names
-        {
-            default: ["default"],
-        }
+    def default_indexable?
+        true
     end
 
-    def are_search_index_data(index_target_name, sync_stage_name)
-        case [index_target_name, sync_stage_name]
-        when [:default, "default"]
-            {
-                id:     id,
-                title:  title,
-                body:   body,
-                status: status,
-            }
-        else
-            {}
-        end
+    def default_search_data
+        {
+            id:     id,
+            title:  title,
+            body:   body,
+            status: status,
+        }
     end
 end
+```
+
+Configure IndexTargets and sync stages in `config/are_search_searchable.rb`.
+
+```ruby
+AreSearch.searchable_class_setting = {
+    "Article" => {
+        default: {
+            settings: {
+                max_result_window: 2_000,
+            },
+            mappings: {},
+            properties_method: :default_properties,
+            indexable_method: :default_indexable?,
+            stages: {
+                "default" => {
+                    data_method: :default_search_data,
+                    enqueue: true,
+                    after_commit: true,
+                },
+            },
+        },
+    },
+}
 ```
 
 An IndexTarget represents the destination Elasticsearch index, while a sync stage represents a path for generating the complete document written to the same IndexTarget.
@@ -204,3 +215,4 @@ bundle exec rspec
 ## License
 
 The gem is available as open source under the terms of the [MIT License](https://opensource.org/licenses/MIT).
+

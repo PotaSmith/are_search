@@ -221,7 +221,7 @@ namespace :are_search do
     end
 
 
-    desc "are_search_sync_requests の sync lock・件数・エラー内容を表示する"
+    desc "are_search_sync_requests の sync lock・同期経路別件数・エラー内容を表示する"
     task check_sync_request_status: :environment do
         Rails.application.eager_load!
 
@@ -260,10 +260,12 @@ namespace :are_search do
             puts "なし"
         else
             request_headers = [
-                "テーブル名",
                 "モデル",
-                "データ数",
-                "エラー数",
+                "IndexTarget",
+                "同期stage",
+                "リクエスト数",
+                "処理中",
+                "エラー",
             ]
 
             AreSearch::RakeUtils::CheckSyncRequestStatus.fixed_width_table_lines(request_headers, request_rows).each do |line|
@@ -281,7 +283,9 @@ namespace :are_search do
             puts "なし"
         else
             error_headers = [
-                "テーブル名",
+                "モデル",
+                "IndexTarget",
+                "同期stage",
                 "内容",
                 "件数",
             ]

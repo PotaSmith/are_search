@@ -64,7 +64,7 @@ are_search_bulk_index.rb の「変更箇所」を実行対象に合わせて変�
 
 使用するstage。
 
-    sync_stage_name = "for_version_up"
+    sync_stage_name = "default"
 
 bulk送信上限。
 
@@ -171,32 +171,48 @@ recover_YYYY_MM_DD_HH_MM_SS_UUUUUU/ も履歴として保持し、編集、追�
 ================================================================
 
 ここでは、現在使用中のtargetを default、新しく構築するtargetを new_version、
-bulk中の差分回収用stageを for_version_up、通常同期stageを default とする。
+new_version の通常同期stageを default とする。
+
+検索側は IndexTarget 名を直接指定せず、次の別名から現在使用中のtargetを取得しているものとする。
+
+    Article.are_search_index_target_alias(:current)
+
+default には index_target_name_alias: :current が設定済みとする。
+新IndexTargetの差分回収専用stageは作らない。
+new_version/default の sync stage sync lock を使い、bulk中だけ同期開始を止める。
 
 
-## 10-1. 新IndexTargetとbulk用stageを追加する
+## 10-1. 新IndexTargetを追加する
 ----------------------------------------------------------------
 
-新しいIndexTargetと、bulk中の差分を残すstageをモデルへ追加する。
+AreSearch.searchable_class_setting に new_version を追加する。
+現在使用中の default は index_target_name_alias: :current を維持する。
+new_version は最初から通常同期で使用する default stage を定義し、この時点では index_target_name_alias を指定しない。
 
-    are_search_all_sync_stage_names
-        default:     ["default"]
-        new_version: ["for_version_up", "default"]
+    new_version: {
+        settings: {
+            max_result_window: 2_000,
+        },
+        mappings: {},
+        properties_method: :new_version_properties,
+        indexable_method: :new_version_indexable?,
+        stages: {
+            "default" => {
+                data_method: :new_version_search_data,
+                enqueue: true,
+                after_commit: true,
+            },
+        },
+    }
 
-    are_search_sync_stage_names_on_enqueue
-        default:     ["default"]
-        new_version: ["for_version_up"]
+モデルには properties_method、indexable_method、data_method に指定したメソッドを定義する。
 
-    are_search_sync_stage_names_on_after_commit
-        default: ["default"]
+この設定をローリングデプロイする。
+複数Webサーバがある場合は、new_version の設定が全サーバへ反映されたことを確認してからbulk準備へ進む。
+alias作成前は new_version/default の同期は完了しないが、作成された SyncRequest はDBに残る。
 
-new_version の for_version_up は enqueue するが after_commit では処理しない。
-定期実行している run_sync_requests にも for_version_up を含めない。
-
-この設定をデプロイすると、新IndexTarget用のSyncRequestが蓄積され始める。
-旧IndexTargetの通常同期は継続する。
-
-複数Webサーバがある場合は、この設定が全サーバへ反映されたことを確認してから次へ進む。
+全サーバへ反映される前に発生した更新は、この後の全件bulkでDBの現在値を取得する。
+全サーバへ反映された後の更新は new_version/default の SyncRequest も作成する。
 
 
 ## 10-2. 新IndexTargetの空indexを作成する
@@ -216,99 +232,105 @@ bulk開始前に、対象aliasが新しく作成した空indexを指している
 以前のbulk実行で使用したRESULT_DIRは再利用しない。
 
 
-## 10-3. BulkIndexerを実行する
+## 10-3. new_version/default に sync lock を取得する
 ----------------------------------------------------------------
 
-    index_target = Article.are_search_index_target(:new_version)
-    sync_stage_name = "for_version_up"
+空indexを作成したら、new_version/default に manual sync stage lock を取得する。
 
-実行中は通常同期用の run_sync_requests で for_version_up を処理しない。
+    index_target = Article.are_search_index_target(:new_version)
+    sync_stage_name = "default"
+
+    sync_lock = index_target.are_search_acquire_sync_stage_lock!(sync_stage_name)
+    raise "sync lockを取得できません" if sync_lock.nil?
+
+lock取得後は、そのstageですでに処理中になっている SyncRequest がないことを確認する。
+sync lock は新しい同期開始を止めるが、lock取得前に processing へ入った処理は継続する。
+
+    bundle exec rake are_search:check_sync_request_status
+
+モデル Article、IndexTarget new_version、同期stage default の「処理中」が0件であることを確認する。
+処理中の要求がある場合は、0件になるまでBulkIndexerを開始しない。
+
+
+## 10-4. BulkIndexerを実行する
+----------------------------------------------------------------
+
+BulkIndexerも new_version/default を使用する。
+
+    index_target = Article.are_search_index_target(:new_version)
+    sync_stage_name = "default"
+
+通常どおりbulkを実行する。
+
+    /path/to/are_search_bulk_index.sh index
+
 中断した場合は同じRESULT_DIRで index を再実行する。
 失敗レコードを再処理する場合は同じRESULT_DIRで recover を実行する。
 進行状況と失敗内容は bulk.log で確認する。
 
+bulkと必要なrecoverが完了するまで sync lock は解除しない。
+lock中も保存時の SyncRequest は作成されるため、bulk中に発生した更新は new_version/default に残る。
 
-## 10-4. bulk完了後に通常stageを追加する
+
+## 10-5. sync lockを解除して差分を回収する
 ----------------------------------------------------------------
 
-BulkIndexerが完了したら、新IndexTargetへ通常同期stageの default を追加する。
+bulkと必要なrecoverが完了したら sync lock を解除する。
 
-複数Webサーバをローリングデプロイする場合は、最初に両stageをenqueueする中間設定を全サーバへ反映する。
+    index_target.are_search_release_sync_stage_lock!(sync_stage_name)
 
-    are_search_all_sync_stage_names
-        default:     ["default"]
-        new_version: ["for_version_up", "default"]
+解除後は after_commit、Job、run_sync_requests から new_version/default を同期できる。
+まず状態を確認する。
 
-    are_search_sync_stage_names_on_enqueue
-        default:     ["default"]
-        new_version: ["for_version_up", "default"]
+    bundle exec rake are_search:check_sync_request_status
 
-    are_search_sync_stage_names_on_after_commit
-        default:     ["default"]
-        new_version: ["default"]
+SyncRequest はモデル・IndexTarget・stage単位で件数が表示される。
+new_version/default のリクエスト数を確認してから、通常の回収処理を実行する。
 
-全サーバへの反映後、for_version_up の新規enqueueを停止する。
+    bundle exec rake 'are_search:run_sync_requests[default]'
 
-    are_search_all_sync_stage_names
-        default:     ["default"]
-        new_version: ["for_version_up", "default"]
+run_sync_requests は同じstage名を持つ他のIndexTargetも対象にする。
+再度状態を確認し、new_version/default のリクエスト数が減っていることを確認する。
 
-    are_search_sync_stage_names_on_enqueue
-        default:     ["default"]
-        new_version: ["default"]
+    bundle exec rake are_search:check_sync_request_status
 
-    are_search_sync_stage_names_on_after_commit
-        default:     ["default"]
-        new_version: ["default"]
-
-複数Webサーバがある場合は、この設定も全サーバへ反映されたことを確認してから次へ進む。
-
-
-## 10-5. bulk中に蓄積した差分を回収する
-----------------------------------------------------------------
-
-for_version_up の新規SyncRequestが作成されなくなった後、run_sync_requests で回収する。
-
-    bundle exec rake 'are_search:run_sync_requests[for_version_up]'
-
-残っている for_version_up のSyncRequestがなくなるまで処理する。
-
-回収完了後、new_version を通常stageだけにする。
-
-    are_search_all_sync_stage_names
-        default:     ["default"]
-        new_version: ["default"]
-
-    are_search_sync_stage_names_on_enqueue
-        default:     ["default"]
-        new_version: ["default"]
-
-    are_search_sync_stage_names_on_after_commit
-        default:     ["default"]
-        new_version: ["default"]
-
-この設定を全サーバへ反映する。
+通常更新でも新しいSyncRequestは作成されるため、0件になることは完了条件にしない。
 
 
 ## 10-6. 検索入口を新IndexTargetへ切り替える
 ----------------------------------------------------------------
 
-新IndexTargetのbulk投入と差分回収が完了したことを確認した後、
-アプリケーションの検索入口を default から new_version へ切り替えてデプロイする。
+new_version のbulk投入と差分回収が完了したことを確認した後、
+index_target_name_alias: :current を default から new_version へ移してデプロイする。
 
-旧IndexTargetは削除せず通常同期を継続し、問題がある場合に検索入口を戻せる状態を維持する。
+    default
+        index_target_name_alias: :current を削除する。
+
+    new_version
+        index_target_name_alias: :current を追加する。
+
+その他の設定は変更しない。
+検索側は引き続き次の取得方法を使用するため、検索コードの変更は不要。
+
+    Article.are_search_index_target_alias(:current)
+
+旧IndexTargetは削除せず通常同期を継続する。
+問題がある場合は index_target_name_alias: :current を default へ戻して検索入口を戻せる状態を維持する。
 
 
 ## 10-7. 旧IndexTargetを停止する
 ----------------------------------------------------------------
 
-新IndexTargetで問題がないことを確認した後、旧IndexTargetへの新しいSyncRequest作成を停止する。
+new_versionで問題がないことを確認した後、旧IndexTargetへの新しいSyncRequest作成を停止する。
 
-複数Webサーバがある場合は、旧IndexTargetの定義をすぐ削除せず、
-まず are_search_sync_stage_names_on_enqueue と are_search_sync_stage_names_on_after_commit の対象から外した設定を全サーバへ反映する。
+旧targetのstage定義は残したまま、SyncRequestを作成している全stageの次の2項目を false にして全サーバへ反映する。
 
+    enqueue: false
+    after_commit: false
+
+その他の設定は変更しない。
 旧IndexTarget用のSyncRequestが残っている場合は、定義を残したまま処理または削除方針を決める。
-新しい要求が作成されない状態を確認した後、旧IndexTargetをモデル定義と検索対象から削除してデプロイする。
+新しい要求が作成されない状態を確認した後、旧IndexTargetを searchable_class_setting と検索対象から削除してデプロイする。
 
 
 ## 10-8. 旧Elasticsearch indexを削除する
@@ -340,33 +362,33 @@ huge_data_for_reindex は保存時にSyncRequestを作成するが、
 ## 11-1. stageを定義する
 ----------------------------------------------------------------
 
-モデルには最初から3つのstageを定義しておく。
+対象IndexTargetには最初から3つのstageを定義しておく。
 
-    def self.are_search_all_sync_stage_names
-        {
-            default: [
-                "default",
-                "huge_data",
-                "huge_data_for_reindex",
-            ],
-        }
-    end
-
-    def self.are_search_sync_stage_names_on_enqueue
-        {
-            default: [
-                "default",
-                "huge_data",
-                "huge_data_for_reindex",
-            ],
-        }
-    end
-
-    def self.are_search_sync_stage_names_on_after_commit
-        {
-            default: ["default"],
-        }
-    end
+    default: {
+        settings: {
+            max_result_window: 2_000,
+        },
+        mappings: {},
+        properties_method: :default_properties,
+        indexable_method: :default_indexable?,
+        stages: {
+            "default" => {
+                data_method: :default_search_data,
+                enqueue: true,
+                after_commit: true,
+            },
+            "huge_data" => {
+                data_method: :huge_data_search_data,
+                enqueue: true,
+                after_commit: false,
+            },
+            "huge_data_for_reindex" => {
+                data_method: :huge_data_search_data,
+                enqueue: true,
+                after_commit: false,
+            },
+        },
+    }
 
 通常の rake 同期では default と huge_data だけを指定する。
 
@@ -375,7 +397,7 @@ huge_data_for_reindex は保存時にSyncRequestを作成するが、
 huge_data_for_reindex は通常の rake 同期へ追加しない。
 
 huge_data と huge_data_for_reindex で同じ完成ドキュメントを作る場合は、
-are_search_index_data から同じデータ生成処理を呼び出してよい。
+この例のように同じ data_method を指定してよい。
 
 
 ## 11-2. Boundary操作用rakeを準備する
@@ -477,15 +499,12 @@ y を入力すると同期を開始する。
 
     bundle exec rake are_search:run_sync_request_before_boundary
 
-BoundaryTarget 以前のDBの更新は全て対象となる
-コミットが遅れているデータがあとから増える可能性がある。
-後から増えたデータは、今回の例で言えば huge_data_for_reindex ではなく
-huge_data 側で拾うため差分回収の対象外だが、安全側に倒して処理をしている。
-そのため、一度でも実行前の対象件数が0件になれば、問題ない。
+実行前の対象件数が0件になるまで同じコマンドを繰り返す。
 
     [AreSearch] Boundary同期対象 実行前 0件
 
 0件になれば、今回のbulk中に蓄積した差分回収は確認完了。
+Boundaryで回収する範囲は 11-9 を参照する。
 
 
 ## 11-7. 差分回収後に境界を削除する

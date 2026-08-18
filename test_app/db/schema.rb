@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_15_214651) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_18_072743) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -66,7 +66,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_15_214651) do
     t.string "sync_stage_name", null: false
     t.integer "sync_try_count", default: 0, null: false
     t.datetime "updated_at", null: false
-    t.index ["ar_model_class_name", "ar_instance_key", "index_alias_name", "sync_stage_name"], name: "idx_on_ar_model_class_name_ar_instance_key_index_al_eea73fbecc", unique: true
+    t.index ["index_alias_name", "sync_stage_name", "ar_instance_key"], name: "idx_on_index_alias_name_sync_stage_name_ar_instance_9415b0e07d", unique: true
+    t.index ["index_alias_name", "sync_stage_name", "request_sequence"], name: "idx_on_index_alias_name_sync_stage_name_request_seq_224f3d51af"
+    t.index ["sync_stage_name", "processing_at"], name: "idx_on_sync_stage_name_processing_at_48f1ecb85f"
+    t.index ["sync_stage_name", "request_sequence_at"], name: "idx_on_sync_stage_name_request_sequence_at_f289d2b0e5"
   end
 
   create_table "document_firsts", force: :cascade do |t|

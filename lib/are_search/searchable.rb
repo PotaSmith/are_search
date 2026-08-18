@@ -4,6 +4,55 @@ module AreSearch
     module Searchable
         extend ActiveSupport::Concern
 
+        # このクラスでの実装例
+        #
+        # def self.default_properties
+        # {
+        #     name:        { type: 'text',    analyzer: 'cjk_index_analyzer', search_analyzer: 'cjk_search_analyzer' },
+        #     documents:   { type: 'text',    analyzer: 'cjk_index_analyzer', search_analyzer: 'cjk_search_analyzer', store: true },
+        #     status:      { type: 'keyword' },
+        # }
+        #
+        # def default_indexable?
+        #     true
+        # end
+        #
+        # def default_search_data
+        # {
+        #     id:           id,
+        #     user_id:      user_id,
+        #     updated_at:   updated_at,
+        #     title:        title&.gsub(/[^[:print:]]/, ' '),
+        #     text_data:    text_data&.gsub(/[^[:print:]]/, ' '),
+        #     fulltext:     '',
+        # }
+        #
+        # def with_external_file_search_data
+        # {
+        #     id:           id,
+        #     user_id:      user_id,
+        #     updated_at:   updated_at,
+        #     title:        title&.gsub(/[^[:print:]]/, ' '),
+        #     text_data:    text_data&.gsub(/[^[:print:]]/, ' '),
+        #     fulltext:     get_huge_file_txt,
+        # }
+        #
+        # def self.default_before_sync_check(ar_instance_key, index_target, sync_request)
+        #    if sync_request.sync_stage_name == "with_external_file"
+        #        前のステージが残ってるならやらない
+        #        are_search_sync_request_exists?(ar_instance_key, index_target, "default") == false
+        #    else
+        #        true
+        #    end
+        # end
+        #
+        # def self.default_after_sync_callback(record, index_target, sync_request)
+        #    if sync_request.sync_stage_name == "default" && record.nil? == false
+        #        次のステージに進める
+        #        record.are_search_upsert_sync_request(index_target, "with_external_file")
+        #    end
+        # end
+
         included do
             after_save     :are_search_enqueue_sync_request
             after_touch    :are_search_enqueue_sync_request
@@ -11,115 +60,25 @@ module AreSearch
             after_commit   :are_search_after_commit
         end
 
-        # 各モデルで必ず実装すること
-        # 例:
-        #
-        #   def self.are_search_index_mappings
-        #       {
-        #           default: {
-        #              index_settings: {
-        #                  max_result_window: 2_000,
-        #              },
-        #              properties: {
-        #                  name:        { type: 'text',    analyzer: 'cjk_index_analyzer', search_analyzer: 'cjk_search_analyzer' },
-        #                  documents:   { type: 'text',    analyzer: 'cjk_index_analyzer', search_analyzer: 'cjk_search_analyzer', store: true },
-        #                  status:      { type: 'keyword' },
-        #              }
-        #           }
-        #       }
-        #   end
-        #
-        #   def are_search_index_data(index_target_name, sync_stage_name)
-        #       case [index_target_name, sync_stage_name]
-        #       when [:default, "default"]
-        #           {
-        #               id:           id,
-        #               user_id:      user_id,
-        #               updated_at:   updated_at,
-        #               title:        title&.gsub(/[^[:print:]]/, ' '),
-        #               text_data:    text_data&.gsub(/[^[:print:]]/, ' '),
-        #               fulltext:     '',
-        #           }
-        #       when [:default, "with_external_file"]
-        #           {
-        #               id:           id,
-        #               user_id:      user_id,
-        #               updated_at:   updated_at,
-        #               title:        title&.gsub(/[^[:print:]]/, ' '),
-        #               text_data:    text_data&.gsub(/[^[:print:]]/, ' '),
-        #               fulltext:     get_huge_file_txt,
-        #           }
-        #       else
-        #           {}
-        #       end
-        #   end
-        #
-        #   この3つは整合性がチェックされる
-        #   are_search_index_mappings に存在しない index_target_name は指定できない
-        #   on_enqueue は all の部分集合、on_after_commit は on_enqueue の部分集合とする
-        #
-        #   def self.are_search_all_sync_stage_names
-        #       {
-        #           default: ["default", "with_external_file"],
-        #       }
-        #   end
-        #
-        #   def self.are_search_sync_stage_names_on_enqueue
-        #       {
-        #           default: ["default"],
-        #       }
-        #   end
-        #
-        #   def self.are_search_sync_stage_names_on_after_commit
-        #       {
-        #           default: ["default"],
-        #       }
-        #   end
-        #
-        #   def self.are_search_before_sync_check(ar_instance_key, index_target, sync_request)
-        #       if sync_request.sync_stage_name == "with_external_file"
-        #           前のステージが残ってるならやらない
-        #           are_search_sync_request_exists?(ar_instance_key, index_target, "default") == false
-        #       else
-        #           true
-        #       end
-        #   end
-        #
-        #   def self.are_search_after_sync_callback(record, index_target, sync_request)
-        #       if sync_request.sync_stage_name == "default" && record.nil? == false
-        #           次のステージに進める
-        #           record.are_search_upsert_sync_request(index_target, "with_external_file")
-        #       end
-        #   end
-        #
-
-
-        # 削除フラグ運用対応
-        # Elasticsearch に index していいのかを判定する
-        # 必要に応じてオーバーライドすること
-        def are_search_indexable?(index_target_name, sync_stage_name)
-            true
-        end
-
         # Elasticsearch に投入する data を取得し、
         # AreSearch 予約フィールドが利用側 data に含まれていないことを確認する。
         def are_search_index_data_for_index!(index_target, sync_stage_name)
-            data = are_search_index_data(index_target.index_target_name, sync_stage_name)
+            data = index_target.are_search_index_data(self, sync_stage_name)
 
             unless data.instance_of?(Hash)
                 raise AreSearch::Error,
-                    "#{self.class.name}#are_search_index_data(" \
-                        "#{index_target.index_target_name.inspect}, #{sync_stage_name.inspect}) は Hash を返してください"
+                    "#{self.class.name} の index data は Hash を返してください: " \
+                        "index_target=#{index_target.index_target_name.inspect} sync_stage=#{sync_stage_name.inspect}"
             end
 
             reserved_index_field_names = AreSearch::IndexDataValidator.find_reserved_index_field_names(data)
 
             unless reserved_index_field_names.empty?
                 raise AreSearch::Error,
-                    "#{self.class.name}#are_search_index_data(" \
-                        "#{index_target.index_target_name.inspect}, #{sync_stage_name.inspect}) に " \
-                        "AreSearch の予約フィールドは指定できません: " \
-                        "#{reserved_index_field_names.join(", ")}"
+                    "#{self.class.name} の index data に予約フィールドは指定できません: " \
+                        "index_target=#{index_target.index_target_name.inspect} " \
+                        "sync_stage=#{sync_stage_name.inspect} " \
+                        "fields=#{reserved_index_field_names.join(", ")}"
             end
 
             # 利用側が返した Hash を変更せず、AreSearch の予約フィールドは複製側へ追加する。
@@ -144,7 +103,7 @@ module AreSearch
         end
 
         # このレコードの現在の状態を Elasticsearch へ直接反映する。
-        # destroyed? の場合は delete、それ以外の場合は index を実行する。
+        # destroyed? または IndexTarget の index 対象外なら delete、それ以外の場合は index を実行する。
         #
         # sync_request・非同期同期（SyncJob）とは独立した低レベルコマンド。
         # sync lock と alias の存在は確認しない。
@@ -154,7 +113,7 @@ module AreSearch
         #
         # @return [Object, nil] index時はElasticsearchクライアントの戻り値、delete時は nil。
         def are_search_index_or_delete!(index_target, sync_stage_name)
-            if destroyed? || are_search_indexable?(index_target.index_target_name, sync_stage_name) != true
+            if destroyed? || index_target.are_search_indexable?(self) != true
                 index_target.are_search_delete!(id)
             else
                 AreSearch::EsAdapter.index(
@@ -173,11 +132,11 @@ module AreSearch
         # typo 等で例外が出るかどうかを確認するのが目的
         def are_search_index_data_validate
             self.class.are_search_index_targets.each do |index_target|
-                self.class.are_search_get_all_sync_stage_names(index_target).each do |sync_stage_name|
-                    next if are_search_indexable?(index_target.index_target_name, sync_stage_name) != true
+                next if index_target.are_search_indexable?(self) != true
 
+                index_target.are_search_sync_stage_names.each do |sync_stage_name|
                     mappings = index_target.are_search_index_mappings
-                    data     = are_search_index_data(index_target.index_target_name, sync_stage_name)
+                    data     = index_target.are_search_index_data(self, sync_stage_name)
 
                     violations = AreSearch::IndexDataValidator.validate(mappings, data)
 
@@ -185,7 +144,9 @@ module AreSearch
                         reserved_index_field_names = AreSearch::IndexDataValidator.find_reserved_index_field_names(data)
 
                         unless reserved_index_field_names.empty?
-                            violations << "are_search_index_data(#{index_target.index_target_name.inspect}, #{sync_stage_name.inspect}) に AreSearch の予約フィールドは指定できません: #{reserved_index_field_names}"
+                            violations << "index data に AreSearch の予約フィールドは指定できません: " \
+                                "index_target=#{index_target.index_target_name.inspect} " \
+                                "sync_stage=#{sync_stage_name.inspect}: #{reserved_index_field_names}"
                         end
                     end
 
@@ -206,7 +167,7 @@ module AreSearch
             request_sequence_at = Time.zone.now
 
             self.class.are_search_index_targets.each do |index_target|
-                self.class.are_search_get_sync_stage_names_on_enqueue(index_target).each do |sync_stage_name|
+                index_target.are_search_sync_stage_names_on_enqueue.each do |sync_stage_name|
                     are_search_upsert_sync_request_with_sequence(
                         index_target,
                         sync_stage_name,
@@ -224,11 +185,9 @@ module AreSearch
         end
 
         def are_search_upsert_sync_request_with_sequence(index_target, sync_stage_name, request_sequence, request_sequence_at)
-            all_sync_stage_names = self.class.are_search_get_all_sync_stage_names(index_target)
-
-            unless all_sync_stage_names.include?(sync_stage_name)
+            unless index_target.are_search_sync_stage_names.include?(sync_stage_name)
                 raise ArgumentError,
-                    "#{self.class.name}.are_search_all_sync_stage_names[#{index_target.index_target_name.inspect}] に存在しない stage が指定されています: #{sync_stage_name.inspect}"
+                    "#{self.class.name} の IndexTarget #{index_target.index_target_name.inspect} に存在しない stage が指定されています: #{sync_stage_name.inspect}"
             end
 
             AreSearch.database_specific.upsert(
@@ -247,7 +206,7 @@ module AreSearch
             after_commit_mode = AreSearch.after_commit_mode
 
             self.class.are_search_index_targets.each do |index_target|
-                self.class.are_search_get_sync_stage_names_on_after_commit(index_target).each do |sync_stage_name|
+                index_target.are_search_sync_stage_names_on_after_commit.each do |sync_stage_name|
                     are_search_after_commit_per_stage(after_commit_mode, index_target, sync_stage_name)
                 end
             end
@@ -303,29 +262,9 @@ module AreSearch
                 table_name
             end
 
-            # 省略時は全対象
-            def are_search_sync_stage_names_on_enqueue
-                are_search_all_sync_stage_names
-            end
-
-            # 省略時は全対象
-            def are_search_sync_stage_names_on_after_commit
-                are_search_all_sync_stage_names
-            end
-
-            def are_search_before_sync_check(ar_instance_key, index_target, sync_request)
-                # オーバーライド前提
-                true
-            end
-
-            def are_search_after_sync_callback(record, index_target, sync_request)
-                # オーバーライド前提
-            end
-
             # これは、ここでやることではないけど、使い勝手的にここが楽
             def are_search_sync_request_exists?(ar_instance_key, index_target, sync_stage_name)
                 AreSearch::SyncRequest.where(
-                    ar_model_class_name: self.name,
                     ar_instance_key:     ar_instance_key.to_s,
                     index_alias_name:    index_target.are_search_index_alias_name,
                     sync_stage_name:     sync_stage_name,
@@ -336,14 +275,12 @@ module AreSearch
             def are_search_index_targets
                 return @are_search_index_targets unless @are_search_index_targets.nil?
 
-                definition_errors = []
-                AreSearch::SearchableValidator.validate(self, definition_errors)
-
-                if definition_errors.empty? == false
-                    raise ArgumentError, definition_errors.join("\n")
+                class_setting = AreSearch::IndexTarget.searchable_class_setting_for(self)
+                if class_setting.nil?
+                    raise ArgumentError, "searchable_class_setting に #{name.inspect} の設定がありません"
                 end
 
-                index_target_names = are_search_index_mappings.keys
+                index_target_names = AreSearch::IndexTarget.index_target_names(self)
                 targets = index_target_names.map { |index_target_name| AreSearch::IndexTarget.new(self, index_target_name) }
 
                 @are_search_index_targets = targets.freeze
@@ -353,11 +290,20 @@ module AreSearch
                 return @are_search_index_target_map unless @are_search_index_target_map.nil?
 
                 target_map = {}
+                target_alias_map = {}
+                class_setting = AreSearch::IndexTarget.searchable_class_setting_for(self)
 
                 are_search_index_targets.each do |index_target|
-                    target_map[index_target.index_target_name] = index_target
+                    index_target_name = index_target.index_target_name
+                    target_map[index_target_name] = index_target
+
+                    index_target_name_alias = class_setting[index_target_name][:index_target_name_alias]
+                    next if index_target_name_alias.nil?
+
+                    target_alias_map[index_target_name_alias] = index_target
                 end
 
+                @are_search_index_target_alias_map = target_alias_map.freeze
                 @are_search_index_target_map = target_map.freeze
             end
 
@@ -368,36 +314,19 @@ module AreSearch
                 are_search_index_target_map[index_target_name.to_sym]
             end
 
-            # 指定 target に定義された全stageを、実行順のまま返す。
-            def are_search_get_all_sync_stage_names(index_target)
-                sync_stage_names = are_search_all_sync_stage_names[index_target.index_target_name]
+            # 指定された別名の index target を返す。
+            def are_search_index_target_alias(index_target_name_alias)
+                return nil if index_target_name_alias.blank?
 
-                return [] if sync_stage_names.nil?
-
-                sync_stage_names
-            end
-
-            # 指定 target で保存時に要求を作るstageを返す。
-            def are_search_get_sync_stage_names_on_enqueue(index_target)
-                sync_stage_names = are_search_sync_stage_names_on_enqueue[index_target.index_target_name]
-
-                return [] if sync_stage_names.nil?
-
-                sync_stage_names
-            end
-
-            def are_search_get_sync_stage_names_on_after_commit(index_target)
-                sync_stage_names = are_search_sync_stage_names_on_after_commit[index_target.index_target_name]
-
-                return [] if sync_stage_names.nil?
-
-                sync_stage_names
+                are_search_index_target_map
+                @are_search_index_target_alias_map[index_target_name_alias.to_sym]
             end
 
             # テスト用
             def are_search_reset_index_targets!
                 @are_search_index_targets = nil
                 @are_search_index_target_map = nil
+                @are_search_index_target_alias_map = nil
             end
         end
     end

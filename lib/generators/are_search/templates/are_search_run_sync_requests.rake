@@ -41,7 +41,7 @@ namespace :are_search do
 
         models.each do |model|
             model.are_search_index_targets.each do |index_target|
-                stage_names = model.are_search_get_all_sync_stage_names(index_target)
+                stage_names = index_target.are_search_sync_stage_names
                 defined_sync_stage_names.concat(stage_names)
             end
         end

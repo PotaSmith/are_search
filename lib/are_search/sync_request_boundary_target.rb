@@ -47,7 +47,7 @@ module AreSearch
         # 既に存在する場合は例外にする。
         def self.set_target!(index_alias_name, sync_stage_name)
             if target_exists?(index_alias_name, sync_stage_name)
-                raise ArgumentError, "SyncRequestBoundaryTarget は既にに存在します: #{sync_stage_name}"
+                raise ArgumentError, "SyncRequestBoundaryTarget は既に存在します: #{sync_stage_name}"
             end
 
             sequence_limit = AreSearch.database_specific.next_request_sequence

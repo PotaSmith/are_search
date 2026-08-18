@@ -47,7 +47,7 @@ Searchable を継承した子クラスからは実行せず、継承系統の最
 reindex 中の検索は切り替え前の alias を使用する。
 失敗時に作成された物理 index が残った場合は、原因確認後に clean up または手動削除する。
 
-mappings、analyzer、index_settings の変更を反映するには reindex が必要。
+mappings、analyzer、settings の変更を反映するには reindex が必要。
 AreSearch.batch_size の詳細は guide_reference.txt を参照する。
 
 
@@ -113,6 +113,15 @@ sync lock を強制解除する場合にも、このタスクで状態を確認�
     index_target = Article.are_search_index_target(:default)
 
     index_target.are_search_acquire_sync_lock!
+
+lock取得前から処理中の SyncRequest が残っているか確認する。
+
+    bundle exec rake are_search:check_sync_request_status
+
+対象モデル・IndexTargetの各stageで「処理中」が0件であることを確認する。
+
+操作完了後に解除する。
+
     index_target.are_search_release_sync_lock!
 
 特定stageだけを操作する。
@@ -120,6 +129,15 @@ sync lock を強制解除する場合にも、このタスクで状態を確認�
     sync_stage_name = "with_external_file"
 
     index_target.are_search_acquire_sync_stage_lock!(sync_stage_name)
+
+lock取得前から指定stageで処理中の SyncRequest が残っているか確認する。
+
+    bundle exec rake are_search:check_sync_request_status
+
+対象モデル・IndexTarget・stageの「処理中」が0件であることを確認する。
+
+操作完了後に解除する。
+
     index_target.are_search_release_sync_stage_lock!(sync_stage_name)
 
 通常解除は manual sync lock だけを削除する。
@@ -143,10 +161,9 @@ SampleGenerator で生成した rake task のサンプルを利用側アプリ�
 are_search_run_sync_requests.rake では、通常同期とforce同期の対象scopeを利用側の運用に合わせて変更できる。
 標準の対象条件をそのまま使用する場合は変更不要。
 
-force同期は、別の処理が processing_token を保持したまま一定時間停止した SyncRequest を補助的に再反映する処理。
-processing_at が sync_request_process_hang_wait より古く、force_try_count が max_force_try_count 未満の要求が候補になる。
-通常同期と異なり、force同期は Elasticsearch への反映だけを行い、sync_try_count と同期後callbackは進めない。
-実行すると force_attempted、last_force_try_at、force_try_count が更新される。
+force同期は、processing のまま停止した SyncRequest を補助的に Elasticsearch へ再反映する処理。
+同期後callbackは実行せず、処理後は通常の run_sync_requests で回収する。
+対象条件と試行上限は guide_reference.txt を参照する。
 残った processing_token を手動解除する必要がある場合は「processing_token を手動解除する」を参照する。
 
 are_search_sync_limit_alert.rake は実行前に、通知先・送信元と通知閾値を環境に合わせて変更する。
@@ -182,7 +199,8 @@ SyncRequest の状態項目は guide_reference.txt の「SyncRequest の状態�
 主な表示内容。
 
     現在存在する sync lock
-    sync request の件数とエラー状況
+    モデル・IndexTarget・stage単位の sync request 件数、処理中件数、エラー件数
+    モデル・IndexTarget・stage単位のエラー内容 上位20件
 
 通知用タスク。
 
@@ -282,10 +300,10 @@ update_columns、update_all、delete_all、insert_all、upsert_all、SQL直接�
 ## 10-1. 検索結果が古い
 ----------------------------------------------------------------
 
-    1. are_search_sync_requests にレコードが残っているか確認する
-    2. after_commit_mode = :job の場合は Job worker を確認する
-    3. 対象stageを指定して run_sync_requests を実行する
-    4. last_error、sync_try_count、callback_try_count を確認する
+    1. bundle exec rake are_search:check_sync_request_status を実行する
+    2. 対象モデル・IndexTarget・stageのリクエスト数、処理中、エラーを確認する
+    3. after_commit_mode = :job の場合は Job worker を確認する
+    4. 対象stageを指定して run_sync_requests を実行する
 
 
 ## 10-2. reindex または sync が動かない
@@ -328,7 +346,7 @@ AreSearch.index_operation_enabled = true が必要。
 
 sync stage sync lock は、指定stageで新しい同期処理を開始させない。
 lock取得前にprocessingへ入ったSyncRequestはそのまま処理を継続する。
-既存processingと競合させられない処理では、利用側で終了を確認してから処理を開始する。
+既存processingの終了待ちが必要な場合は、# 5 の manual sync lock を使用する。
 
 
 ## 11-2. sync lock を手動解除する

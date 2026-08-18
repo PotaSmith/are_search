@@ -19,23 +19,10 @@ RSpec.describe "search response" do
                 super
             end
 
-            def self.are_search_index_mappings
+            def self.default_properties
                 {
-                    default: {
-                        index_settings: {
-                            max_result_window: 2_000,
-                        },
-                        _source: {
-                            includes: [
-                                :title,
-                                :payload,
-                            ],
-                        },
-                        properties: {
-                            title:   { type: "text" },
-                            payload: { type: "object", enabled: false },
-                        },
-                    },
+                    title:   { type: "text" },
+                    payload: { type: "object", enabled: false },
                 }
             end
         end
@@ -43,6 +30,32 @@ RSpec.describe "search response" do
 
     let(:article_index_target) do
         AreSearch::IndexTarget.new(article_model, :default)
+    end
+
+    around do |example|
+        original_searchable_class_setting = AreSearch.searchable_class_setting
+        AreSearch.searchable_class_setting = {
+            "Article" => {
+                default: {
+                    settings: {
+                        max_result_window: 2_000,
+                    },
+                    mappings: {
+                        _source: {
+                            includes: [
+                                :title,
+                                :payload,
+                            ],
+                        },
+                    },
+                    properties_method: :default_properties,
+                },
+            },
+        }
+
+        example.run
+    ensure
+        AreSearch.searchable_class_setting = original_searchable_class_setting
     end
 
     before do
@@ -416,18 +429,11 @@ RSpec.describe "search runtime mappings" do
                 super
             end
 
-            def self.are_search_index_mappings
+            def self.default_properties
                 {
-                    default: {
-                        index_settings: {
-                            max_result_window: 2_000,
-                        },
-                        properties: {
-                            title:  { type: "text" },
-                            body:   { type: "text" },
-                            status: { type: "keyword" },
-                        },
-                    },
+                    title:  { type: "text" },
+                    body:   { type: "text" },
+                    status: { type: "keyword" },
                 }
             end
         end
@@ -435,6 +441,25 @@ RSpec.describe "search runtime mappings" do
 
     let(:article_index_target) do
         AreSearch::IndexTarget.new(article_model, :default)
+    end
+
+    around do |example|
+        original_searchable_class_setting = AreSearch.searchable_class_setting
+        AreSearch.searchable_class_setting = {
+            "Article" => {
+                default: {
+                    settings: {
+                        max_result_window: 2_000,
+                    },
+                    mappings: {},
+                    properties_method: :default_properties,
+                },
+            },
+        }
+
+        example.run
+    ensure
+        AreSearch.searchable_class_setting = original_searchable_class_setting
     end
 
     let(:runtime_mappings) do

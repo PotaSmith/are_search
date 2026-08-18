@@ -247,32 +247,48 @@ RSpec.describe AreSearch::RakeUtils::CheckAllModels do
     end
 
     describe ".model_check" do
+        around do |example|
+            original_searchable_class_setting = AreSearch.searchable_class_setting
+            AreSearch.searchable_class_setting = {
+                "ModelCheckParent" => {
+                    default: {
+                        settings: { max_result_window: 2_000 },
+                        mappings: {},
+                        properties_method: :default_properties,
+                        indexable_method: :default_indexable?,
+                        stages: {
+                            "default" => {
+                                data_method: :default_search_data,
+                                enqueue: true,
+                                after_commit: true,
+                            },
+                        },
+                    },
+                },
+            }
+
+            example.run
+        ensure
+            AreSearch.searchable_class_setting = original_searchable_class_setting
+        end
+
         def build_model_check_parent_class
             Class.new(ActiveRecord::Base) do
                 self.abstract_class = true
 
                 include AreSearch::Searchable
 
-                def self.are_search_index_mappings
+                def self.default_properties
                     {
-                        default: {
-                            index_settings: {
-                                max_result_window: 2_000,
-                            },
-                            properties: {
-                                title: { type: "text" },
-                            },
-                        },
+                        title: { type: "text" },
                     }
                 end
 
-                def self.are_search_all_sync_stage_names
-                    {
-                        default: ["default"],
-                    }
+                def default_indexable?
+                    true
                 end
 
-                def are_search_index_data(_index_target_name, _sync_stage_name)
+                def default_search_data
                     {
                         title: "hello",
                     }
@@ -280,21 +296,14 @@ RSpec.describe AreSearch::RakeUtils::CheckAllModels do
             end
         end
 
-        it "STI 子クラスが are_search_index_mappings を定義していればエラーにする" do
+        it "STI 子クラスが properties_method の対象メソッドを定義していればエラーにする" do
             parent_model = build_model_check_parent_class
             child_model = Class.new(parent_model) do
                 self.abstract_class = true
 
-                def self.are_search_index_mappings
+                def self.default_properties
                     {
-                        default: {
-                            index_settings: {
-                                max_result_window: 2_000,
-                            },
-                            properties: {
-                                title: { type: "text" },
-                            },
-                        },
+                        title: { type: "text" },
                     }
                 end
             end
@@ -307,7 +316,8 @@ RSpec.describe AreSearch::RakeUtils::CheckAllModels do
             described_class.model_check(child_model, errors)
 
             expect(errors).to eq([
-                "ModelCheckChild: are_search_index_mappings は Searchable を include した上位クラスで定義してください。",
+                "ModelCheckChild: properties_method に指定された default_properties は " \
+                    "Searchable を include した上位クラスで定義してください。",
             ])
         end
 
@@ -333,7 +343,7 @@ RSpec.describe AreSearch::RakeUtils::CheckAllModels do
             ])
         end
 
-        it "STI 子クラスが親の are_search_index_mappings を継承しているだけならエラーにしない" do
+        it "STI 子クラスが properties_method の対象メソッドを継承しているだけならエラーにしない" do
             parent_model = build_model_check_parent_class
             child_model = Class.new(parent_model) do
                 self.abstract_class = true
@@ -526,6 +536,10 @@ RSpec.describe "are_search sync request boundary task" do
         Rake.application = Rake::Application.new
         Rake::Task.define_task(:environment)
 
+        if Object.const_defined?(:AreSearchSyncRequestBoundaryTask, false)
+            Object.send(:remove_const, :AreSearchSyncRequestBoundaryTask)
+        end
+
         load File.expand_path(
             "../lib/generators/are_search/templates/are_search_sync_request_boundary.rake",
             __dir__,
@@ -666,7 +680,7 @@ RSpec.describe "are_search sync request boundary task" do
 
             expect do
                 Rake::Task["are_search:set_sync_request_boundary"].invoke
-            end.to raise_error(ArgumentError, "SyncRequestBoundaryTarget は既にに存在します: sample")
+            end.to raise_error(ArgumentError, "SyncRequestBoundaryTarget は既に存在します: sample")
 
             expect(AreSearch::SyncRequestBoundaryTarget.count).to eq(1)
             expect(boundary_target.reload.sequence_limit).to eq(20)
@@ -755,7 +769,7 @@ RSpec.describe "are_search sync request boundary task" do
                     request_sequence:    21,
                     request_sequence_at: new_request_sequence_at,
                 },
-                unique_by: [:index_alias_name, :ar_model_class_name, :ar_instance_key, :sync_stage_name],
+                unique_by: [:index_alias_name, :sync_stage_name, :ar_instance_key],
             )
 
             sync_request.reload
@@ -861,17 +875,15 @@ RSpec.describe "are_search run sync requests task" do
         allow(article_model)
             .to receive(:are_search_index_targets)
             .and_return([article_index_target])
-        allow(article_model)
-            .to receive(:are_search_get_all_sync_stage_names)
-            .with(article_index_target)
+        allow(article_index_target)
+            .to receive(:are_search_sync_stage_names)
             .and_return(["default", "with_external_file"])
 
         allow(document_model)
             .to receive(:are_search_index_targets)
             .and_return([document_index_target])
-        allow(document_model)
-            .to receive(:are_search_get_all_sync_stage_names)
-            .with(document_index_target)
+        allow(document_index_target)
+            .to receive(:are_search_sync_stage_names)
             .and_return(["default"])
 
         allow(AreSearch)

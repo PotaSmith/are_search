@@ -19,9 +19,8 @@ RSpec.describe AreSearch::SyncRequest do
     let(:unique_by) do
         [
             :index_alias_name,
-            :ar_model_class_name,
-            :ar_instance_key,
             :sync_stage_name,
+            :ar_instance_key,
         ]
     end
     let(:base_key) do
@@ -59,6 +58,23 @@ RSpec.describe AreSearch::SyncRequest do
 
             expect(described_class.count).to eq(1)
             expect(described_class.find_by(base_key).request_sequence).to eq(11)
+        end
+
+        it "同一同期キーでモデルクラス名が変わっても1件へ更新する" do
+            described_class.upsert(base_attrs, unique_by: unique_by)
+            described_class.upsert(
+                base_attrs.merge(
+                    ar_model_class_name: "SpecialArticle",
+                    request_sequence:    11,
+                ),
+                unique_by: unique_by,
+            )
+
+            expect(described_class.count).to eq(1)
+
+            record = described_class.find_by(base_key)
+            expect(record.ar_model_class_name).to eq("SpecialArticle")
+            expect(record.request_sequence).to eq(11)
         end
 
         it "新しい要求のupsertでは既存の処理状態とエラーを維持する" do
@@ -178,16 +194,15 @@ RSpec.describe AreSearch::SyncRequest do
                 .with(request_index_target_name)
                 .and_return(index_target)
 
-            allow(model)
-                .to receive(:are_search_get_all_sync_stage_names)
-                .with(index_target)
+            allow(index_target)
+                .to receive(:are_search_sync_stage_names)
                 .and_return([sync_stage_name])
 
-            allow(model)
+            allow(index_target)
                 .to receive(:are_search_before_sync_check)
                 .and_return(true)
 
-            allow(model)
+            allow(index_target)
                 .to receive(:are_search_after_sync_callback)
 
         end
@@ -275,9 +290,8 @@ RSpec.describe AreSearch::SyncRequest do
             it "sync_stage_nameが現在のindex_targetに存在しない場合は同期せずエラーを残す" do
                 sync_request = create_sync_request
 
-                allow(model)
-                    .to receive(:are_search_get_all_sync_stage_names)
-                    .with(index_target)
+                allow(index_target)
+                    .to receive(:are_search_sync_stage_names)
                     .and_return(["other"])
 
                 expect(model).not_to receive(:find_by)
@@ -341,9 +355,9 @@ RSpec.describe AreSearch::SyncRequest do
                     .to receive(:are_search_index_or_delete!)
                     .with(index_target, sync_stage_name)
 
-                expect(model)
+                expect(index_target)
                     .to receive(:are_search_after_sync_callback)
-                    .with(record, index_target, sync_request)
+                    .with(record, sync_request)
 
                 expect(index_target).not_to receive(:are_search_delete!)
 
@@ -365,9 +379,9 @@ RSpec.describe AreSearch::SyncRequest do
                     .to receive(:are_search_delete!)
                     .with(ar_instance_key)
 
-                expect(model)
+                expect(index_target)
                     .to receive(:are_search_after_sync_callback)
-                    .with(nil, index_target, sync_request)
+                    .with(nil, sync_request)
 
                 result = sync_record
 
@@ -447,9 +461,9 @@ RSpec.describe AreSearch::SyncRequest do
                     .to receive(:are_search_index_or_delete!)
                     .with(index_target, sync_stage_name)
 
-                allow(model)
+                allow(index_target)
                     .to receive(:are_search_after_sync_callback)
-                    .with(record, index_target, sync_request)
+                    .with(record, sync_request)
                     .and_raise(RuntimeError, "callback failed")
 
                 result = sync_record
@@ -528,9 +542,9 @@ RSpec.describe AreSearch::SyncRequest do
             it "before sync checkがfalseなら同期せずprocessingを解除する" do
                 sync_request = create_sync_request
 
-                allow(model)
+                allow(index_target)
                     .to receive(:are_search_before_sync_check)
-                    .with(ar_instance_key, index_target, sync_request)
+                    .with(ar_instance_key, sync_request)
                     .and_return(false)
 
                 expect(model).not_to receive(:find_by)
@@ -588,7 +602,7 @@ RSpec.describe AreSearch::SyncRequest do
             it "sync試行回数更新前に要求が削除された場合は同期本体を実行せず成功扱いにする" do
                 sync_request = create_sync_request
 
-                allow(model)
+                allow(index_target)
                     .to receive(:are_search_before_sync_check) do
                         AreSearch::SyncRequest.where(id: sync_request.id).delete_all
                         true
@@ -619,7 +633,7 @@ RSpec.describe AreSearch::SyncRequest do
                         AreSearch::SyncRequest.where(id: sync_request.id).delete_all
                     end
 
-                expect(model).not_to receive(:are_search_after_sync_callback)
+                expect(index_target).not_to receive(:are_search_after_sync_callback)
 
                 result = sync_request.are_search_try_sync(
                     processing_token,
@@ -889,9 +903,8 @@ RSpec.describe AreSearch::SyncRequest do
                     force_try_count:  0,
                 )
 
-                allow(model)
-                    .to receive(:are_search_get_all_sync_stage_names)
-                    .with(index_target)
+                allow(index_target)
+                    .to receive(:are_search_sync_stage_names)
                     .and_return(["other"])
 
                 expect(model).not_to receive(:find_by)
@@ -962,9 +975,9 @@ RSpec.describe AreSearch::SyncRequest do
                     processing_at:    1.hour.ago,
                 )
 
-                allow(model)
+                allow(index_target)
                     .to receive(:are_search_before_sync_check)
-                    .with(ar_instance_key, index_target, sync_request)
+                    .with(ar_instance_key, sync_request)
                     .and_return(false)
 
                 expect(model).not_to receive(:find_by)

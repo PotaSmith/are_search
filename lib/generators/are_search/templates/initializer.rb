@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+load Rails.root.join("config", "are_search_searchable.rb")
+
 logger = ActiveSupport::Logger.new(ConfVars.get(:are_search, :log_file_path), 'daily')
 logger.formatter = ::Logger::Formatter.new
 logger.level = ConfVars.get(:are_search, :log_level)
@@ -35,3 +37,4 @@ AreSearch.setup(
         logger: logger,
     )
 end
+

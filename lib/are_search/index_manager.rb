@@ -215,7 +215,7 @@ module AreSearch
             AreSearch::EsAdapter.indices_create(
                 physical_index_name: physical_index_name,
                 body: {
-                    settings: AreSearch.analyzer_settings.merge(index: index_settings),
+                    settings: index_settings,
                     mappings: mappings_for_index,
                 },
             )

@@ -13,6 +13,11 @@ module AreSearch
                 template "initializer.rb", "config/initializers/are_search.rb"
             end
 
+            # Searchableモデル構成用設定ファイルを生成する。
+            def copy_searchable_class_setting
+                template "searchable_class_setting.rb", "config/are_search_searchable.rb"
+            end
+
             def copy_migration
                 migration_template "create_are_search_tables.rb", "db/migrate/create_are_search_tables.rb"
             end
