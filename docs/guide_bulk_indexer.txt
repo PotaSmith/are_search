@@ -499,7 +499,7 @@ y を入力すると同期を開始する。
 
     bundle exec rake are_search:run_sync_request_before_boundary
 
-BoundaryTarget 以前のDBの更新は全て対象となる。
+BoundaryTarget 以前にcommitされたDB更新が対象となる。
 
 コミットが遅れているデータがあとから増える可能性がある。
 後から増えたデータは、今回の例で言えば huge_data_for_reindex ではなく
@@ -585,7 +585,7 @@ set_sync_request_boundary
     set_sync_request_boundary後に更新され、commitされた通常の更新。
 
 専用rakeは、set_sync_request_boundaryまでにコミットされたデータだけを同期対象にしたい。
-しかし、明確にはわからないためデータAだけでなくデータBも拾う。
+しかし、明確にはわからないためデータAだけでなくデータBも拾う可能性がある。
 データCは確定しているため対象外。
 
 また、データAやBにその後さらに更新が入り、SyncRequestがset_sync_request_boundaryより後の
