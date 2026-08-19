@@ -21,7 +21,7 @@ module AreSearch
                 max_fail_count: max_fail_count,
             )
 
-            if recover
+            if recover == true
                 bulk_indexer.bulk_recover_index_target
             else
                 bulk_indexer.bulk_index_index_target
@@ -68,9 +68,9 @@ module AreSearch
             validate_arguments!
 
             @data_dir = File.join(@result_dir, 'data')
-            FileUtils.mkdir(@data_dir) unless Dir.exist?(@data_dir)
+            FileUtils.mkdir(@data_dir) if Dir.exist?(@data_dir) == false
             @recover_dir = File.join(@result_dir, 'recover')
-            FileUtils.mkdir(@recover_dir) unless Dir.exist?(@recover_dir)
+            FileUtils.mkdir(@recover_dir) if Dir.exist?(@recover_dir) == false
 
             @logger = Logger.new(
                 check_point_file_path:   File.join(@data_dir, 'check_point.log'),
@@ -99,9 +99,9 @@ module AreSearch
             validate_arguments!
 
             @data_dir = File.join(@result_dir, 'data')
-            FileUtils.mkdir(@data_dir) unless Dir.exist?(@data_dir)
+            FileUtils.mkdir(@data_dir) if Dir.exist?(@data_dir) == false
             @recover_dir = File.join(@result_dir, 'recover')
-            FileUtils.mkdir(@recover_dir) unless Dir.exist?(@recover_dir)
+            FileUtils.mkdir(@recover_dir) if Dir.exist?(@recover_dir) == false
 
             @bulk_failure_target_file = File.join(@data_dir, 'bulk_failure.log')
             @data_fail_target_file    = File.join(@data_dir, 'data_fail.log')
@@ -138,7 +138,7 @@ module AreSearch
 
         # BulkIndexerが使用する対象と実行設定を確認する。
         def validate_arguments!
-            unless @index_target.instance_of?(AreSearch::IndexTarget)
+            if @index_target.instance_of?(AreSearch::IndexTarget) == false
                 raise ArgumentError, "index_target は AreSearch::IndexTarget を指定してください"
             end
 
@@ -152,27 +152,27 @@ module AreSearch
             end
 
             sync_stage_names = @index_target.are_search_sync_stage_names
-            unless sync_stage_names.include?(@sync_stage_name)
+            if sync_stage_names.include?(@sync_stage_name) == false
                 raise ArgumentError,
                     "sync_stage_name が IndexTarget に定義されていません: #{@sync_stage_name}"
             end
 
-            unless @result_dir.instance_of?(String) && @result_dir.empty? == false
+            if @result_dir.instance_of?(String) == false || @result_dir.empty?
                 raise ArgumentError, "result_dir を指定してください"
             end
             if Dir.exist?(@result_dir) == false
                 raise ArgumentError, "result_dir がありません"
             end
 
-            unless @max_bulk_bytes.instance_of?(Integer) && @max_bulk_bytes > 0
+            if @max_bulk_bytes.instance_of?(Integer) == false || @max_bulk_bytes <= 0
                 raise ArgumentError, "max_bulk_bytes は正の Integer を指定してください"
             end
 
-            unless @max_bulk_count.instance_of?(Integer) && @max_bulk_count > 0
+            if @max_bulk_count.instance_of?(Integer) == false || @max_bulk_count <= 0
                 raise ArgumentError, "max_bulk_count は正の Integer を指定してください"
             end
 
-            unless @max_fail_count.instance_of?(Integer) && @max_fail_count > 0
+            if @max_fail_count.instance_of?(Integer) == false || @max_fail_count <= 0
                 raise ArgumentError, "max_fail_count は正の Integer を指定してください"
             end
 
@@ -243,7 +243,7 @@ module AreSearch
         def append_buffer(record)
             key = record.id.to_s
 
-            if @index_target.are_search_indexable?(record) == true
+            if @index_target.are_search_indexable?(record) != false
                 action = {
                     index: {
                         _index: @index_target.are_search_index_alias_name,
@@ -271,7 +271,7 @@ module AreSearch
         def send_bulk(bulk_data)
             return if bulk_data.nil?
 
-            unless bulk_data[:keys].empty?
+            if bulk_data[:keys].empty? == false
                 response = AreSearch::EsAdapter.no_validation_bulk(body: bulk_data[:body])
 
                 validate_bulk_response!(response, bulk_data[:keys])
@@ -279,7 +279,7 @@ module AreSearch
                 response["items"].each do |item|
                     result = item["index"] || item["delete"]
 
-                    if result["error"]
+                    if result["error"].nil? == false
                         @logger.write_failure_result!(result["_id"], result["error"])
                     else
                         @logger.write_success_result!(result["_id"])
@@ -498,7 +498,7 @@ module AreSearch
                     @fail_key_and_errors << [@reserved_key, @reserved_index_data]
                 else
                     @values << @reserved_es_action
-                    @values << @reserved_index_data unless @reserved_index_data.nil?
+                    @values << @reserved_index_data if @reserved_index_data.nil? == false
                     @keys << @reserved_key
                     @values_bytesize += @reserved_bytesize
                     @values_count += 1
@@ -711,7 +711,7 @@ module AreSearch
 
                 key = line_to_key(last_line, expected_result)
 
-                unless key
+                if key.nil?
                     raise AreSearch::Error, "ファイルに不正な行があります: #{file_path}, line #{last_line}"
                 end
 

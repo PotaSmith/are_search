@@ -390,7 +390,7 @@ module AreSearch
             def parse_positive_number(value, path)
                 numeric = value.instance_of?(Integer) || value.instance_of?(Float)
 
-                if numeric && value > 0
+                if numeric == true && value > 0
                     return value
                 end
 

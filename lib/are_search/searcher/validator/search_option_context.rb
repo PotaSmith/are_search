@@ -178,35 +178,35 @@ module AreSearch
                     field_types[field_name] != FIELD_TYPE_TEXT
             }
 
-            if any_field
+            if any_field == true
                 @any_fields << field_name
             end
 
-            if all_field
+            if all_field == true
                 @all_fields << field_name
             end
 
-            if any_text && any_non_text == false
+            if any_text == true && any_non_text == false
                 @any_text_without_non_text_fields << field_name
             end
 
-            if all_text
+            if all_text == true
                 @all_valid_text_fields << field_name
             end
 
-            if (any_text || any_keyword) && any_other_type == false
+            if (any_text == true || any_keyword == true) && any_other_type == false
                 @any_text_or_keyword_without_other_type_fields << field_name
             end
 
-            if all_text_or_keyword
+            if all_text_or_keyword == true
                 @all_valid_text_or_keyword_fields << field_name
             end
 
-            if any_non_text && any_text == false
+            if any_non_text == true && any_text == false
                 @any_non_text_without_text_fields << field_name
             end
 
-            if all_non_text
+            if all_non_text == true
                 @all_valid_non_text_fields << field_name
             end
         end

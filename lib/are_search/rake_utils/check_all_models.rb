@@ -11,11 +11,11 @@ module AreSearch
                     .public_instance_methods(false)
                     .include?(:are_search_ar_table_name)
 
-                if searchable_from_superclass && declares_ar_table_name_here
+                if searchable_from_superclass == true && declares_ar_table_name_here == true
                     errors << "#{klass.name}: are_search_ar_table_name は Searchable を include した上位クラスで定義してください。"
                 end
 
-                if searchable_from_superclass
+                if searchable_from_superclass == true
                     validate_properties_method_override(klass, errors)
                     validate_sti_setting_methods(klass, errors)
                     return
@@ -47,10 +47,10 @@ module AreSearch
 
                     properties_methods << properties_method
 
-                    next unless klass.singleton_class.public_instance_methods(false).include?(properties_method)
-
-                    errors << "#{klass.name}: properties_method に指定された #{properties_method} は " \
-                        "Searchable を include した上位クラスで定義してください。"
+                    if klass.singleton_class.public_instance_methods(false).include?(properties_method)
+                        errors << "#{klass.name}: properties_method に指定された #{properties_method} は " \
+                            "Searchable を include した上位クラスで定義してください。"
+                    end
                 end
             end
 
@@ -110,7 +110,7 @@ module AreSearch
             def validate_sti_class_method(klass, method_name, arity, setting_name, errors)
                 return if method_name.instance_of?(Symbol) == false
 
-                unless klass.respond_to?(method_name)
+                if klass.respond_to?(method_name) == false
                     errors << "#{klass.name}: #{setting_name} に指定されたclass methodがありません: #{klass.name}.#{method_name}"
                     return
                 end
@@ -124,7 +124,7 @@ module AreSearch
             def validate_sti_instance_method(klass, method_name, arity, setting_name, errors)
                 return if method_name.instance_of?(Symbol) == false
 
-                unless klass.public_method_defined?(method_name)
+                if klass.public_method_defined?(method_name) == false
                     errors << "#{klass.name}: #{setting_name} に指定されたinstance methodがありません: #{klass.name}##{method_name}"
                     return
                 end
@@ -151,7 +151,7 @@ module AreSearch
                 callbacks = dummy_ar_class._save_callbacks.select { |cb| cb.kind == :after }.map(&:filter)
                 first_pattern = [:ccc, :bbb, :aaa]
                 last_pattern  = [:aaa, :bbb, :ccc]
-                unless [first_pattern, last_pattern].include?(callbacks)
+                if [first_pattern, last_pattern].include?(callbacks) == false
                     errors << "Railsのコールバック順序がなにやらおかしいです。" \
                               "想定: #{first_pattern.inspect} または #{last_pattern.inspect} 実際: #{callbacks.inspect}"
                 end
@@ -159,7 +159,7 @@ module AreSearch
                 sub_callbacks = dummy_ar_sub_class._save_callbacks.select { |cb| cb.kind == :after }.map(&:filter)
                 first_pattern_sub = [:ccc, :ddd, :bbb, :aaa]
                 last_pattern_sub  = [:aaa, :bbb, :ddd, :ccc]
-                unless [first_pattern_sub, last_pattern_sub].include?(sub_callbacks)
+                if [first_pattern_sub, last_pattern_sub].include?(sub_callbacks) == false
                     errors << "Railsのコールバック順序がなにやらおかしいです（サブクラス）。" \
                               "想定: #{first_pattern_sub.inspect} または #{last_pattern_sub.inspect} 実際: #{sub_callbacks.inspect}"
                 end

@@ -73,7 +73,7 @@ module AreSearch
         # are_search_index_data のトップレベル key が Symbol か確認する。
         def validate_data_symbol_keys(violations, data)
             data.each_key do |key|
-                unless key.instance_of?(Symbol)
+                if key.instance_of?(Symbol) == false
                     violations << "data の key は Symbol で指定してください: #{key.inspect}"
                 end
             end
@@ -99,23 +99,31 @@ module AreSearch
         def validate_scalar(violations, key, es_type, value)
             case es_type.to_s
             when "text", "keyword"
-                unless value.is_a?(String)
+                if value.is_a?(String) == false
                     violations << "#{key} は #{es_type} 型ですが String ではありません: #{value.class}"
                 end
             when "long", "integer", "short", "byte", "unsigned_long"
-                unless value.is_a?(Integer)
+                if value.is_a?(Integer) == false
                     violations << "#{key} は #{es_type} 型ですが Integer ではありません: #{value.class}"
                 end
             when "double", "float", "half_float", "scaled_float"
-                unless value.is_a?(Integer) || value.is_a?(Float)
+                if value.is_a?(Integer) == false &&
+                   value.is_a?(Float) == false
+
                     violations << "#{key} は #{es_type} 型ですが Integer/Float ではありません: #{value.class}"
                 end
             when "boolean"
-                unless value == true || value == false
+                if value != true && value != false
                     violations << "#{key} は #{es_type} 型ですが true/false ではありません: #{value.class}"
                 end
             when "date"
-                unless value.is_a?(Date) || value.is_a?(Time) || value.is_a?(DateTime) || value.is_a?(ActiveSupport::TimeWithZone) || value.is_a?(String) || value.is_a?(Integer)
+                if value.is_a?(Date) == false &&
+                   value.is_a?(Time) == false &&
+                   value.is_a?(DateTime) == false &&
+                   value.is_a?(ActiveSupport::TimeWithZone) == false &&
+                   value.is_a?(String) == false &&
+                   value.is_a?(Integer) == false
+
                     violations << "#{key} は #{es_type} 型ですが Date/Time/DateTime/String/Integer ではありません: #{value.class}"
                 end
             end

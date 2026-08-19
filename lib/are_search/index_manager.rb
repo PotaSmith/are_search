@@ -151,7 +151,7 @@ module AreSearch
 
                 result[:stop_phase] = :index_to_new_index
                 # blockの中では phase は触らない 結果をboolで返すだけ
-                if block.call(physical_index_name) == false
+                if block.call(physical_index_name) != true
                     result[:message] = 'bulk 投入に失敗した ID があるため alias を切り替えませんでした'
                     return
                 end
@@ -230,7 +230,7 @@ module AreSearch
             File.open(lock_path, File::RDWR | File::CREAT) do |lock_file|
                 locked = lock_file.flock(File::LOCK_EX | File::LOCK_NB)
 
-                unless locked
+                if locked == false
                     result[:message] = "別の処理が実行中のためスキップしました"
                     return
                 end

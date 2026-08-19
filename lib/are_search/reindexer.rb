@@ -82,7 +82,7 @@ module AreSearch
 
         # Reindexerが使用する対象と実行設定を確認する。
         def validate_arguments!(index_target, sync_stage_name)
-            unless index_target.instance_of?(AreSearch::IndexTarget)
+            if index_target.instance_of?(AreSearch::IndexTarget) == false
                 raise ArgumentError, "index_target は AreSearch::IndexTarget を指定してください"
             end
 
@@ -101,7 +101,7 @@ module AreSearch
             bar        = nil
             failed_ids = []
 
-            if total != 0 && defined?(::ProgressBar)
+            if total != 0 && defined?(::ProgressBar) != nil
                 bar = ::ProgressBar.new(total) if ::ProgressBar.respond_to?(:new)
             end
 
@@ -130,7 +130,7 @@ module AreSearch
             ids = []
 
             batch.each do |record|
-                next if index_target.are_search_indexable?(record) != true
+                next if index_target.are_search_indexable?(record) == false
 
                 body << { index: { _index: physical_index_name, _id: record.id.to_s } }
                 body << record.are_search_index_data_for_index!(index_target, sync_stage_name)
@@ -172,11 +172,11 @@ module AreSearch
         end
 
         def collect_bulk_errors(response, ids, failed_ids)
-            return unless response["errors"]
+            return if response["errors"] == false
 
             response["items"].each do |item|
                 op = item["index"] || item["create"] || item["update"] || item["delete"]
-                next unless op&.dig("error")
+                next if op&.dig("error").nil?
 
                 # この find は上でチェックしてるから失敗しない
                 failed_ids << ids.find{|a| a.to_s == op["_id"] }

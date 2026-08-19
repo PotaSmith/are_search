@@ -91,31 +91,31 @@ module AreSearch
                 index_target = resolve_index_target_nilable
 
                 # index_targetがnilの場合は、現在のモデル定義からtargetがなくなった可能性があるため、要求は消さずに残す
-                return false unless check_sync_index_target?(index_target)
-                return false unless check_sync_stage_name?(index_target)
+                return false if check_sync_index_target?(index_target) == false
+                return false if check_sync_stage_name?(index_target) == false
 
                 # processing_token が無い処理は、同一 sync request の処理主体を示せないため同期しない。
                 return false if processing_token.blank?
-                return false unless check_index_target_ready?(index_target)
-                return false unless acquire_sync_request_processing_with_sequence(processing_token)
+                return false if check_index_target_ready?(index_target) == false
+                return false if acquire_sync_request_processing_with_sequence(processing_token) != true
             rescue StandardError => e
                 update_sync_request_error_no_sequence(e.message)
 
-                raise e if reraise
+                raise e if reraise == true
 
                 return false
             end
 
             begin
                 #同期が許可されているかを確認する。
-                return false unless check_index_target_sync_ready?(index_target)
+                return false if check_index_target_sync_ready?(index_target) == false
 
                 # 他の sync_stage_name で sync_request が存在しないか等のチェックを行うための callback
-                return false unless index_target.are_search_before_sync_check(ar_instance_key, self)
+                return false if index_target.are_search_before_sync_check(ar_instance_key, self) == false
 
                 # 同期前のカウント更新
                 # 落ちてもなにもしない
-                return true unless update_sync_try_no_sequence
+                return true if update_sync_try_no_sequence == false
 
                 # Elasticsearch への同期。
                 # 例外時は、取得したSyncRequestと同じ行が残っていれば、
@@ -126,7 +126,7 @@ module AreSearch
 
                 # callback処理
                 # 落ちてもなにもしない
-                return true unless update_callback_try_no_sequence
+                return true if update_callback_try_no_sequence == false
                 index_target.are_search_after_sync_callback(record, self)
 
                 # 同期済みの SyncRequest 削除判定と、残った行の状態リセット。
@@ -134,7 +134,7 @@ module AreSearch
                 # 例外時は、取得したSyncRequestと同じ行が残っていれば現在行の診断情報として
                 # last_error を更新し、processing は ensure でもう一度解除を試す。
                 AreSearch::SyncRequest.transaction do
-                    if on_rake
+                    if on_rake == true
                         # rake は正規の回収処理なので、ここまで到達した時点で復旧済みとして削除する。
                         sync_request_relation_with_sequence.delete_all
                     else
@@ -152,7 +152,7 @@ module AreSearch
             rescue StandardError => e
                 update_sync_request_error_no_sequence(e.message)
 
-                raise e if reraise
+                raise e if reraise == true
 
                 return false
             ensure
@@ -167,16 +167,16 @@ module AreSearch
             index_target = resolve_index_target_nilable
 
             # index_targetがnilの場合は、現在のモデル定義からtargetがなくなった可能性があるため、要求は消さずに残す
-            return false unless check_sync_index_target?(index_target)
-            return false unless check_sync_stage_name?(index_target)
+            return false if check_sync_index_target?(index_target) == false
+            return false if check_sync_stage_name?(index_target) == false
 
-            return false unless check_index_target_ready?(index_target)
+            return false if check_index_target_ready?(index_target) == false
 
             #同期が許可されているかを確認する。
-            return false unless check_index_target_sync_ready?(index_target)
+            return false if check_index_target_sync_ready?(index_target) == false
 
             # 他の sync_stage_name で sync_request が存在しないか等のチェックを行うための callback
-            return false unless index_target.are_search_before_sync_check(ar_instance_key, self)
+            return false if index_target.are_search_before_sync_check(ar_instance_key, self) == false
 
             # force が処理したフラグ
             updated_count = sync_request_relation_no_sequence
@@ -221,7 +221,7 @@ module AreSearch
         end
 
         def sync_or_delete_if_record_is_nil(record, index_target)
-            if record
+            if record != nil
                 record.are_search_index_or_delete!(index_target, sync_stage_name)
             else
                 index_target.are_search_delete!(ar_instance_key)
@@ -344,7 +344,7 @@ module AreSearch
 
         # 時間差の解消のためのチェック job投入時点のmodelの情報と処理時点のmodelの情報のチェック
         def check_index_target_ready?(index_target)
-            unless index_target.are_search_index_alias_exists?
+            if index_target.are_search_index_alias_exists? == false
                 AreSearch.logger.debug { "[AreSearch] sync: index が存在しないためスキップ #{index_target.model_class.name} #{index_target.index_target_name} #{self.ar_instance_key}" }
 
                 update_sync_request_error_no_sequence("index not found")

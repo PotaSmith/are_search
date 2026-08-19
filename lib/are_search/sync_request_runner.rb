@@ -31,7 +31,7 @@ module AreSearch
                 # LOCK_NB（ノンブロッキング）で即座に取得可否を返す。
                 # 取得できなければ別の処理が実行中なので、待たずに終了する。
                 locked = lock_file.flock(File::LOCK_EX | File::LOCK_NB)
-                return nil unless locked
+                return nil if locked == false
 
                 return run_with_lock(models, normal_scope, force_scope, processing_token)
             end

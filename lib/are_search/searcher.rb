@@ -106,7 +106,7 @@ module AreSearch
 
             runtime_mappings_exists = body.key?(:runtime_mappings) || body.key?("runtime_mappings")
 
-            if runtime_mappings_exists && enable_runtime_mappings_opts != true
+            if runtime_mappings_exists == true && enable_runtime_mappings_opts != true
                 raise ArgumentError, "runtime_mappings を使用する場合は enable_runtime_mappings: true を指定してください"
             end
 
@@ -120,7 +120,7 @@ module AreSearch
             body_for_policy.delete(:runtime_mappings)
             body_for_policy.delete("runtime_mappings")
 
-            if AreSearch.search_body_policy.valid?(body_for_policy) == false
+            if AreSearch.search_body_policy.valid?(body_for_policy) != true
                 return search_failure_result(
                     status: SearchResult::STATUS_PARAMS_INVALID,
                     error_class: AreSearch::InvalidSearchBody,
@@ -197,7 +197,7 @@ module AreSearch
 
         # モデルが Searchable を include しているか確認する
         def verify_searchable!(model)
-            unless model.include?(AreSearch::Searchable)
+            if model.include?(AreSearch::Searchable) == false
                 raise ArgumentError, "#{model.name} は AreSearch::Searchable を include していません"
             end
         end
@@ -220,11 +220,11 @@ module AreSearch
 
                     model = index_target.model_class
                     other_model = other_index_target.model_class
-                    next unless model < other_model
-
-                    raise ArgumentError,
-                        "同じ Elasticsearch index に親子関係のあるモデルを同時指定できません: " \
-                        "#{index_target.are_search_index_alias_name}: #{other_model.name}, #{model.name}"
+                    if model < other_model
+                        raise ArgumentError,
+                            "同じ Elasticsearch index に親子関係のあるモデルを同時指定できません: " \
+                            "#{index_target.are_search_index_alias_name}: #{other_model.name}, #{model.name}"
+                    end
                 end
             end
         end

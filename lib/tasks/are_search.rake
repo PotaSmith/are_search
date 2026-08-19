@@ -107,7 +107,7 @@ namespace :are_search do
                     sync_lock_detail = "id=#{sync_lock.id} sync_stage_name=#{sync_lock.sync_stage_name.inspect} " \
                         "operation=#{sync_lock.operation} started_at=#{sync_lock.started_at} " \
                         "owner_host=#{sync_lock.owner_host} owner_pid=#{sync_lock.owner_pid}"
-                    sync_lock_detail += " message=#{sync_lock.message.inspect}" unless sync_lock.message.blank?
+                    sync_lock_detail += " message=#{sync_lock.message.inspect}" if sync_lock.message.blank? == false
 
                     puts "    sync lock:  exists  #{sync_lock_detail}"
                 end
@@ -200,7 +200,7 @@ namespace :are_search do
                 end&.first
 
                 if newest_physical_name && current_physical_names.any?
-                    unless current_physical_names.include?(newest_physical_name)
+                    if current_physical_names.include?(newest_physical_name) == false
                         warnings << "newest physical index is not current"
                     end
                 end

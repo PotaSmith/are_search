@@ -53,8 +53,8 @@ require_relative "are_search/searcher/body_builder_selector"
 require_relative "are_search/searcher"
 
 
-require_relative "are_search/rake_utils" if defined?(Rails::Railtie)
-require_relative "are_search/railtie" if defined?(Rails::Railtie)
+require_relative "are_search/rake_utils" if defined?(Rails::Railtie) != nil
+require_relative "are_search/railtie" if defined?(Rails::Railtie) != nil
 
 module AreSearch
 
@@ -132,11 +132,11 @@ module AreSearch
     def self.search_body_policy=(policy_class)
         valid_policy_class = policy_class.instance_of?(Class)
 
-        if valid_policy_class
+        if valid_policy_class == true
             valid_policy_class = policy_class < AreSearch::SearchBodyPolicy
         end
 
-        unless valid_policy_class
+        if valid_policy_class != true
             raise ArgumentError, "search_body_policy は AreSearch::SearchBodyPolicy の継承クラスを指定してください"
         end
 
@@ -152,11 +152,11 @@ module AreSearch
     def self.search_param_policy=(policy_class)
         valid_policy_class = policy_class.instance_of?(Class)
 
-        if valid_policy_class
+        if valid_policy_class == true
             valid_policy_class = policy_class < AreSearch::SearchParamPolicy
         end
 
-        unless valid_policy_class
+        if valid_policy_class != true
             raise ArgumentError, "search_param_policy は AreSearch::SearchParamPolicy の継承クラスを指定してください"
         end
 
@@ -186,11 +186,11 @@ module AreSearch
     def self.database_specific=(database_specific_class)
         valid_database_specific_class = database_specific_class.instance_of?(Class)
 
-        if valid_database_specific_class
+        if valid_database_specific_class == true
             valid_database_specific_class = database_specific_class < AreSearch::DatabaseSpecific
         end
 
-        unless valid_database_specific_class
+        if valid_database_specific_class != true
             raise ArgumentError, "database_specific は AreSearch::DatabaseSpecific の継承クラスを指定してください"
         end
 
@@ -212,7 +212,7 @@ module AreSearch
         errors = []
         AreSearch::SearchableValidator.validate_searchable_class_setting(searchable_class_setting, errors)
 
-        unless errors.empty?
+        if errors.empty? == false
             raise ArgumentError, "検索モデルのチェックに失敗しました\n" + errors.join("\n") + "\n\n"
         end
 
@@ -264,7 +264,7 @@ module AreSearch
     end
 
     def self.validate_index_operation_enabled!
-        return if AreSearch.index_operation_enabled
+        return if AreSearch.index_operation_enabled == true
 
         message = "[AreSearch] index 操作が許可されていません。AreSearch.index_operation_enabled が false になっています。"
 
@@ -283,7 +283,7 @@ module AreSearch
 
     # sync request を回収する rake task の実行環境か確認する。
     def self.validate_rake_operation_enabled!
-        return if rake_operation_enabled
+        return if rake_operation_enabled == true
 
         message = "[AreSearch] rake task の実行が許可されていません。AreSearch.rake_operation_enabled が false になっています。"
 
@@ -343,8 +343,8 @@ module AreSearch
     # Elasticsearch index 名の先頭要素を設定する。
     # 値を指定する場合は利用側定義名の共通形式で検査する。
     def self.setup(index_prefix:, &block)
-        raise ArgumentError, "setup にはクライアント生成のブロックが必要です" unless block
-        raise ArgumentError, "setup にはindex_prefixが必要です" unless index_prefix
+        raise ArgumentError, "setup にはクライアント生成のブロックが必要です" if block.nil?
+        raise ArgumentError, "setup にはindex_prefixが必要です" if index_prefix.nil?
 
         AreSearch::IndexDefinition.valid_index_prefix!(index_prefix)
 
@@ -354,7 +354,7 @@ module AreSearch
 
     def self.log_client_config(client)
         return if Rails.env.test?
-        return unless AreSearch.logger.debug?
+        return if AreSearch.logger.debug? == false
 
         client.transport.connections.connections.each do |connection|
             faraday_connection = connection.connection
@@ -384,7 +384,7 @@ module AreSearch
     private_class_method :log_client_config
 
     def self.client
-        raise NotConfiguredError, "AreSearch.setup が呼ばれていません" unless @client_block
+        raise NotConfiguredError, "AreSearch.setup が呼ばれていません" if @client_block.nil?
 
         cached_client = Thread.current.thread_variable_get(:are_search_client)
         cached_pid = Thread.current.thread_variable_get(:are_search_client_pid)
@@ -403,7 +403,7 @@ module AreSearch
     end
 
     def self.index_prefix
-        raise NotConfiguredError, "AreSearch.setup が呼ばれていません" unless @index_prefix
+        raise NotConfiguredError, "AreSearch.setup が呼ばれていません" if @index_prefix.nil?
 
         @index_prefix
     end

@@ -161,7 +161,7 @@ module AreSearch
                     fields.each do |field_name|
                         field_options = properties[field_name]
 
-                        unless mlt_field_type?(field_options)
+                        if mlt_field_type?(field_options) == false
                             raise ArgumentError, "mlt.fields は mlt.like.index_target の text または keyword 型フィールドを" \
                                 "指定してください: #{field_name.inspect}"
                         end
@@ -186,7 +186,7 @@ module AreSearch
                 # fieldが実際の_sourceに保存される設定か確認する。
                 def source_field_available?(source_settings, field_name)
                     return false if source_settings.instance_of?(Hash) == false
-                    return false unless source_filter_match?(source_settings[:includes], field_name)
+                    return false if source_filter_match?(source_settings[:includes], field_name) == false
                     return false if source_filter_match?(source_settings[:excludes], field_name)
 
                     true

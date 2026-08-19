@@ -119,7 +119,7 @@ module AreSearch
             end
 
             callbacks.each do |key, method_name|
-                unless CALLBACK_KEYS.include?(key)
+                if CALLBACK_KEYS.include?(key) == false
                     errors << "#{path} に不明な設定があります: #{key.inspect}"
                     next
                 end
@@ -149,19 +149,18 @@ module AreSearch
 
                 validate_index_target(model_class, index_target_name, target_setting, errors)
 
-                next unless target_setting.instance_of?(Hash)
-                next unless target_setting.key?(:index_target_name_alias)
+                if target_setting.instance_of?(Hash) && target_setting.key?(:index_target_name_alias)
+                    index_target_name_alias = target_setting[:index_target_name_alias]
+                    next if AreSearch::IndexDefinition.valid_index_target_name?(index_target_name_alias) == false
 
-                index_target_name_alias = target_setting[:index_target_name_alias]
-                next if AreSearch::IndexDefinition.valid_index_target_name?(index_target_name_alias) == false
+                    if index_target_name_aliases.include?(index_target_name_alias)
+                        errors << "#{setting_path(model_class)} の index_target_name_alias が重複しています: " \
+                            "#{index_target_name_alias.inspect}"
+                        next
+                    end
 
-                if index_target_name_aliases.include?(index_target_name_alias)
-                    errors << "#{setting_path(model_class)} の index_target_name_alias が重複しています: " \
-                        "#{index_target_name_alias.inspect}"
-                    next
+                    index_target_name_aliases << index_target_name_alias
                 end
-
-                index_target_name_aliases << index_target_name_alias
             end
 
             if index_target_count == 0
@@ -182,12 +181,12 @@ module AreSearch
             end
 
             target_setting.each_key do |key|
-                unless key.instance_of?(Symbol)
+                if key.instance_of?(Symbol) == false
                     errors << "#{path} のkeyはSymbolで指定してください: #{key.inspect}"
                     next
                 end
 
-                unless INDEX_TARGET_SETTING_KEYS.include?(key)
+                if INDEX_TARGET_SETTING_KEYS.include?(key) == false
                     errors << "#{path} に不明な設定があります: #{key.inspect}"
                 end
             end
@@ -204,7 +203,7 @@ module AreSearch
 
         # IndexTargetの別名を検査する。
         def validate_index_target_name_alias(target_setting, path, errors)
-            return true unless target_setting.key?(:index_target_name_alias)
+            return true if target_setting.key?(:index_target_name_alias) == false
 
             index_target_name_alias = target_setting[:index_target_name_alias]
             return true if AreSearch::IndexDefinition.valid_index_target_name?(index_target_name_alias)
@@ -218,13 +217,13 @@ module AreSearch
         # targetのsettingsを検査する。
         # analysisはAreSearch側で設定するため利用側では指定できない。
         def validate_settings(target_setting, path, errors)
-            unless target_setting.key?(:settings)
+            if target_setting.key?(:settings) == false
                 errors << "#{path} に :settings がありません"
                 return false
             end
 
             settings = target_setting[:settings]
-            unless settings.instance_of?(Hash)
+            if settings.instance_of?(Hash) == false
                 errors << "#{path}[:settings] は Hash で指定してください"
                 return false
             end
@@ -250,10 +249,10 @@ module AreSearch
         # targetのmappingsを検査する。
         # propertiesはproperties_methodの結果を使用するため利用側では指定できない。
         def validate_mappings(target_setting, path, errors)
-            return true unless target_setting.key?(:mappings)
+            return true if target_setting.key?(:mappings) == false
 
             mappings = target_setting[:mappings]
-            unless mappings.instance_of?(Hash)
+            if mappings.instance_of?(Hash) == false
                 errors << "#{path}[:mappings] は Hash で指定してください"
                 return false
             end
@@ -274,10 +273,10 @@ module AreSearch
 
         # mappingsの_source設定を検査する。
         def validate_source_settings(mappings, path, errors)
-            return true unless mappings.key?(:_source)
+            return true if mappings.key?(:_source) == false
 
             source_settings = mappings[:_source]
-            unless source_settings.instance_of?(Hash)
+            if source_settings.instance_of?(Hash) == false
                 errors << "#{path}[:mappings][:_source] は Hash で指定してください"
                 return false
             end
@@ -325,19 +324,19 @@ module AreSearch
                     next
                 end
 
-                if AreSearch.search_body_policy.invalid_key?(field_name)
+                if AreSearch.search_body_policy.invalid_key?(field_name) != false
                     errors <<
                         "#{model_class.name}.#{method_name} に許可されていないfieldがあります: " \
                         "#{field_name}"
                     next
                 end
 
-                unless field_definition.instance_of?(Hash)
+                if field_definition.instance_of?(Hash) == false
                     errors << "#{model_class.name}.#{method_name}[#{field_name.inspect}] はHashが必要です"
                     next
                 end
 
-                unless field_definition.key?(:type)
+                if field_definition.key?(:type) == false
                     errors << "#{model_class.name}.#{method_name}[#{field_name.inspect}] に :type がありません"
                 end
             end
@@ -347,7 +346,7 @@ module AreSearch
 
         # IndexTarget単位のindex対象判定メソッドを検査する。
         def validate_indexable_method(model_class, target_setting, path, errors)
-            return true unless target_setting.key?(:indexable_method)
+            return true if target_setting.key?(:indexable_method) == false
 
             method_name = target_setting[:indexable_method]
             validate_instance_method(model_class, method_name, 0, "#{path}[:indexable_method]", errors)
@@ -395,7 +394,7 @@ module AreSearch
             end
 
             stage_setting.each_key do |key|
-                unless STAGE_SETTING_KEYS.include?(key)
+                if STAGE_SETTING_KEYS.include?(key) == false
                     errors << "#{stage_path} に不明な設定があります: #{key.inspect}"
                 end
             end
@@ -404,7 +403,7 @@ module AreSearch
             enqueue_valid = validate_boolean_setting(stage_setting, :enqueue, stage_path, errors)
             after_commit_valid = validate_boolean_setting(stage_setting, :after_commit, stage_path, errors)
 
-            if enqueue_valid && after_commit_valid &&
+            if enqueue_valid == true && after_commit_valid == true &&
                     stage_setting[:after_commit] == true && stage_setting[:enqueue] != true
                 errors << "#{stage_path} は after_commit: true の場合 enqueue: true にしてください"
             end
@@ -414,7 +413,7 @@ module AreSearch
 
         # stageのdata生成メソッドを検査する。
         def validate_stage_data_method(model_class, stage_setting, path, errors)
-            unless stage_setting.key?(:data_method)
+            if stage_setting.key?(:data_method) == false
                 errors << "#{path} に :data_method がありません"
                 return false
             end
@@ -424,12 +423,12 @@ module AreSearch
 
         # 必須boolean設定がtrue/falseで指定されているか検査する。
         def validate_boolean_setting(setting, key, path, errors)
-            unless setting.key?(key)
+            if setting.key?(key) == false
                 errors << "#{path} に #{key.inspect} がありません"
                 return false
             end
 
-            unless setting[key] == true || setting[key] == false
+            if setting[key] != true && setting[key] != false
                 errors << "#{path}[#{key.inspect}] は true / false で指定してください"
                 return false
             end
@@ -439,12 +438,12 @@ module AreSearch
 
         # 設定されたpublic class methodの存在と引数数を検査する。
         def validate_class_method(model_class, method_name, arity, path, errors)
-            unless method_name.instance_of?(Symbol)
+            if method_name.instance_of?(Symbol) == false
                 errors << "#{path} は Symbol でメソッド名を指定してください"
                 return false
             end
 
-            unless model_class.respond_to?(method_name)
+            if model_class.respond_to?(method_name) == false
                 errors << "#{path} に指定されたclass methodがありません: #{model_class.name}.#{method_name}"
                 return false
             end
@@ -459,17 +458,17 @@ module AreSearch
 
         # 設定されたpublic instance methodの存在と引数数を検査する。
         def validate_instance_method(model_class, method_name, arity, path, errors)
-            unless method_name.instance_of?(Symbol)
+            if method_name.instance_of?(Symbol) == false
                 errors << "#{path} は Symbol でメソッド名を指定してください"
                 return false
             end
 
-            unless model_class.public_method_defined?(method_name)
+            if model_class.public_method_defined?(method_name) == false
                 errors << "#{path} のinstance methodがありません: #{model_class.name}##{method_name}"
                 return false
             end
 
-            unless model_class.instance_method(method_name).arity == arity
+            if model_class.instance_method(method_name).arity != arity
                 errors << "#{model_class.name}##{method_name} は#{arity}引数で定義してください"
                 return false
             end

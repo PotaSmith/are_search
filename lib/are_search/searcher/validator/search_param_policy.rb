@@ -15,7 +15,7 @@ module AreSearch
                     if key == :queries
                         next if value.nil?
                         value.each do |value_child|
-                            if valid?('query_string', value_child[:query_string]) == false
+                            if valid?('query_string', value_child[:query_string]) != true
                                 raise AreSearch::InvalidSearchOption
                             end
                         end
@@ -30,7 +30,7 @@ module AreSearch
                             condition_value.each do |field_name, field_param|
                                 next if field_param.nil?
                                 field_param.each do |param_type, param_value|
-                                    if valid?("#{key}.#{param_type}", param_value) == false
+                                    if valid?("#{key}.#{param_type}", param_value) != true
                                         raise AreSearch::InvalidSearchOption
                                     end
                                 end

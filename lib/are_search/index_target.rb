@@ -19,7 +19,7 @@ module AreSearch
             def searchable_class_setting_model_class(model_class)
                 current_model_class = model_class
 
-                while current_model_class
+                while current_model_class != nil
                     if AreSearch.searchable_class_setting.instance_of?(Hash) &&
                             AreSearch.searchable_class_setting.key?(current_model_class.name)
                         return current_model_class
@@ -221,7 +221,7 @@ module AreSearch
         def validate_defined_sync_stage_name!(sync_stage_name)
             AreSearch::IndexDefinition.valid_sync_stage_name!(sync_stage_name)
 
-            unless are_search_sync_stage_names.include?(sync_stage_name)
+            if are_search_sync_stage_names.include?(sync_stage_name) == false
                 raise ArgumentError, "sync_stage_name が IndexTarget に定義されていません: #{sync_stage_name}"
             end
         end

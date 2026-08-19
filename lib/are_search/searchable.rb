@@ -88,7 +88,7 @@ module AreSearch
             model_class_names = []
 
             current_model_class = self.class
-            while current_model_class
+            while current_model_class != nil
                 if current_model_class.include?(AreSearch::Searchable)
                     model_class_names << current_model_class.name
                 end
@@ -113,7 +113,7 @@ module AreSearch
         #
         # @return [Object, nil] index時はElasticsearchクライアントの戻り値、delete時は nil。
         def are_search_index_or_delete!(index_target, sync_stage_name)
-            if destroyed? || index_target.are_search_indexable?(self) != true
+            if destroyed? || index_target.are_search_indexable?(self) == false
                 index_target.are_search_delete!(id)
             else
                 AreSearch::EsAdapter.index(
@@ -132,7 +132,7 @@ module AreSearch
         # typo 等で例外が出るかどうかを確認するのが目的
         def are_search_index_data_validate
             self.class.are_search_index_targets.each do |index_target|
-                next if index_target.are_search_indexable?(self) != true
+                next if index_target.are_search_indexable?(self) == false
 
                 index_target.are_search_sync_stage_names.each do |sync_stage_name|
                     mappings = index_target.are_search_index_mappings
@@ -143,7 +143,7 @@ module AreSearch
                     if data.instance_of?(Hash)
                         reserved_index_field_names = AreSearch::IndexDataValidator.find_reserved_index_field_names(data)
 
-                        unless reserved_index_field_names.empty?
+                        if reserved_index_field_names.empty? == false
                             violations << "index data に AreSearch の予約フィールドは指定できません: " \
                                 "index_target=#{index_target.index_target_name.inspect} " \
                                 "sync_stage=#{sync_stage_name.inspect}: #{reserved_index_field_names}"
@@ -273,7 +273,7 @@ module AreSearch
 
             # このモデルが持つ全 index target を返す。
             def are_search_index_targets
-                return @are_search_index_targets unless @are_search_index_targets.nil?
+                return @are_search_index_targets if @are_search_index_targets.nil? == false
 
                 class_setting = AreSearch::IndexTarget.searchable_class_setting_for(self)
                 if class_setting.nil?
@@ -287,7 +287,7 @@ module AreSearch
             end
 
             def are_search_index_target_map
-                return @are_search_index_target_map unless @are_search_index_target_map.nil?
+                return @are_search_index_target_map if @are_search_index_target_map.nil? == false
 
                 target_map = {}
                 target_alias_map = {}
