@@ -308,7 +308,7 @@ module AreSearch
                 raise AreSearch::Error, "Elasticsearch bulk response の items が不正です"
             end
 
-            unless items.length == expected_keys.length
+            if items.length != expected_keys.length
                 raise AreSearch::Error,
                     "Elasticsearch bulk response の件数が一致しません"
             end
@@ -323,7 +323,7 @@ module AreSearch
                     raise AreSearch::Error, "Elasticsearch bulk response の index 結果が不正です"
                 end
 
-                unless result["_id"] == expected_keys[index]
+                if result["_id"] != expected_keys[index]
                     raise AreSearch::Error,
                         "Elasticsearch bulk response の ID が一致しません"
                 end
@@ -755,7 +755,7 @@ module AreSearch
             def seek_back(file, position, check_chars:, include:)
                 while position >= 0
                     file.seek(position)
-                    break unless check_chars.include?(file.read(1)) == include
+                    break if check_chars.include?(file.read(1)) != include
 
                     position -= 1
                 end

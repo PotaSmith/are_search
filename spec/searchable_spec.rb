@@ -930,6 +930,10 @@ RSpec.describe AreSearch::Searchable do
                     id:    "123",
                     body:  { title: "hello" },
                 )
+                .and_return(
+                    "_id"    => "123",
+                    "result" => "created",
+                )
 
             record.are_search_index_or_delete!(index_target, "default")
         end

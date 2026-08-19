@@ -35,7 +35,11 @@ RSpec.describe AreSearch::IndexManager do
         response = {}
 
         physical_names.each do |physical_name|
-            response[physical_name] = {}
+            response[physical_name] = {
+                "aliases" => {
+                    index_alias_name => {},
+                },
+            }
         end
 
         response
@@ -123,6 +127,12 @@ RSpec.describe AreSearch::IndexManager do
                         settings: index_settings,
                         mappings: mappings,
                     )
+
+                    {
+                        "index"               => created_index,
+                        "acknowledged"        => true,
+                        "shards_acknowledged" => true,
+                    }
                 end
 
             expect_reindex_alias_lookup(
@@ -194,6 +204,12 @@ RSpec.describe AreSearch::IndexManager do
             allow(indices)
                 .to receive(:create) do |args|
                     created_index = args[:index]
+
+                    {
+                        "index"               => created_index,
+                        "acknowledged"        => true,
+                        "shards_acknowledged" => true,
+                    }
                 end
 
             expect(indices).not_to receive(:update_aliases)
@@ -288,7 +304,13 @@ RSpec.describe AreSearch::IndexManager do
                 .to receive(:exists)
                 .with(index: index_alias_name)
                 .and_return(false)
-            allow(indices).to receive(:create)
+            allow(indices).to receive(:create) do |args|
+                {
+                    "index"               => args[:index],
+                    "acknowledged"        => true,
+                    "shards_acknowledged" => true,
+                }
+            end
             expect_missing_reindex_alias(count: 2)
             allow(indices)
                 .to receive(:update_aliases)
@@ -324,7 +346,13 @@ RSpec.describe AreSearch::IndexManager do
             result = build_reindex_result
 
             expect_missing_reindex_alias(count: 1)
-            allow(indices).to receive(:create)
+            allow(indices).to receive(:create) do |args|
+                {
+                    "index"               => args[:index],
+                    "acknowledged"        => true,
+                    "shards_acknowledged" => true,
+                }
+            end
             expect(indices).not_to receive(:update_aliases)
 
             expect do
@@ -349,7 +377,13 @@ RSpec.describe AreSearch::IndexManager do
                 .to receive(:exists)
                 .with(index: index_alias_name)
                 .and_return(false)
-            allow(indices).to receive(:create)
+            allow(indices).to receive(:create) do |args|
+                {
+                    "index"               => args[:index],
+                    "acknowledged"        => true,
+                    "shards_acknowledged" => true,
+                }
+            end
             expect_missing_reindex_alias(count: 2)
             allow(indices)
                 .to receive(:update_aliases)
@@ -374,7 +408,13 @@ RSpec.describe AreSearch::IndexManager do
             result = build_reindex_result
 
             expect_missing_reindex_alias(count: 1)
-            allow(indices).to receive(:create)
+            allow(indices).to receive(:create) do |args|
+                {
+                    "index"               => args[:index],
+                    "acknowledged"        => true,
+                    "shards_acknowledged" => true,
+                }
+            end
             expect(indices).not_to receive(:update_aliases)
 
             allow(AreSearch::SyncLock)
@@ -501,7 +541,11 @@ RSpec.describe AreSearch::IndexManager do
         response = {}
 
         physical_names.each do |physical_name|
-            response[physical_name] = {}
+            response[physical_name] = {
+                "aliases" => {
+                    index_alias_name => {},
+                },
+            }
         end
 
         response
@@ -610,6 +654,7 @@ RSpec.describe AreSearch::IndexManager do
                 .with(
                     index: "test__articles__default__2024_01_01_00_00_00_000000",
                 )
+                .and_return("acknowledged" => true)
 
             described_class.delete_physical_index!(
                 "test__articles__default__2024_01_01_00_00_00_000000",

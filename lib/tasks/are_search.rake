@@ -320,7 +320,7 @@ namespace :are_search do
             answer = ""
         end
 
-        unless answer.strip.downcase == "y"
+        if answer.strip.downcase != "y"
             puts "[AreSearch] reindex canceled."
             next
         end

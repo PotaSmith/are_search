@@ -189,7 +189,7 @@ module AreSearch
                 )
 
             # ない時は、他で上手く処理した場合
-            return true unless updated_count == 1
+            return true if updated_count != 1
 
             # 同期本体
             # forceはあくまで補助なので、カウント更新も、callback処理もしない

@@ -25,7 +25,17 @@ module AreSearch
         def index(index_alias_name:, es_key:, body:)
             AreSearch::IndexDefinition.valid_index_alias_name!(index_alias_name)
 
-            AreSearch.client.index(index: index_alias_name, id: es_key, body: body)
+            response = AreSearch.client.index(index: index_alias_name, id: es_key, body: body)
+
+            if response.respond_to?(:[]) == false || response["_id"] != es_key
+                raise AreSearch::Error, "Elasticsearch index response の ID が一致しません"
+            end
+
+            if ["created", "updated"].include?(response["result"]) == false
+                raise AreSearch::Error, "Elasticsearch index response の result が不正です: #{response["result"].inspect}"
+            end
+
+            response
         end
 
         # Elasticsearch の単一ドキュメント削除APIを呼び出す。
@@ -53,7 +63,17 @@ module AreSearch
         def indices_get_alias(index_alias_name:)
             AreSearch::IndexDefinition.valid_index_alias_name!(index_alias_name)
 
-            AreSearch.client.indices.get_alias(name: index_alias_name)
+            response = AreSearch.client.indices.get_alias(name: index_alias_name)
+
+            response.each_value do |index_info|
+                aliases = index_info["aliases"]
+
+                if aliases.instance_of?(Hash) == false || aliases.key?(index_alias_name) == false
+                    raise AreSearch::Error, "Elasticsearch alias response に指定した alias がありません: #{index_alias_name}"
+                end
+            end
+
+            response
         rescue Elastic::Transport::Transport::Errors::NotFound
             {}
         end
@@ -118,9 +138,13 @@ module AreSearch
         def delete_physical_index(physical_index_name:)
             AreSearch::IndexDefinition.valid_physical_index_name!(physical_index_name)
 
-            AreSearch.client.indices.delete(index: physical_index_name)
+            response = AreSearch.client.indices.delete(index: physical_index_name)
 
-            return success
+            if response.respond_to?(:[]) != true || response["acknowledged"] != true
+                raise AreSearch::Error, "Elasticsearch index delete が acknowledge されませんでした"
+            end
+
+            success
         rescue Elastic::Transport::Transport::Errors::NotFound
             return not_found
         end
@@ -130,10 +154,21 @@ module AreSearch
         def indices_create(physical_index_name:, body:)
             AreSearch::IndexDefinition.valid_physical_index_name!(physical_index_name)
 
-            AreSearch.client.indices.create(
-                index: physical_index_name,
-                body:  body,
-            )
+            response = AreSearch.client.indices.create(index: physical_index_name, body: body)
+
+            if response.respond_to?(:[]) != true || response["index"] != physical_index_name
+                raise AreSearch::Error, "Elasticsearch index create response の index が一致しません"
+            end
+
+            if response["acknowledged"] != true
+                raise AreSearch::Error, "Elasticsearch index create が acknowledge されませんでした"
+            end
+
+            if response["shards_acknowledged"] != true
+                raise AreSearch::Error, "Elasticsearch index create の shard が acknowledge されませんでした"
+            end
+
+            response
         end
 
         # 旧物理indexから新物理indexへaliasを切り替える。
@@ -157,7 +192,7 @@ module AreSearch
 
                 old_index_alias_name = AreSearch::IndexDefinition.index_alias_name_from_physical_index_name(old_physical_index_name)
 
-                unless old_index_alias_name == index_alias_name
+                if old_index_alias_name != index_alias_name
                     raise ArgumentError, "old_physical_index_names と new_physical_index_name の alias 名が一致しません"
                 end
 

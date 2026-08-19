@@ -449,7 +449,7 @@ module AreSearch
                 return false
             end
 
-            unless model_class.method(method_name).arity == arity
+            if model_class.method(method_name).arity != arity
                 errors << "#{model_class.name}.#{method_name} は#{arity}引数で定義してください"
                 return false
             end

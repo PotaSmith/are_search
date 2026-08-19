@@ -216,7 +216,7 @@ module AreSearch
             index_targets.each do |index_target|
                 index_targets.each do |other_index_target|
                     next if index_target == other_index_target
-                    next unless index_target.are_search_index_alias_name.to_s == other_index_target.are_search_index_alias_name.to_s
+                    next if index_target.are_search_index_alias_name.to_s != other_index_target.are_search_index_alias_name.to_s
 
                     model = index_target.model_class
                     other_model = other_index_target.model_class

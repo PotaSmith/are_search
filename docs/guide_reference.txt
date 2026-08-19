@@ -178,7 +178,7 @@ index 作成時に Elasticsearch の settings へ渡す analyzer 設定。
     検索body policyによる拒否
         AreSearch::InvalidSearchBody
 
-    index不存在
+    alias が存在しない、または状態確認に失敗した場合
         AreSearch::SearchIndexNotFound
 
     それ以外

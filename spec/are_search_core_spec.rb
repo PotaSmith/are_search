@@ -765,7 +765,13 @@ RSpec.describe AreSearch::EsAdapter do
             expect(indices)
                 .to receive(:get_alias)
                 .with(name: "test__articles__default")
-                .and_return(new_physical_index_name => {})
+                .and_return(
+                    new_physical_index_name => {
+                        "aliases" => {
+                            "test__articles__default" => {},
+                        },
+                    },
+                )
 
             result = described_class.update_alias(
                 old_physical_index_names: [],
@@ -784,7 +790,11 @@ RSpec.describe AreSearch::EsAdapter do
                 .to receive(:get_alias)
                 .with(name: "test__articles__default")
                 .and_return(
-                    "test__articles__default__2026_08_03_12_00_00_000000" => {},
+                    "test__articles__default__2026_08_03_12_00_00_000000" => {
+                        "aliases" => {
+                            "test__articles__default" => {},
+                        },
+                    },
                 )
 
             result = described_class.update_alias(

@@ -65,8 +65,8 @@ module AreSearch
 
         # 同じモデルと index_target_name を持つ IndexTarget を同一targetとして扱う。
         def ==(other)
-            return false unless other.instance_of?(self.class)
-            return false unless model_class == other.model_class
+            return false if other.instance_of?(self.class) == false
+            return false if model_class != other.model_class
 
             index_target_name == other.index_target_name
         end

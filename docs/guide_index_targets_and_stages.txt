@@ -299,7 +299,7 @@ false の間はその要求の同期を開始しない。後続の run_sync_requ
 
     def self.default_after_sync_callback(record, index_target, sync_request)
         return if record.nil?
-        return unless sync_request.sync_stage_name == "default"
+        return if sync_request.sync_stage_name != "default"
 
         record.are_search_upsert_sync_request(
             index_target,

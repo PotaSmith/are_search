@@ -115,7 +115,7 @@ module AreSearch
                     return
                 end
 
-                unless klass.method(method_name).arity == arity
+                if klass.method(method_name).arity != arity
                     errors << "#{klass.name}.#{method_name} は#{arity}引数で定義してください"
                 end
             end
@@ -129,7 +129,7 @@ module AreSearch
                     return
                 end
 
-                unless klass.instance_method(method_name).arity == arity
+                if klass.instance_method(method_name).arity != arity
                     errors << "#{klass.name}##{method_name} は#{arity}引数で定義してください"
                 end
             end

@@ -151,7 +151,7 @@ module AreSearch
                 raise AreSearch::Error, "Elasticsearch bulk response の items が不正です"
             end
 
-            unless items.length == expected_ids.length
+            if items.length != expected_ids.length
                 raise AreSearch::Error, "Elasticsearch bulk response の件数が一致しません"
             end
 
@@ -165,7 +165,7 @@ module AreSearch
                     raise AreSearch::Error, "Elasticsearch bulk response の index 結果が不正です"
                 end
 
-                unless result["_id"] == expected_ids[index].to_s
+                if result["_id"] != expected_ids[index].to_s
                     raise AreSearch::Error, "Elasticsearch bulk response の ID が一致しません"
                 end
             end

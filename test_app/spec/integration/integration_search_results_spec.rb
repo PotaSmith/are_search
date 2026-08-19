@@ -514,8 +514,8 @@ RSpec.describe "AreSearch multi index response integration", type: :model do
             stage_position: :first,
         )
 
-        raise "DocumentFirst reindex failed" unless first_reindex_result[:result] == :success
-        raise "DocumentSecond reindex failed" unless second_reindex_result[:result] == :success
+        raise "DocumentFirst reindex failed" if first_reindex_result[:result] != :success
+        raise "DocumentSecond reindex failed" if second_reindex_result[:result] != :success
 
         DocumentFirst.create!(
             title:   "multiresponseintegrationtoken first",

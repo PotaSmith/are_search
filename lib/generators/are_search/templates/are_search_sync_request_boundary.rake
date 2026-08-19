@@ -79,7 +79,7 @@ module AreSearchSyncRequestBoundaryTask
             answer = ""
         end
 
-        unless answer.strip.downcase == "y"
+        if answer.strip.downcase != "y"
             puts "[AreSearch] Boundary同期をキャンセルしました。"
             return
         end
