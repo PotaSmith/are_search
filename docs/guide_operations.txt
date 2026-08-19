@@ -267,7 +267,7 @@ bulkと必要なrecoverが完了した後に実行する。
 
     bundle exec rake are_search:clear_sync_request_boundary
 
-Boundary操作をBulkIndexerと組み合わせる具体的な手順は guide_bulk_indexer.txt を参照する。
+Boundary操作をBulkIndexerと組み合わせる具体的な手順は guide_bulk_import.txt を参照する。
 
 
 # 8. モデル設定を確認する

@@ -200,7 +200,8 @@ docs/guide_setup.txt                     Setup and initial configuration
 docs/guide_index_targets_and_stages.txt  IndexTarget, sync stages, and synchronization targets
 docs/guide_usage.txt                     Search options and search result handling
 docs/guide_operations.txt                Reindexing, synchronization, cleanup, sync locks, and operations
-docs/guide_bulk_indexer.txt              BulkIndexer operations for large datasets
+docs/guide_bulk_import.txt               Data import and BulkIndexer operations
+docs/guide_webapp.txt                    Example of using it in a web application
 docs/guide_reference.txt                 Settings, internal behavior, and low-level APIs
 ```
 

@@ -18,7 +18,6 @@ module AreSearch
             # BulkIndexer の実行用サンプルを、通常ロードされない一時領域へ生成する。
             def copy_bulk_sample
                 copy_file "are_search_bulk_index.rb", "tmp/are_search/sample/are_search_bulk_index.rb.sample"
-                copy_file "are_search_bulk_index.sh", "tmp/are_search/sample/are_search_bulk_index.sh.sample"
             end
         end
     end

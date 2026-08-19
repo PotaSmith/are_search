@@ -70,6 +70,7 @@ module AreSearch
             "str_or_int_or_float_or_bool",
             "positive_number",
             "positive_integer",
+            "page_integer",
             "query_type",
             "symbol_key",
             "sort_field",
@@ -486,14 +487,14 @@ module AreSearch
             page: {
                 error_class: AreSearch::InvalidSearchOption,
                 scalar: {
-                    type: "positive_integer",
+                    type: "page_integer",
                 },
             },
 
             # per_page: 20
             per_page: {
                 scalar: {
-                    type: "positive_integer",
+                    type: "page_integer",
                 },
             },
 

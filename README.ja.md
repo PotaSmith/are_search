@@ -203,7 +203,8 @@ docs/guide_setup.txt                     セットアップ、初回導入
 docs/guide_index_targets_and_stages.txt  IndexTarget、sync stage、同期対象
 docs/guide_usage.txt                     検索オプション、検索結果の扱い
 docs/guide_operations.txt                reindex、同期、clean up、sync lock、運用
-docs/guide_bulk_indexer.txt              大規模データのBulkIndexer運用
+docs/guide_bulk_import.txt               データ投入とBulkIndexer
+docs/guide_webapp.txt                    WEBアプリでの使用例
 docs/guide_reference.txt                 設定、内部動作、低レベルAPI
 ```
 

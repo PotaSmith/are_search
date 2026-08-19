@@ -164,6 +164,8 @@ RSpec.describe "search response" do
     end
 
     it "response.sourceはStringのArrayに限定する" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         invalid_values = [
             [],
             :title,
@@ -257,6 +259,8 @@ RSpec.describe "search response" do
     end
 
     it "response.fieldsはStringのArrayに限定する" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         invalid_values = [
             [],
             :title,
@@ -309,6 +313,8 @@ RSpec.describe "search response" do
     end
 
     it "response.stored_fieldsはStringのArrayに限定する" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         invalid_values = [
             [],
             :body,
@@ -364,6 +370,8 @@ RSpec.describe "search response" do
     end
 
     it "response.docvalue_fieldsはStringのArrayに限定する" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         invalid_values = [
             [],
             :status,
@@ -395,6 +403,8 @@ RSpec.describe "search response" do
     end
 
     it "raw_bodyとは同時に指定できない" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         expect do
             AreSearch::Searcher.search(
                 [article_index_target],
@@ -571,6 +581,8 @@ RSpec.describe "search runtime mappings" do
     end
 
     it "runtime_mappingsはtypeを持つSymbol keyのHashに限定する" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         invalid_values = [
             [],
             {},
@@ -697,6 +709,8 @@ RSpec.describe "search runtime mappings" do
     end
 
     it "標準検索のruntime_mappingsはenable_runtime_mappingsを必須にする" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         expect do
             AreSearch::Searcher.search(
                 [article_index_target],
@@ -715,6 +729,8 @@ RSpec.describe "search runtime mappings" do
     end
 
     it "raw_body内のruntime_mappingsもenable_runtime_mappingsを必須にする" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         expect do
             AreSearch::Searcher.search(
                 [article_index_target],
@@ -764,6 +780,8 @@ RSpec.describe "search runtime mappings" do
     end
 
     it "raw_bodyとトップレベルruntime_mappingsは同時に使用できない" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         expect do
             AreSearch::Searcher.search(
                 [article_index_target],

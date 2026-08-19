@@ -5,6 +5,14 @@
 ## [Unreleased]
 
 - このバージョンは、DBの作り直しが必要だが、バージョンが1.0.0以下なので移行手順は用意しない
+- 検索処理の失敗時動作を整理。必要なindexの事前確認を追加し、原因不明の検索失敗は `STATUS_SEARCH_FAIL` の空結果として返せるよう変更
+- `page` / `per_page` に `0` を指定した場合は既定値として扱うよう変更し、`params[:page].to_i` をそのまま利用できるよう調整
+- `max_result_window` により検索結果の表示上限へ到達したことを判定する `over_max_result_window?` と、使用中の上限値を取得する `max_result_window` を検索結果へ追加
+- index_target_name_aliasの追加
+- Webアプリケーションでの検索、エラー処理、ページング、複数モデル検索、ハイライト、集計の使用例をガイドへ追加
+- BulkIndexer運用向けに sync_requestの処理中確認用メソッドの追加
+- BulkIndexer運用向けにsync stage単位のlock状態確認を整理し、lock取得中・bulk実行中・lock解除後を確認できるよう変更
+- `check_index_status` / `check_sync_request_status` の表示を拡張し、sync lockのstage、操作、開始日時、ホスト、PIDなど運用確認に必要な情報を表示するよう変更
 - IndexTarget、sync stage、index設定の定義方法を変更し、Searchableをincludeしたクラス内の定義の一部を設定ファイルへ移動
 - `sync_request` のユニークキーからモデルクラス名を除外し、alias・sync stage・レコードIDの組み合わせへ変更
 

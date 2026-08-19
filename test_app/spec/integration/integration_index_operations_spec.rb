@@ -533,7 +533,7 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
         sync_lock = new_version_index_target.are_search_acquire_sync_stage_lock!(sync_stage_name)
 
         expect(sync_lock).not_to eq(nil)
-        expect(new_version_index_target.are_search_sync_stage_syncable?(sync_stage_name)).to eq(false)
+        expect(new_version_index_target.are_search_sync_stage_locked?(sync_stage_name)).to eq(true)
         expect(
             new_version_index_target.are_search_processing_sync_stage_sync_request_exists?(sync_stage_name),
         ).to eq(false)
@@ -572,7 +572,7 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
         end
 
         expect(updated_during_bulk).to eq(true)
-        expect(new_version_index_target.are_search_sync_stage_syncable?(sync_stage_name)).to eq(false)
+        expect(new_version_index_target.are_search_sync_stage_locked?(sync_stage_name)).to eq(true)
 
         default_index_target = DocumentFirst.are_search_index_target(:default)
         new_version_index_target = DocumentFirst.are_search_index_target(:new_version)
@@ -606,7 +606,7 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
 
         # 10-5: lockを解除し、new_version/defaultに残った通常SyncRequestをrakeで回収する。
         new_version_index_target.are_search_release_sync_stage_lock!(sync_stage_name)
-        expect(new_version_index_target.are_search_sync_stage_syncable?(sync_stage_name)).to eq(true)
+        expect(new_version_index_target.are_search_sync_stage_locked?(sync_stage_name)).to eq(false)
 
         load_run_sync_requests_task
 

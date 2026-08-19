@@ -445,7 +445,7 @@ where系の term / terms / range は文字列化した長さが256文字まで�
             },
         ],
         sort:         :updated_at,
-        page:         params.fetch(:page, 1).to_i,
+        page:         params[:page].to_i,
         per_page:     20,
     )
 
@@ -762,6 +762,10 @@ raw_body検索では page、per_page、build_model_bool を反映した body を
     AreSearch::SearchResult::STATUS_INDEX_NOT_FOUND
         値は :index_not_found。
         検索対象 index または MLT の基準indexが存在せず、空結果を返した。
+
+    AreSearch::SearchResult::STATUS_SEARCH_FAIL
+        値は :search_fail
+        原因が特定できない検索の失敗
 
 
 ## 16-2. records

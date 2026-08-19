@@ -60,6 +60,10 @@ module AreSearch
             )
         end
 
+        def over_max_result_window?
+            es_total_count > max_result_window && (offset + hits_count) >= max_result_window
+        end
+
         #
         # page, per_page は検索パラメータそのまま
         # 検索パラメータチェックにより数値保証はある
@@ -136,7 +140,7 @@ module AreSearch
         #
         # status
         #   検索の終了状態を返す。
-        #   :ok は検索実行済み、:params_invalid と :index_not_found は検索未実行。
+        #   :ok は検索実行済み、:params_invalid と :index_not_found と :search_fail は検索未実行。
         #
         # @param records [PaginatedCollection]
         # @param records_with_hit [Array]
@@ -147,11 +151,13 @@ module AreSearch
         STATUS_OK = :ok
         STATUS_PARAMS_INVALID  = :params_invalid
         STATUS_INDEX_NOT_FOUND = :index_not_found
+        STATUS_SEARCH_FAIL     = :search_fail
 
         STATUSES = [
             STATUS_OK,
             STATUS_PARAMS_INVALID,
             STATUS_INDEX_NOT_FOUND,
+            STATUS_SEARCH_FAIL,
         ].freeze
 
         attr_reader :status,
@@ -185,6 +191,14 @@ module AreSearch
             return @aggs if name.nil?
 
             @str_key_aggs.fetch(name.to_sym, [])
+        end
+
+        def max_result_window
+            @records.max_result_window
+        end
+
+        def over_max_result_window?
+            @records.over_max_result_window?
         end
     end
 end

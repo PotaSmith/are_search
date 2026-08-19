@@ -11,6 +11,11 @@ module AreSearch
             value.nil? ? default_value : value
         end
 
+        # オプションが未指定または0の場合だけデフォルト値へ変換する
+        def resolve_page_default_option(value, default_value)
+            value.nil? || value.to_i == 0 ? default_value : value
+        end
+
         # 検索対象モデルを限定するための Elasticsearch terms 条件を組み立てる。
         # 複数 target が同じモデルを参照する場合はモデル名を重複させない。
         def build_model_filter_clause(index_targets)

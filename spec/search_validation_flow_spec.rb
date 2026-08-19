@@ -115,7 +115,7 @@ RSpec.describe AreSearch::SearchParamValidator do
     end
 
     describe ".validate!" do
-        it "pageとper_pageは正のIntegerだけを受け付ける" do
+        it "pageとper_pageは0以上のIntegerだけを受け付ける" do
             result = validate_options(
                 [article_index_target],
                 [article_model],
@@ -167,8 +167,25 @@ RSpec.describe AreSearch::SearchParamValidator do
             end.not_to raise_error
         end
 
-        it "不正なpageはInvalidSearchOptionを送出し不正なper_pageはArgumentErrorにする" do
-            [0, -1, 1.5, "1"].each do |value|
+        it "pageとper_pageは0を許可し、それ以外の不正値は例外にする" do
+            zero_result = described_class.validate!(
+                [article_index_target],
+                [article_model],
+                max_result_window,
+                queries: [
+                    {
+                        query_string: "",
+                        fields: [:title],
+                    },
+                ],
+                page: 0,
+                per_page: 0,
+            )
+
+            expect(zero_result[:page]).to eq(0)
+            expect(zero_result[:per_page]).to eq(0)
+
+            [-1, 1.5, "1"].each do |value|
                 expect do
                     described_class.validate!(
                         [article_index_target],
@@ -182,10 +199,10 @@ RSpec.describe AreSearch::SearchParamValidator do
                         ],
                         page: value,
                     )
-                end.to raise_error(AreSearch::InvalidSearchOption, /正の整数/)
+                end.to raise_error(AreSearch::InvalidSearchOption, /0以上の整数/)
             end
 
-            [0, -1, 1.5, "1"].each do |value|
+            [-1, 1.5, "1"].each do |value|
                 expect do
                     described_class.validate!(
                         [article_index_target],
@@ -199,7 +216,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                         ],
                         per_page: value,
                     )
-                end.to raise_error(ArgumentError, /正の整数/)
+                end.to raise_error(ArgumentError, /0以上の整数/)
             end
         end
 
@@ -536,6 +553,8 @@ RSpec.describe "search option flow" do
     end
 
     it "queries配下の未定義query_typeを拒否する" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         invalid_query_types = [
             :query_string,
             "simple_query_string",
@@ -603,6 +622,8 @@ RSpec.describe "search option flow" do
     end
 
     it "未知のオプションを拒否する" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         expect do
             AreSearch::Searcher.search(
                 [article_index_target],
@@ -826,6 +847,8 @@ RSpec.describe "search option flow" do
     end
 
     it "where系オプションを持ち、shouldを未知のオプションとして扱う" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         expect(AreSearch::SearchOptionValidator::OPTION_DEFINITIONS.keys).to include(
             :where,
             :where_not,
@@ -848,6 +871,8 @@ RSpec.describe "search option flow" do
     end
 
     it "MLT固有パラメーターはmlt配下だけで受け付ける" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         expect do
             AreSearch::Searcher.search(
                 [article_index_target],
@@ -882,6 +907,8 @@ RSpec.describe "search option flow" do
     end
 
     it "mappingsに無いフィールドを表記に関係なく拒否する" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         search_fields = [
             :"title.keyword",
             :Title,
@@ -946,6 +973,8 @@ RSpec.describe "search option flow" do
     end
 
     it "instanceから取得したindex targetが指定されたindex targetと異なる場合は拒否する" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         other_model = Class.new do
             attr_reader :id
 
@@ -989,6 +1018,8 @@ RSpec.describe "search option flow" do
     end
 
     it "More Like Thisのfieldsを検索先と基準index targetの両方で検証する" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         body = AreSearch::Searcher.search(
             [article_index_target],
             mlt: {
@@ -1047,6 +1078,14 @@ RSpec.describe "search option flow" do
     end
 
     it "More Like Thisはmltの基準情報以外をmore_like_this句へ渡す" do
+        allow(AreSearch)
+            .to receive(:search_failure_mode)
+            .and_return(:raise)
+
+        allow(AreSearch::Searcher)
+            .to receive(:index_ready?)
+            .and_return(true)
+
         body = AreSearch::Searcher.search(
             [article_index_target],
             mlt: {
@@ -1176,6 +1215,8 @@ RSpec.describe "search option flow" do
     end
 
     it "model_relationsに定義されていないnode_typeを拒否する" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         expect do
             AreSearch::Searcher.search(
                 [article_index_target],

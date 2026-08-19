@@ -3,7 +3,7 @@
 AreSearch.searchable_class_setting = {
 
     # SearchableモデルのIndexTarget・sync stage構成を定義する。
-    # "Article" => {
+    # "Document" => {
     #     default: {
     #         index_target_name_alias: :alias_name,
     #         settings: {

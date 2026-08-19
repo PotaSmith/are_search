@@ -1,0 +1,333 @@
+================================================================
+AreSearch 検索 Web アプリケーション ガイド
+================================================================
+
+このガイドは、web アプリケーションに検索機能を使用する方法を扱う。
+
+
+# 1. 設定
+================================================================
+
+一般的な検索を行う場合、次のように index_target_name_alias を
+設定しておくと便利なので、これを前提とする。
+設定しなくても問題はない。
+
+    "Document" => {
+	    default: {
+            index_target_name_alias: :default,
+	        settings: {
+	            max_result_window: 2_000,
+	        },
+			....
+	    },
+    },
+
+
+検索では失敗時の状態を設定で定義できる。
+
+既定値は
+AreSearch.search_failure_mode = :empty_result
+で、例外発生時には空の検索結果を返し、原因が特定できない場合 error ログを出力する。
+
+開発時や確認時には
+AreSearch.search_failure_mode = :raise
+に変更して、例外を直接確認することも出来る。
+
+
+# 2. 通常検索
+================================================================
+
+単一モデルを普通に検索する場合。
+
+
+# 2-1. controller
+----------------------------------------------------------------
+
+何も条件を指定せず、シンプルに検索を行う場合
+
+    @search_result = Document.are_search_index_target_alias(:default).are_search_search(
+        params[:q].to_s.strip,
+        fields: [:data_for_search],
+    )
+
+	case @search_result.status
+	when AreSearch::SearchResult::STATUS_PARAMS_INVALID
+		return render 'search_invalid'
+	when AreSearch::SearchResult::STATUS_INDEX_NOT_FOUND
+		return render 'search_maintenance'
+	when AreSearch::SearchResult::STATUS_SEARCH_FAIL
+		return render 'search_maintenance' # 検索失敗時にどうするかは運用次第
+	end
+
+current_user のデータのみを検索する場合
+
+    where_clause = {
+        user_id: { term: current_user.id },
+    }
+
+    @search_result = Document.are_search_index_target_alias(:default).are_search_search(
+        params[:q].to_s.strip,
+        fields:   [:data_for_search],
+        where:    where_clause,
+        relation: Document.where(user_id: current_user.id),
+    )
+
+
+# 2-2. view
+----------------------------------------------------------------
+
+検索結果 <%= @search_result.records.total_count %> 件
+
+<% @search_result.records.each do |record| %>
+	<div class="result-block">
+		<div>タイトル : <%= record.title %></div>
+		<div>詳細 : <%= record.description %></div>
+	</div>
+<% end %>
+
+
+# 3. ページング
+================================================================
+
+ページを指定して、ページングを利用する。
+ページングは基本で有効になっており、指定しない場合
+
+page 1
+per_page 25
+
+になっています。つまり、25件までしか表示されません。
+1ページに100件、200件表示したい場合や、ページネートを使用する場合は
+指定する必要があります。
+
+
+# 3-1. controller
+----------------------------------------------------------------
+
+何も条件を指定せず、シンプルに検索を行う場合
+
+    @search_result = Document.are_search_index_target_alias(:default).are_search_search(
+        params[:q].to_s.strip,
+        fields: [:data_for_search],
+        page: params[:page].to_i,
+        per_page: 200,
+    )
+
+	case @search_result.status
+	when AreSearch::SearchResult::STATUS_PARAMS_INVALID
+		return render 'search_invalid'
+	when AreSearch::SearchResult::STATUS_INDEX_NOT_FOUND
+		return render 'search_maintenance'
+	when AreSearch::SearchResult::STATUS_SEARCH_FAIL
+		return render 'search_maintenance' # 検索失敗時にどうするかは運用次第
+	end
+
+
+# 3-2. view
+----------------------------------------------------------------
+
+検索結果 <%= @search_result.records.total_count %> 件
+
+<% @search_result.records.each do |record| %>
+	<div class="result-block">
+		<div>タイトル : <%= record.title %></div>
+		<div>詳細 : <%= record.description %></div>
+	</div>
+<% end %>
+
+<% if @search_result.over_max_result_window? %>
+	<div>
+		検索結果に表示出来るのは <%= @search_result.max_result_window %> 件までです
+	</div>
+<% end %>
+
+<div class="paginate-block">
+    <%= paginate @search_result.records %>
+</div>
+
+
+# 4. 複数モデル検索
+================================================================
+
+複数のモデルを検索する場合。
+
+
+# 4-1. controller
+----------------------------------------------------------------
+
+search_targets = [
+	Document.are_search_index_target_alias(:default),
+	Memo.are_search_index_target_alias(:default),
+	Article.are_search_index_target_alias(:default),
+]
+
+where_clause = {
+	# 検索条件は、フィールドが存在しないデータは条件は機能しない
+	# ただし、この動作は Elasticsearch に依存するため
+	# 実際の動作は Elasticsearch のドキュメントを確認すること
+
+    user_id: { term: current_user.id },
+}
+
+@search_result = AreSearch::Searcher.search(search_targets,
+    queries: [
+        {
+			# フィールドが存在しないモデルはそのフィールドについては検索されない
+			# ただし、この動作は Elasticsearch に依存するため
+			# 実際の動作は Elasticsearch のドキュメントを確認すること
+
+            query_string: params[:q].to_s.strip,
+            fields:       [:title, :description],
+        },
+    ],
+    where: where_clause,
+    model_relations: {
+		Document => Document.where(user_id: current_user.id),
+		Memo     => Memo.where(user_id: current_user.id),
+		Article  => Article.where(user_id: current_user.id),
+	},
+)
+
+
+# 4-2. view
+----------------------------------------------------------------
+
+検索結果 <%= @search_result.records.total_count %> 件
+
+<% @search_result.records.each do |record| %>
+	<!-- この時点でクラスに分かれている -->
+	<% case record.class.name %>
+	<% when "Document" %>
+		<div class="result-block">
+			<div>タイトル : <%= record.title %></div>
+			<div>著者 : <%= record.creator %></div>
+		</div>
+	<% when "Memo" %>
+		<div class="result-block">
+			<div>タイトル : <%= record.title %></div>
+			<div>期限 : <%= record.limit_date %></div>
+		</div>
+	<% when "Article" %>
+		<div class="result-block">
+			<div>タイトル : <%= record.title %></div>
+			<div>引用数 : <%= record.cited_count %></div>
+		</div>
+	<% end %>
+<% end %>
+
+<div class="paginate-block">
+    <%= paginate @search_result.records %>
+</div>
+
+
+# 5. ハイライト検索
+================================================================
+
+検索結果のハイライトを使用する場合
+
+
+# 5-1. controller
+----------------------------------------------------------------
+
+search_target = Document.are_search_index_target_alias(:default)
+@search_result = AreSearch::Searcher.search([search_target],
+    queries: [
+        {
+            query_string: params[:q].to_s.strip,
+            fields:       [:title, :description],
+        },
+    ],
+	highlight: {
+		fields: [:description],
+	}
+)
+
+
+# 5-2. view
+----------------------------------------------------------------
+
+ハイライトはデフォルトでは <em> タグになっているため、スタイル等で
+好みの形式でハイライトされるように調整しておく。
+
+検索結果 <%= @search_result.records.total_count %> 件
+
+<% @search_result.records_with_hit.each do |record, hit| %>
+	<div class="result-block">
+		<div>タイトル : <%= record.title %></div>
+
+		<!-- フィールドが必ずあるとは限らない -->
+		<div>該当部分 : <%= sanitize(hit.dig(:highlight, :description)&.join(' '), tags: ["em"]) %></div>
+	</div>
+<% end %>
+
+
+# 6. 集計機能
+================================================================
+
+指定した検索条件で、指定したフィールドの件数をカウントする。
+
+
+# 6-1. controller
+----------------------------------------------------------------
+
+where_clause = {}
+if params[:data_type].present?
+	# 絞り込み検索を行う
+	where_clause[:data_type] = { term: params[:data_type].to_s }
+end
+
+search_target = Document.are_search_index_target_alias(:default)
+@search_result = AreSearch::Searcher.search([search_target],
+    queries: [
+        {
+            query_string: params[:q].to_s.strip,
+            fields:       [:title, :description],
+        },
+    ],
+	aggs: {
+	    data_type_count: {
+	        terms: {
+	            field: :data_type,
+	            size: 20,
+	        },
+	    },
+    },
+    where: where_clause,
+)
+
+
+# 6-2. view
+----------------------------------------------------------------
+
+<div>絞り込み</div>
+
+<% @search_result.aggs(:data_type_count).each do |term, count| %>
+	<div><%= term %> : <%= count %> 件</div>
+<% end %>
+
+
+# 7. 類似検索
+================================================================
+
+特定のデータに類似したデータを検索する。
+
+
+# 7-1. controller
+----------------------------------------------------------------
+
+# 対象となるデータ
+@search_data = Document.all.first
+search_data_index = Document.are_search_index_target_alias(:default)
+
+# 別のモデルのデータも検索可能
+search_target = Memo.are_search_index_target_alias(:default)
+@search_result = AreSearch::Searcher.search([search_target],
+	mlt: {
+	    fields: [:title, :body],
+	    like: {
+	        instance: @search_data,
+	        index_target: search_data_index,
+	    },
+	},
+)
+
+表示は通常の検索と同じ。

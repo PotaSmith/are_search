@@ -28,6 +28,12 @@ AreSearch では同期先とデータ生成経路を分けて考える。
 stage は部分更新のフィールド集合ではない。
 各stageの data_method は、そのstageで保存するドキュメント全体を返す。
 
+IndexTarget とデフォルトの sync stage の名称は揃えておく方が便利になることが多い。
+同期処理は sync stage 名を単位に回収するため、IndexTarget ごとに異なる stage 名に
+しておくと、後から同期処理を分離して実行できる。
+
+複雑な運用をしない場合は問題にならないが、運用を想定して考えておく必要がある。
+
 
 # 2. IndexTarget を定義する
 ================================================================
@@ -41,9 +47,7 @@ index_target_name は Symbol で指定する。
                 settings: {
                     max_result_window: 2_000,
                 },
-                mappings: {},
                 properties_method: :default_properties,
-                indexable_method: :default_indexable?,
                 stages: {
                     "default" => {
                         data_method: :default_search_data,
@@ -56,11 +60,9 @@ index_target_name は Symbol で指定する。
                 settings: {
                     max_result_window: 2_000,
                 },
-                mappings: {},
                 properties_method: :autocomplete_properties,
-                indexable_method: :autocomplete_indexable?,
                 stages: {
-                    "default" => {
+                    "autocomplete" => {
                         data_method: :autocomplete_search_data,
                         enqueue: true,
                         after_commit: true,

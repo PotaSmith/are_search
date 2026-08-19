@@ -223,7 +223,7 @@ stage の選択方法は guide_index_targets_and_stages.txt を参照する。
                 fields:       [:title, :body],
             },
         ],
-        page:         params[:page],
+        page:         params[:page].to_i,
         per_page:     20,
     )
 
@@ -254,11 +254,8 @@ stage の選択方法は guide_index_targets_and_stages.txt を参照する。
     tmp/are_search/sample/are_search_bulk_index.rb.sample
         BulkIndexer を実行する Ruby ファイルのサンプル。
 
-    tmp/are_search/sample/are_search_bulk_index.sh.sample
-        BulkIndexer を起動する shell ファイルのサンプル。
-
 rake task の配置、設定、実行方法は guide_operations.txt を参照する。
-BulkIndexer サンプルの配置、設定、実行方法は guide_bulk_indexer.txt を参照する。
+BulkIndexer サンプルの配置、設定、実行方法は guide_bulk_import.txt を参照する。
 
 
 # 8. 次に読むガイド
@@ -267,6 +264,7 @@ BulkIndexer サンプルの配置、設定、実行方法は guide_bulk_indexer.
     guide_usage.txt                     検索方法と検索結果
     guide_index_targets_and_stages.txt  IndexTargetとsync stage
     guide_operations.txt                reindex、同期、clean up、sync lock、障害対応
-    guide_bulk_indexer.txt              大規模データの投入と切り替え
+    guide_bulk_import.txt               データ投入とBulkIndexer
+    guide_webapp.txt                    WEBアプリでの使用例
     guide_reference.txt                 設定、データ定義、メソッド一覧
 

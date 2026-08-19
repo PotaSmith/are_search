@@ -248,6 +248,8 @@ module AreSearch
                     parse_positive_number(value, path)
                 when "positive_integer"
                     parse_positive_integer(value, path)
+                when "page_integer"
+                    parse_page_integer(value, path)
                 when "query_type"
                     parse_query_type_value(value, path)
                 when "symbol"
@@ -402,6 +404,15 @@ module AreSearch
                 end
 
                 raise ArgumentError, "#{path} は正の整数で指定してください: #{value.inspect}"
+            end
+
+            # 0以上のIntegerだけを許可する。
+            def parse_page_integer(value, path)
+                if value.instance_of?(Integer) && value >= 0
+                    return value
+                end
+
+                raise ArgumentError, "#{path} は0以上の整数で指定してください: #{value.inspect}"
             end
 
             # query_typeはSymbolに限定し、定義済みの値だけを許可する。

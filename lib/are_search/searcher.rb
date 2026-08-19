@@ -72,6 +72,15 @@ module AreSearch
                 )
             end
 
+            index_targets_for_exists_check = collect_index_targets_for_exists_check(index_targets, valid_options)
+            if index_ready?(index_targets_for_exists_check) == false
+                return search_failure_result(
+                    status: SearchResult::STATUS_INDEX_NOT_FOUND,
+                    error_class: AreSearch::SearchIndexNotFound,
+                    error_message: "検索に必要な index が確認できません",
+                )
+            end
+
             query_options = valid_options.dup
             body_options = valid_options.dup
             query = AreSearch::QueryBuilderSelector.select(valid_options).build(index_targets, query_options)
@@ -119,21 +128,12 @@ module AreSearch
                 )
             end
 
-            index_targets_for_exists_check = collect_index_targets_for_exists_check(index_targets, valid_options)
-            if check_index_exists?(index_targets_for_exists_check) == false
-                return search_failure_result(
-                    status: SearchResult::STATUS_INDEX_NOT_FOUND,
-                    error_class: AreSearch::SearchIndexNotFound,
-                    error_message: "検索に必要なElasticsearch aliasが存在しません",
-                )
-            end
-
             index = index_targets.map(&:are_search_index_alias_name).join(",")
             # 検索
             response = AreSearch::EsAdapter.no_validation_search(index: index, body: body)
 
-            page     = AreSearch::SearcherUtils.resolve_default_option(page_opts, 1)
-            per_page = AreSearch::SearcherUtils.resolve_default_option(per_page_opts, 25)
+            page     = AreSearch::SearcherUtils.resolve_page_default_option(page_opts, 1)
+            per_page = AreSearch::SearcherUtils.resolve_page_default_option(per_page_opts, 25)
 
             build_result(
                 response,
@@ -143,6 +143,13 @@ module AreSearch
                 per_page,
                 max_result_window,
             )
+        rescue AreSearch::SearchIndexNotFound, AreSearch::InvalidSearchOption, AreSearch::InvalidSearchBody
+            raise
+        rescue StandardError => error
+            raise if AreSearch.search_failure_mode == :raise
+
+            AreSearch.logger.error "[search fail: #{error.class}]\n#{error.message}"
+            empty_search_result(1, 25, status: SearchResult::STATUS_SEARCH_FAIL)
         end
 
         def index_ready?(index_targets)

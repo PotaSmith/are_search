@@ -413,6 +413,8 @@ RSpec.describe "search highlight" do
     end
 
     it "highlightにはfieldsを必須とする" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         expect do
             AreSearch::Searcher.search(
                 [article_index_target],
@@ -558,6 +560,8 @@ RSpec.describe "search highlight" do
     end
 
     it "textまたはkeyword以外のフィールドをhighlight対象にできない" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         expect do
             AreSearch::Searcher.search(
                 [article_index_target],
@@ -970,6 +974,8 @@ RSpec.describe AreSearch::Searcher, "filters" do
     end
 
     it "旧省略形式とfieldを持たないArray要素を拒否する" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         expect do
             described_class.search(
                 [index_target],
@@ -1006,6 +1012,8 @@ RSpec.describe AreSearch::Searcher, "filters" do
     end
 
     it "各fieldにterm、terms、rangeのいずれか1つだけを要求する" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         expect do
             described_class.search(
                 [index_target],
@@ -1045,6 +1053,8 @@ RSpec.describe AreSearch::Searcher, "filters" do
     end
 
     it "text型フィールドをwhere系条件に使用できない" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         expect do
             described_class.search(
                 [index_target],
@@ -1121,6 +1131,10 @@ RSpec.describe AreSearch::Searcher do
                 per_page: 10,
             )
             .and_return(valid_options)
+
+        allow(described_class)
+            .to receive(:index_ready?)
+            .and_return(true)
 
         query_builder = double("query_builder")
         body_builder = double("body_builder")
@@ -1210,6 +1224,8 @@ RSpec.describe AreSearch::Searcher do
     end
 
     it "AreSearchパラメーターの検証エラーは空結果へ変換しない" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         allow(AreSearch::SearchParamValidator)
             .to receive(:validate!)
             .and_raise(ArgumentError, "invalid option")

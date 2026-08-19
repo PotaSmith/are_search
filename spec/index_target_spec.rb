@@ -450,11 +450,28 @@ RSpec.describe AreSearch::IndexTarget do
 
         it "対象stageへ同期できるかSyncLockへ委譲して判定する" do
             expect(AreSearch::SyncLock)
-                .to receive(:sync_stage_locked?)
+                .to receive(:index_target_or_sync_stage_locked?)
                 .with("test__articles__default", "default")
                 .and_return(false)
 
             expect(index_target.are_search_sync_stage_syncable?("default")).to eq(true)
+        end
+    end
+
+    describe "#are_search_sync_stage_locked?" do
+        before do
+            allow(AreSearch)
+                .to receive(:index_prefix)
+                .and_return("test")
+        end
+
+        it "対象stageのSyncLockが存在するか委譲して判定する" do
+            expect(AreSearch::SyncLock)
+                .to receive(:sync_stage_locked?)
+                .with("test__articles__default", "default")
+                .and_return(true)
+
+            expect(index_target.are_search_sync_stage_locked?("default")).to eq(true)
         end
     end
 
@@ -720,6 +737,8 @@ RSpec.describe AreSearch::IndexTarget do
         end
 
         it "fields省略時はqueriesの必須キー不足として拒否する" do
+            allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
             search_model = Class.new do
                 def self.name
                     "Article"

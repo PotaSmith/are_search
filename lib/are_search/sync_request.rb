@@ -107,6 +107,9 @@ module AreSearch
             end
 
             begin
+                #同期が許可されているかを確認する。
+                return false unless check_index_target_sync_ready?(index_target)
+
                 # 他の sync_stage_name で sync_request が存在しないか等のチェックを行うための callback
                 return false unless index_target.are_search_before_sync_check(ar_instance_key, self)
 
@@ -168,6 +171,9 @@ module AreSearch
             return false unless check_sync_stage_name?(index_target)
 
             return false unless check_index_target_ready?(index_target)
+
+            #同期が許可されているかを確認する。
+            return false unless check_index_target_sync_ready?(index_target)
 
             # 他の sync_stage_name で sync_request が存在しないか等のチェックを行うための callback
             return false unless index_target.are_search_before_sync_check(ar_instance_key, self)
@@ -338,18 +344,23 @@ module AreSearch
 
         # 時間差の解消のためのチェック job投入時点のmodelの情報と処理時点のmodelの情報のチェック
         def check_index_target_ready?(index_target)
-            if index_target.are_search_sync_stage_syncable?(sync_stage_name) == false
-                AreSearch.logger.debug { "[AreSearch] sync: sync lock 中のためスキップ #{index_target.model_class.name} #{index_target.index_target_name} #{self.ar_instance_key}" }
-
-                update_sync_request_error_no_sequence("sync locked")
-
-                return false
-            end
-
             unless index_target.are_search_index_alias_exists?
                 AreSearch.logger.debug { "[AreSearch] sync: index が存在しないためスキップ #{index_target.model_class.name} #{index_target.index_target_name} #{self.ar_instance_key}" }
 
                 update_sync_request_error_no_sequence("index not found")
+
+                return false
+            end
+
+            true
+        end
+
+        # 同期が許可されているかを確認
+        def check_index_target_sync_ready?(index_target)
+            if index_target.are_search_sync_stage_syncable?(sync_stage_name) == false
+                AreSearch.logger.debug { "[AreSearch] sync: sync lock 中のためスキップ #{index_target.model_class.name} #{index_target.index_target_name} #{self.ar_instance_key}" }
+
+                update_sync_request_error_no_sequence("sync locked")
 
                 return false
             end

@@ -610,7 +610,7 @@ RSpec.describe "search paging" do
         expect(received_bodies[1][:track_total_hits]).to eq(true)
     end
 
-    it "pageが不正ならparams_invalidの空結果を返し、per_pageが不正なら例外にする" do
+    it "pageが不正ならparams_invalidの空結果を返し、per_pageが0なら既定値を使用する" do
         result = AreSearch::Searcher.search(
             [article_index_target],
             queries: [
@@ -629,20 +629,21 @@ RSpec.describe "search paging" do
         expect(result.records.page).to eq(1)
         expect(result.records.per_page).to eq(25)
 
-        expect do
-            AreSearch::Searcher.search(
-                [article_index_target],
-                queries: [
-                    {
-                        query_string: "",
-                        fields:    [:title],
-                    },
-                ],
-                page:      1,
-                per_page:  0,
-                dump_body: true,
-            )
-        end.to raise_error(ArgumentError, /正の整数/)
+        body = AreSearch::Searcher.search(
+            [article_index_target],
+            queries: [
+                {
+                    query_string: "",
+                    fields:    [:title],
+                },
+            ],
+            page:      1,
+            per_page:  0,
+            dump_body: true,
+        )
+
+        expect(body[:from]).to eq(0)
+        expect(body[:size]).to eq(25)
     end
 
     it "raw_bodyのnested keyを変更せずtop levelのfromとsizeだけを置き換える" do
@@ -890,6 +891,8 @@ RSpec.describe "search paging" do
     end
 
     it "build_model_boolの型とraw_body構造を検証する" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
         expect(AreSearch).not_to receive(:client)
 
         expect do

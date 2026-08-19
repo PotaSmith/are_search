@@ -697,9 +697,9 @@ RSpec.describe AreSearch::SearchParamValidator do
                             fields: [:title],
                         },
                     ],
-                    per_page: 0,
+                    per_page: -1,
                 )
-            end.to raise_error(ArgumentError, /正の整数/)
+            end.to raise_error(ArgumentError, /0以上の整数/)
         end
 
     end

@@ -48,8 +48,8 @@ module AreSearch
             # page / per_page から算出した検索開始位置が、
             # Elasticsearch の取得可能範囲内にあることを確認する。
             def validate_paging_range!(options, max_result_window)
-                page = AreSearch::SearcherUtils.resolve_default_option(options[:page], 1)
-                per_page = AreSearch::SearcherUtils.resolve_default_option(options[:per_page], 25)
+                page = AreSearch::SearcherUtils.resolve_page_default_option(options[:page], 1)
+                per_page = AreSearch::SearcherUtils.resolve_page_default_option(options[:per_page], 25)
                 from = (page - 1) * per_page
 
                 return if from < max_result_window

@@ -24,8 +24,8 @@ module AreSearch
                 page_opt             = valid_options.delete(:page)
                 per_page_opt         = valid_options.delete(:per_page)
 
-                page = AreSearch::SearcherUtils.resolve_default_option(page_opt, 1)
-                per_page = AreSearch::SearcherUtils.resolve_default_option(per_page_opt, 25)
+                page = AreSearch::SearcherUtils.resolve_page_default_option(page_opt, 1)
+                per_page = AreSearch::SearcherUtils.resolve_page_default_option(per_page_opt, 25)
 
                 search_body = raw_body_opt.dup
 

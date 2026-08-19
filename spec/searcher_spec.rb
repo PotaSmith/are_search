@@ -154,6 +154,31 @@ RSpec.describe AreSearch::Searcher do
             expect(result.records_with_hit).to eq([])
         end
 
+        it "search_failure_modeがempty_resultなら一般例外をログに記録してsearch_fail空結果を返す" do
+            allow(article_model)
+                .to receive(:include?)
+                .with(AreSearch::Searchable)
+                .and_return(true)
+
+            expect(AreSearch::SearchParamValidator)
+                .to receive(:validate!)
+                .with([article_index_target], [article_model], 2_000)
+                .and_raise(RuntimeError, "unexpected search failure")
+
+            expect(AreSearch.logger)
+                .to receive(:error)
+                .with("[search fail: RuntimeError]\nunexpected search failure")
+
+            result = described_class.search([article_index_target])
+
+            expect(result.status).to eq(AreSearch::SearchResult::STATUS_SEARCH_FAIL)
+            expect(result.records).to eq([])
+            expect(result.records.page).to eq(1)
+            expect(result.records.per_page).to eq(25)
+            expect(result.records.total_count).to eq(0)
+            expect(result.records_with_hit).to eq([])
+        end
+
         it "search_failure_modeがraiseなら検索パラメーター不正を例外にする" do
             AreSearch.search_failure_mode = :raise
 
@@ -205,7 +230,10 @@ RSpec.describe AreSearch::Searcher do
                 .to receive(:valid?)
                 .and_return(false)
 
-            expect(article_index_target).not_to receive(:are_search_index_alias_exists?)
+            expect(described_class)
+                .to receive(:index_ready?)
+                .with([article_index_target])
+                .and_return(true)
             expect(AreSearch).not_to receive(:client)
 
             result = described_class.search(
@@ -249,7 +277,10 @@ RSpec.describe AreSearch::Searcher do
                 .to receive(:valid?)
                 .and_return(false)
 
-            expect(article_index_target).not_to receive(:are_search_index_alias_exists?)
+            expect(described_class)
+                .to receive(:index_ready?)
+                .with([article_index_target])
+                .and_return(true)
             expect(AreSearch).not_to receive(:client)
 
             expect do
@@ -262,10 +293,6 @@ RSpec.describe AreSearch::Searcher do
 
         it "対象 index の alias が無ければ index_not_found の空結果を返す" do
             valid_options = {}
-            query = { match_all: {} }
-            body = { query: query }
-            query_builder = double("query_builder")
-            body_builder = double("body_builder")
 
             allow(article_model)
                 .to receive(:include?)
@@ -277,36 +304,14 @@ RSpec.describe AreSearch::Searcher do
                 .with([article_index_target], [article_model], 2_000)
                 .and_return(valid_options)
 
-            expect(AreSearch::QueryBuilderSelector)
-                .to receive(:select)
-                .with(valid_options)
-                .and_return(query_builder)
-
-            expect(query_builder)
-                .to receive(:build)
-                .with([article_index_target], {})
-                .and_return(query)
-
-            expect(AreSearch::BodyBuilderSelector)
-                .to receive(:select)
-                .with(valid_options)
-                .and_return(body_builder)
-
-            expect(body_builder)
-                .to receive(:build)
-                .with([article_index_target], query, {}, 2_000)
-                .and_return(body)
-
-            expect(AreSearch.search_body_policy)
-                .to receive(:valid?)
-                .with(body)
-                .and_return(true)
-
             expect(described_class)
-                .to receive(:check_index_exists?)
+                .to receive(:index_ready?)
                 .with([article_index_target])
                 .and_return(false)
 
+            expect(AreSearch::QueryBuilderSelector).not_to receive(:select)
+            expect(AreSearch::BodyBuilderSelector).not_to receive(:select)
+            expect(AreSearch.search_body_policy).not_to receive(:valid?)
             expect(AreSearch).not_to receive(:client)
 
             result = described_class.search([article_index_target])
@@ -347,14 +352,14 @@ RSpec.describe AreSearch::Searcher do
                 )
                 .and_return(valid_options)
 
-            allow(AreSearch.search_body_policy)
-                .to receive(:valid?)
-                .and_return(true)
-
-            allow(article_index_target)
-                .to receive(:are_search_index_alias_exists?)
+            expect(described_class)
+                .to receive(:index_ready?)
+                .with([article_index_target])
                 .and_return(false)
 
+            expect(AreSearch::QueryBuilderSelector).not_to receive(:select)
+            expect(AreSearch::BodyBuilderSelector).not_to receive(:select)
+            expect(AreSearch.search_body_policy).not_to receive(:valid?)
             expect(AreSearch).not_to receive(:client)
 
             expect do
@@ -362,7 +367,7 @@ RSpec.describe AreSearch::Searcher do
                     [article_index_target],
                     queries: queries,
                 )
-            end.to raise_error(AreSearch::SearchIndexNotFound, /alias/)
+            end.to raise_error(AreSearch::SearchIndexNotFound, /index/)
         end
 
         it "MLT基準 index の alias が無ければ index_not_found の空結果を返す" do
@@ -376,10 +381,6 @@ RSpec.describe AreSearch::Searcher do
             valid_options = {
                 mlt: mlt_options,
             }
-            query = { match_all: {} }
-            body = { query: query }
-            query_builder = double("query_builder")
-            body_builder = double("body_builder")
 
             allow(article_model)
                 .to receive(:include?)
@@ -396,39 +397,14 @@ RSpec.describe AreSearch::Searcher do
                 )
                 .and_return(valid_options)
 
-            expect(AreSearch::QueryBuilderSelector)
-                .to receive(:select)
-                .with(valid_options)
-                .and_return(query_builder)
-
-            expect(query_builder).to receive(:build) do |actual_index_targets, query_options|
-                expect(actual_index_targets).to eq([article_index_target])
-                expect(query_options).to eq(valid_options)
-
-                query_options.delete(:mlt)
-                query
-            end
-
-            expect(AreSearch::BodyBuilderSelector)
-                .to receive(:select)
-                .with(valid_options)
-                .and_return(body_builder)
-
-            expect(body_builder)
-                .to receive(:build)
-                .with([article_index_target], query, valid_options, 2_000)
-                .and_return(body)
-
-            expect(AreSearch.search_body_policy)
-                .to receive(:valid?)
-                .with(body)
-                .and_return(true)
-
             expect(described_class)
-                .to receive(:check_index_exists?)
+                .to receive(:index_ready?)
                 .with([article_index_target, document_index_target])
                 .and_return(false)
 
+            expect(AreSearch::QueryBuilderSelector).not_to receive(:select)
+            expect(AreSearch::BodyBuilderSelector).not_to receive(:select)
+            expect(AreSearch.search_body_policy).not_to receive(:valid?)
             expect(AreSearch).not_to receive(:client)
 
             result = described_class.search([article_index_target], mlt: mlt_options)
@@ -465,6 +441,8 @@ RSpec.describe AreSearch::Searcher do
         end
 
         it "同じindex targetを複数指定した場合は拒否する" do
+            allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
             model = Class.new do
                 def self.are_search_ar_table_name
                     "articles"
@@ -490,6 +468,8 @@ RSpec.describe AreSearch::Searcher do
         end
 
         it "同じaliasを使う親子targetを同時指定した場合は拒否する" do
+            allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
             parent_model = Class.new do
                 def self.are_search_ar_table_name
                     "articles"

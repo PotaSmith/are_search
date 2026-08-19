@@ -170,7 +170,7 @@ index 作成時に Elasticsearch の settings へ渡す analyzer 設定。
     :raise
         原因に対応する例外を送出する。
 
-送出する例外。
+:raise の場合に発生する例外
 
     外部入力として使用する検索値の不正
         AreSearch::InvalidSearchOption
@@ -180,6 +180,13 @@ index 作成時に Elasticsearch の settings へ渡す analyzer 設定。
 
     index不存在
         AreSearch::SearchIndexNotFound
+
+    それ以外
+        発生元の例外そのまま
+
+:empty_result の場合の status
+
+    guide_usage の SearchResult を参照
 
 生成される initializer は development 環境で :raise、それ以外で :empty_result を設定する。
 

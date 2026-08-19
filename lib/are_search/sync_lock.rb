@@ -13,6 +13,11 @@ module AreSearch
             AreSearch::SyncLock.acquire_index_target_manual!(are_search_index_alias_name)
         end
 
+        # このIndexTarget全体のがロックされているかを返す。
+        def are_search_sync_locked?
+            are_search_index_target_syncable? == false
+        end
+
         # このIndexTargetの指定stageへmanual sync lockを取得する。
         def are_search_acquire_sync_stage_lock!(sync_stage_name)
             AreSearch.validate_index_operation_enabled!
@@ -20,6 +25,13 @@ module AreSearch
             validate_defined_sync_stage_name!(sync_stage_name)
 
             AreSearch::SyncLock.acquire_sync_stage_manual!(are_search_index_alias_name, sync_stage_name)
+        end
+
+        # このIndexTargetの指定stageへmanual sync がロックされているかを返す。
+        def are_search_sync_stage_locked?(sync_stage_name)
+            validate_defined_sync_stage_name!(sync_stage_name)
+
+            AreSearch::SyncLock.sync_stage_locked?(are_search_index_alias_name, sync_stage_name)
         end
 
         # このIndexTarget全体のmanual sync lockを解放する。
@@ -67,7 +79,7 @@ module AreSearch
 
             validate_defined_sync_stage_name!(sync_stage_name)
 
-            AreSearch::SyncLock.sync_stage_locked?(are_search_index_alias_name, sync_stage_name) == false
+            AreSearch::SyncLock.index_target_or_sync_stage_locked?(are_search_index_alias_name, sync_stage_name) == false
         end
 
         # 指定stageの sync lock だけを取得し、その内側で利用側処理を実行する。
@@ -128,6 +140,13 @@ module AreSearch
         end
 
         def self.sync_stage_locked?(index_alias_name, sync_stage_name)
+            AreSearch::SyncLock.exists?(
+                index_alias_name: index_alias_name,
+                sync_stage_name:  sync_stage_name,
+            )
+        end
+
+        def self.index_target_or_sync_stage_locked?(index_alias_name, sync_stage_name)
             AreSearch::SyncLock.exists?(
                 index_alias_name: index_alias_name,
                 sync_stage_name:  [sync_stage_name, INDEX_TARGET_LOCK_NAME],

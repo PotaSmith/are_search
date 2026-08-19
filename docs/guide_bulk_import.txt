@@ -1,0 +1,488 @@
+================================================================
+AreSearch データ投入ガイド
+================================================================
+
+このガイドは、稼働中のデータ投入方法を扱う。
+
+データ投入のパターン、データ投入の方法。
+BulkIndexer の準備、実行、再開、recover、結果確認。
+
+# 1. データ投入パターン
+================================================================
+
+データ投入は状況により、以下のパターンを想定している。
+
+- メイン同期が停止可能
+- メイン同期が停止不可能
+- メインの他の同期経路があり停止可能
+- メインの他の同期経路があり停止不可能
+- 新しいインデックスにデータをコピーする
+
+# 1-1. メイン同期が停止可能
+----------------------------------------------------------------
+
+メイン同期が停止可能である場合は、sync lock を使用して同期を停止する。
+
+設定は以下のように、index target 名がdefault、sync stage名が default と仮定。
+
+    default: {
+        settings: {
+            max_result_window: 2_000,
+        },
+        mappings: {},
+        properties_method: :default_properties,
+        stages: {
+            "default" => {
+                data_method: :default_search_data,
+                enqueue: true,
+                after_commit: true,
+            },
+        },
+    }
+
+1．同期のロックを行う
+
+    index_target = Article.are_search_index_target(:default)
+    sync_stage_name = "default"
+
+    index_target.are_search_acquire_sync_stage_lock!(sync_stage_name)
+
+2．同期のロックができているかを確認する。
+
+    目視の場合は
+        rake are_search:check_index_status
+
+    プログラムで確認する場合は、以下の戻り値を確認する
+        index_target.are_search_sync_stage_locked?(sync_stage_name)
+
+3．現在処理中の同期処理が無いかを確認する
+
+    目視の場合は
+        rake are_search:check_sync_request_status
+    プログラムで確認する場合は、以下の戻り値を確認する
+        index_target.are_search_processing_sync_stage_sync_request_exists?(sync_stage_name)
+
+4．準備が完了したら、データ投入を行う。
+
+5．データ投入完了後は、同期のロックを解除する。
+
+    index_target.are_search_release_sync_stage_lock!(sync_stage_name)
+
+6．同期のロックが解除されてるかを確認する。
+
+    目視の場合は
+        rake are_search:check_index_status
+
+    プログラムで確認する場合は、以下の戻り値を確認する
+        index_target.are_search_sync_stage_locked?(sync_stage_name)
+
+7．処理が流れているかを確認する。
+
+    目視でしか確認できず。
+        rake are_search:check_sync_request_status
+    で件数が減っている事を確認する。
+
+
+## 1-2. メイン同期が停止不可能
+----------------------------------------------------------------
+
+メイン同期が停止不可能である場合は、投入用の sync stage を別で用意しておく。
+
+    default: {
+        settings: {
+            max_result_window: 2_000,
+        },
+        mappings: {},
+        properties_method: :default_properties,
+        stages: {
+            "default" => {
+                data_method: :default_search_data,
+                enqueue: true,
+                after_commit: true,
+            },
+            "bulk" => {
+                data_method: :default_search_data,
+                enqueue: true,
+                after_commit: false,
+            },
+        },
+    }
+
+ポイントは、投入用 sync stage は、enqueue は true だが、after_commit を false で
+問題がないということ。同期処理が多重で動くため無駄になる。
+
+通常運用の違いは、通常の rake 回収には bulk を含めない。
+
+    bundle exec rake 'are_search:run_sync_requests[default]'
+
+この方法の場合、同期要求が最大で対象データ数と同数まで溜まるため注意。
+
+1．boundary 用 rake ファイルを用意する
+
+    サンプルを生成する。
+        bin/rails generate are_search:sample
+
+    生成される次のファイルを、利用側の rake task としてコピーして使用する。
+        tmp/are_search/sample/are_search_sync_request_boundary.rake.sample
+
+    ファイル先頭の対象を変更する。
+        INDEX_TARGET_MODEL_CLASS_NAME = "Document" # クラス名に合わせる
+        INDEX_TARGET_NAME = "default"
+        SYNC_STAGE_NAME = "bulk"
+
+2．処理前に bulk の 全同期データを削除する。
+
+    後から回収する際に不要になるため、明確に処理中以外の同期要求は
+    あらかじめ消しておく
+        bundle exec rake are_search:delete_sync_stage_all_sync_requests
+
+    処理の前後では状況の確認。
+        rake are_search:check_sync_request_status
+
+3．現在処理中の同期処理が無いかを確認する
+
+    目視の場合は
+        rake are_search:check_sync_request_status
+    プログラムで確認する場合は、以下の戻り値を確認する
+        index_target.are_search_processing_sync_stage_sync_request_exists?(sync_stage_name)
+
+4．準備が完了したので、データ投入を行う。
+
+5．同期境界を設定する
+
+    処理中に溜まった同期要求のどこまでを回収の対象にするのかを設定する。
+    この処理でこれ以降に発生した同期要求は対象にならない。
+        bundle exec rake are_search:set_sync_request_boundary
+
+6．同期境界以前の同期要求を回収する
+
+    境界以前に発生した同期要求を回収する
+        bundle exec rake are_search:run_sync_request_before_boundary
+
+    実行時には、今回の境界までに発生したSyncRequestの件数が表示され、
+    開始の確認が行われる。
+    他の処理と衝突して、処理できない場合があるため、件数が残る場合は
+    処理を繰り返し0件になるまで続ける。
+
+    commitが遅れる等の理由で、後から増える可能性があるが、それは
+    メイン同期が回収するため、一度0件になれば問題ない。
+
+7．境界を削除する
+
+    残っていても特に問題は無いため、必須では無い。
+        bundle exec rake are_search:clear_sync_request_boundary
+
+
+## 1-3. メインの他の同期経路があり停止可能
+----------------------------------------------------------------
+
+メインの他の同期経路があり停止可能な場合
+
+    default: {
+        settings: {
+            max_result_window: 2_000,
+        },
+        mappings: {},
+        properties_method: :default_properties,
+        stages: {
+            "default" => {
+                data_method: :default_search_data,
+                enqueue: true,
+                after_commit: true,
+            },
+            "extarnal_file" => {
+                data_method: :search_data_with_extarnal_file,
+                enqueue: true,
+                after_commit: false,
+            },
+        },
+    }
+
+1-1. メイン同期が停止可能 と同じ要領で extarnal_file に対して処理を行う
+
+
+## 1-4. メインの他の同期経路があり停止不可能
+----------------------------------------------------------------
+
+メインの他の同期経路があり停止不可能な場合
+
+    default: {
+        settings: {
+            max_result_window: 2_000,
+        },
+        mappings: {},
+        properties_method: :default_properties,
+        stages: {
+            "default" => {
+                data_method: :default_search_data,
+                enqueue: true,
+                after_commit: true,
+            },
+            "extarnal_file" => {
+                data_method: :search_data_with_extarnal_file,
+                enqueue: true,
+                after_commit: false,
+            },
+            "extarnal_file_bulk" => {
+                data_method: :search_data_with_extarnal_file,
+                enqueue: true,
+                after_commit: false,
+            },
+        },
+    }
+
+同期経路専用の bulk を用意しておき、通常
+    bundle exec rake 'are_search:run_sync_requests[default]'
+の同期経路からは外す。
+1-2. メイン同期が停止不可能 と同じ要領で extarnal_file_bulk に対して処理を行う
+
+
+## 1-5. 新しいインデックスにデータをコピーする
+----------------------------------------------------------------
+
+バージョンアップ等でインデックスの再生成が必要になった場合の処理
+
+    default: {
+        settings: {
+            max_result_window: 2_000,
+        },
+        mappings: {},
+        properties_method: :default_properties,
+        stages: {
+            "default" => {
+                data_method: :default_search_data,
+                enqueue: true,
+                after_commit: true,
+            },
+        },
+    },
+    version_10: {
+        settings: {
+            max_result_window: 2_000,
+        },
+        mappings: {},
+        properties_method: :default_properties,
+        stages: {
+            "version_10" => {
+                data_method: :default_search_data,
+                enqueue: true,
+                after_commit: true,
+            },
+        },
+    },
+
+新デックスを用意する場合は index_target 名とデフォルトの sync stage 名は揃えたほうが便利。
+
+手順では、新インデックスにデータをコピーする場合、インデックスを作成する手順が増える
+
+1．新インデックスを用意する
+
+    rails コンソールや runner 等で以下を実行する
+        Article.are_search_index_target(:version_10).are_search_create_index
+
+    設定ファイルが反映されれば、このコマンドは動くため
+    WEBシステムごと再起動をする必要はない。
+
+2．新インデックスを確認する
+
+    目視確認を行う
+        rake are_search:check_index_status
+
+3．WEBシステムを更新する
+
+    restartでも問題はないが、プロセスが全て切り替わった事を
+    確認する必要があるため、再起動の方が確実。
+
+4．同期を停止して、データ投入を行う
+
+    1-1. メイン同期が停止可能 と同様に作業を行う。
+    操作する index target と sync stage が version_10 に変わる事に注意。
+
+
+# 2. BulkIndexer の使い方
+================================================================
+
+ここでは、BulkIndexer の使い方を説明する。
+
+
+# 2-1. BulkIndexer 使用上の注意
+----------------------------------------------------------------
+
+BulkIndexer 同期処理のロックや排他等の処理を行わないため
+必要に応じて処理を組み合わせる事が必要になる。
+
+存在しない index を作成はしないため、事前に用意しておく必要がある。
+
+
+# 2-2. サンプルを生成する
+----------------------------------------------------------------
+
+Railsアプリケーションのルートで実行する。
+
+    bin/rails generate are_search:sample
+
+BulkIndexer で使用するサンプル。
+
+    tmp/are_search/sample/are_search_bulk_index.rb.sample
+
+生成先の tmp/are_search/sample はサンプルの受け渡し場所として使用する。
+実際に編集して使うファイルと結果保存先は Rails.root/tmp の外へ置く。
+
+
+# 2-3. 実行用ファイルを準備する
+----------------------------------------------------------------
+
+作業用ディレクトリを用意し、サンプルをコピーする。
+
+    mkdir -p ./my_bulk_dir
+
+    cp tmp/are_search/sample/are_search_bulk_index.rb.sample ./my_bulk_dir/are_search_bulk_index.rb
+
+
+# 2-4. Rubyファイルを設定する
+----------------------------------------------------------------
+
+are_search_bulk_index.rb の「変更箇所」を実行対象に合わせて変更する。
+
+対象モデルと IndexTarget。
+
+    index_target = Article.are_search_index_target(:new_version)
+
+使用するstage。
+
+    sync_stage_name = "default"
+
+結果ディレクトリのパス。
+
+    result_dir = 'result_dir_path'
+
+    存在しない場合はエラーになるため実行までに作成する。
+
+bulk送信上限。
+
+    max_bulk_bytes = 20 * 1024 * 1024
+    max_bulk_count = 100
+    max_fail_count = 100
+
+max_bulk_bytes
+
+    1回のbulk送信で使用する最大byte数。
+
+max_bulk_count
+
+    1回のbulk送信へ含める最大レコード数。
+    max_fail_count 以下で指定する。
+
+max_fail_count
+
+    1回の実行中に許容する失敗件数。
+    処理終了時の最後の1件は終了判定の対象外となるため、最終的な失敗件数は1件多くなる場合がある。
+    1000以下で指定する。
+
+
+# 2-5. 通常実行と再開
+----------------------------------------------------------------
+
+通常の rails 処理で実行する
+
+    rails r ./my_bulk_dir/are_search_bulk_index.rb
+
+
+# 2-6. 失敗レコードを recover する
+----------------------------------------------------------------
+
+通常実行で失敗したレコードを再処理する場合は、同じ result_dir を使用して recover を実行する。
+
+    rails r ./my_bulk_dir/are_search_bulk_index.rb recover
+
+recover 処理では result_dir 内に recover というディレクトリ が作成され、そこにリカバー処理の
+ログが作成される。
+
+recover が完了すると、使用した結果が result_dir 直下の世代ディレクトリへ移動する。
+
+    recover_YYYY_MM_DD_HH_MM_SS_UUUUUU/
+
+移動しない場合は recover が完了していないため、再度実行する。
+
+何度やっても完了しない場合は、result_dir の bulk.log を確認して対応する。
+
+
+# 2-7. 結果を確認する
+----------------------------------------------------------------
+
+利用者が確認するログは result_dir 直下の bulk.log。
+
+    result_dir_path/bulk.log
+
+処理中も追記される。
+
+    tail -f result_dir_path/bulk.log
+
+result_dir には以下のディレクトリも作成される。
+
+    data/
+    recover/
+    recover_YYYY_MM_DD_HH_MM_SS_UUUUUU/
+
+data/ と recover/ は再開とrecoverで使用するため編集しない。
+recover_YYYY_MM_DD_HH_MM_SS_UUUUUU/ も履歴として保持し、編集、追記、削除、移動、改名、並べ替えを行わない。
+利用者の結果確認には result_dir の bulk.log を使用する。
+
+
+## 3. [参考資料] Boundary操作で回収する範囲
+----------------------------------------------------------------
+
+4つの操作と bulk の位置関係は次のようになる。
+
+    delete_sync_stage_all_sync_requests
+        |
+        |  データA: 更新 → commit
+        |
+        |  データB: 更新 --------------------→ commit
+        |
+        |  BulkIndexer
+        |      開始
+        |      ...
+        |      終了
+        |
+    set_sync_request_boundary
+        |
+        |  データC: 更新 → commit
+        |
+    run_sync_request_before_boundary
+        |
+        |  対象が0件になるまで繰り返す
+        |
+    clear_sync_request_boundary
+
+
+delete_sync_stage_all_sync_requests
+    それ以前に蓄積されていた bulk のSyncRequestを削除する。
+    今回の bulk で回収する範囲の開始点になる。
+
+データA
+    delete_sync_stage_all_sync_requests後に更新され、set_sync_request_boundary より前に commit まで完了している。
+
+データB
+    set_sync_request_boundary より前に更新処理が始まっているが、commit が境界設定付近まで遅れている。
+    transaction の長さなどによりコミットが境界の前後のどちらを安全に判定できない。
+
+set_sync_request_boundary
+    この時点で今回の差分回収の終了境界を設定する。
+    以後の通常更新を、今回の bulk 差分から分けるために使用する。
+
+データC
+    set_sync_request_boundary 後に更新され、commitされた通常の更新。
+
+専用 rake は、set_sync_request_boundary までにコミットされたデータだけを同期対象にしたい。
+しかし、明確にはわからないためデータAだけでなくデータBも拾う可能性がある。
+データCは確定しているため対象外。
+
+また、データAやBにその後さらに更新が入り、SyncRequestが set_sync_request_boundary より後の
+新しい要求へ更新された場合は、最新の通常更新として扱う。
+今回の境界へ固定して処理する必要はない。
+
+run_sync_request_before_boundary は、この境界までに bulk へ反映できなかった可能性がある
+SyncRequest だけを処理する。
+実行前の対象件数が0件になれば、今回の bulk 差分回収は完了となる。
+clear_sync_request_boundary は、差分回収に使用した BoundaryTarget を削除する。

@@ -31,8 +31,8 @@ module AreSearch
                 response_opts          = valid_options.delete(:response)
 
                 # --- 変換 ---
-                page                 = AreSearch::SearcherUtils.resolve_default_option(page_opt, 1)
-                per_page             = AreSearch::SearcherUtils.resolve_default_option(per_page_opt, 25)
+                page                 = AreSearch::SearcherUtils.resolve_page_default_option(page_opt, 1)
+                per_page             = AreSearch::SearcherUtils.resolve_page_default_option(per_page_opt, 25)
                 normalized_sort      = normalize_sort_options(sort_opts)
                 normalized_highlight = normalize_highlight_options(highlight_opts)
                 response_source          = build_response_source(response_opts)
