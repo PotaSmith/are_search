@@ -396,7 +396,7 @@ STI 子クラスでは properties_method をオーバーライドできない。
         published?
     end
 
-true の場合はindexし、それ以外はその IndexTarget からdeleteする。
+false の場合は IndexTarget からdeleteする。
 indexable_method を省略した場合は、すべてのレコードを index 対象にする。
 indexable_method は IndexTarget 単位であり、stageごとには分かれない。
 
