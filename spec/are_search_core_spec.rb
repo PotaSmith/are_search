@@ -232,7 +232,7 @@ RSpec.describe AreSearch, "configuration" do
 
         expect do
             described_class.validate_searchable_class_setting!
-        end.to raise_error(ArgumentError, "first error\nsecond error")
+        end.to raise_error(ArgumentError, "検索モデルのチェックに失敗しました\nfirst error\nsecond error\n\n")
     end
 
     it "client は同一スレッド内でキャッシュされる" do

@@ -171,8 +171,7 @@ module AreSearch
     # 検索を実行できない場合の扱いを設定する。
     def self.search_failure_mode=(value)
         unless SEARCH_FAILURE_MODES.include?(value)
-            raise ArgumentError,
-                "search_failure_mode は #{SEARCH_FAILURE_MODES.inspect} のいずれかで指定してください"
+            raise ArgumentError, "search_failure_mode は #{SEARCH_FAILURE_MODES.inspect} のいずれかで指定してください"
         end
 
         @search_failure_mode = value
@@ -192,8 +191,7 @@ module AreSearch
         end
 
         unless valid_database_specific_class
-            raise ArgumentError,
-                "database_specific は AreSearch::DatabaseSpecific の継承クラスを指定してください"
+            raise ArgumentError, "database_specific は AreSearch::DatabaseSpecific の継承クラスを指定してください"
         end
 
         @database_specific = database_specific_class
@@ -215,7 +213,7 @@ module AreSearch
         AreSearch::SearchableValidator.validate_searchable_class_setting(searchable_class_setting, errors)
 
         unless errors.empty?
-            raise ArgumentError, errors.join("\n")
+            raise ArgumentError, "検索モデルのチェックに失敗しました\n" + errors.join("\n") + "\n\n"
         end
 
         true

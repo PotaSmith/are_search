@@ -251,6 +251,7 @@ enqueue と after_commit はstageごとに指定する。
 ================================================================
 
 indexable_method には引数なしのインスタンスメソッドを指定する。
+省略可能。省略した場合はすべてのレコードをindex対象にする。
 true の場合はindexし、それ以外はその target からdeleteする。
 
     indexable_method: :default_indexable?

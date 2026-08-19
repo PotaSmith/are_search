@@ -197,6 +197,17 @@ RSpec.describe AreSearch::IndexTarget do
 
             expect(target_properties).not_to have_key(:extra)
         end
+
+        it "mappings省略時はpropertiesだけを返す" do
+            target_setting.delete(:mappings)
+
+            expect(index_target.are_search_index_mappings).to eq(
+                properties: {
+                    id:    { type: "long" },
+                    title: { type: "text" },
+                },
+            )
+        end
     end
 
     describe "#are_search_index_mappings_for_index" do
@@ -298,6 +309,28 @@ RSpec.describe AreSearch::IndexTarget do
             )
         end
 
+    end
+
+    describe "#are_search_indexable?" do
+        it "indexable_method省略時はtrueを返す" do
+            target_setting.delete(:indexable_method)
+            record = double("record")
+
+            expect(record).not_to receive(:public_send)
+
+            expect(index_target.are_search_indexable?(record)).to eq(true)
+        end
+
+        it "indexable_method指定時はモデルメソッドの結果を返す" do
+            record = double("record")
+
+            expect(record)
+                .to receive(:public_send)
+                .with(:default_indexable?)
+                .and_return(false)
+
+            expect(index_target.are_search_indexable?(record)).to eq(false)
+        end
     end
 
     describe "manual sync lock API" do

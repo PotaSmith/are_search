@@ -250,10 +250,7 @@ module AreSearch
         # targetのmappingsを検査する。
         # propertiesはproperties_methodの結果を使用するため利用側では指定できない。
         def validate_mappings(target_setting, path, errors)
-            unless target_setting.key?(:mappings)
-                errors << "#{path} に :mappings がありません"
-                return false
-            end
+            return true unless target_setting.key?(:mappings)
 
             mappings = target_setting[:mappings]
             unless mappings.instance_of?(Hash)
@@ -350,10 +347,7 @@ module AreSearch
 
         # IndexTarget単位のindex対象判定メソッドを検査する。
         def validate_indexable_method(model_class, target_setting, path, errors)
-            unless target_setting.key?(:indexable_method)
-                errors << "#{path} に :indexable_method がありません"
-                return false
-            end
+            return true unless target_setting.key?(:indexable_method)
 
             method_name = target_setting[:indexable_method]
             validate_instance_method(model_class, method_name, 0, "#{path}[:indexable_method]", errors)

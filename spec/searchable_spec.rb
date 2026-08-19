@@ -271,16 +271,39 @@ RSpec.describe AreSearch::Searchable do
             end.to raise_error(ArgumentError, /:settings がありません/)
         end
 
-        it "target に mappings が無ければエラーにする" do
+        it "target の mappings と indexable_method は省略できる" do
             model_class = build_searchable_class
             model_class.include(described_class)
             target_setting = default_target_setting
             target_setting.delete(:mappings)
+            target_setting.delete(:indexable_method)
+            set_searchable_setting(model_class, default: target_setting)
+
+            expect(validate_searchable_setting!).to eq(true)
+        end
+
+        it "mappings に nil を指定した場合はエラーにする" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+            target_setting = default_target_setting
+            target_setting[:mappings] = nil
             set_searchable_setting(model_class, default: target_setting)
 
             expect do
                 validate_searchable_setting!
-            end.to raise_error(ArgumentError, /:mappings がありません/)
+            end.to raise_error(ArgumentError, /\[:mappings\] は Hash/)
+        end
+
+        it "indexable_method に nil を指定した場合はエラーにする" do
+            model_class = build_searchable_class
+            model_class.include(described_class)
+            target_setting = default_target_setting
+            target_setting[:indexable_method] = nil
+            set_searchable_setting(model_class, default: target_setting)
+
+            expect do
+                validate_searchable_setting!
+            end.to raise_error(ArgumentError, /\[:indexable_method\] は Symbol/)
         end
 
         it "target に properties_method が無ければエラーにする" do

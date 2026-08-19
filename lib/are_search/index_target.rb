@@ -103,9 +103,10 @@ module AreSearch
             settings
         end
 
-        # 設定されたmappingsを複製し、properties生成メソッドの結果を設定する。
+        # mappingsを複製し、properties生成メソッドの結果を設定する。
+        # mappings省略時は空Hashを使用する。
         def are_search_index_mappings
-            mappings = @target_setting[:mappings].dup
+            mappings = @target_setting.fetch(:mappings, {}).dup
             properties = model_class.public_send(@target_setting[:properties_method])
             new_properties = {}
             properties.each do |property_key, property_value|
@@ -156,8 +157,11 @@ module AreSearch
             sync_stage_names
         end
 
-        # このIndexTargetでレコードをindex対象にするかモデルメソッドへ問い合わせる。
+        # このIndexTargetでレコードをindex対象にするか返す。
+        # indexable_method省略時は全レコードを対象にする。
         def are_search_indexable?(record)
+            return true unless @target_setting.key?(:indexable_method)
+
             record.public_send(@target_setting[:indexable_method])
         end
 

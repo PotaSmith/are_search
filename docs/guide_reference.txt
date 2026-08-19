@@ -344,7 +344,8 @@ max_result_window は正の Integer で指定する。
 ## 2-3. mappings
 ----------------------------------------------------------------
 
-properties 以外の Elasticsearch mappings を Hash で指定する。必須。
+properties 以外の Elasticsearch mappings を Hash で指定する。
+省略可能。
 properties は properties_method の戻り値を使用するため、ここでは指定できない。
 
     mappings: {
@@ -379,7 +380,8 @@ STI 子クラスでは properties_method をオーバーライドできない。
 ## 2-5. indexable_method
 ----------------------------------------------------------------
 
-その IndexTarget へレコードを index するか返す、引数なしのインスタンスメソッド名を指定する。必須。
+その IndexTarget へレコードを index するか返す、引数なしのインスタンスメソッド名を指定する。
+省略可能。省略した場合はすべてのレコードをindex対象にする。
 
     indexable_method: :default_indexable?
 
@@ -388,6 +390,7 @@ STI 子クラスでは properties_method をオーバーライドできない。
     end
 
 true の場合はindexし、それ以外はその IndexTarget からdeleteする。
+indexable_method を省略した場合は、すべてのレコードを index 対象にする。
 indexable_method は IndexTarget 単位であり、stageごとには分かれない。
 
 
@@ -833,4 +836,3 @@ AreSearch の区切り規則で index 名の要素を連結する。
         "articles",
         "*",
     )
-

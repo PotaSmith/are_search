@@ -37,4 +37,3 @@ AreSearch.setup(
         logger: logger,
     )
 end
-
