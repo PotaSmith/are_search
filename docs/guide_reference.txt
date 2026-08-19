@@ -503,8 +503,8 @@ indexable_method は IndexTarget 単位の対象判定。
         published?
     end
 
-true のレコードは data_method の完成ドキュメントを index する。
-true 以外のレコードはその IndexTarget からdeleteする。
+data_method の完成ドキュメントを index するかどうかの指定。
+false の場合レコードはその IndexTarget からdeleteする。
 
 
 # 6. sync stage とコールバック

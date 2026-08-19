@@ -18,7 +18,7 @@ namespace :are_search do
             index_alias_name = index_target.are_search_index_alias_name
             sync_lock = index_target.are_search_acquire_sync_lock!
 
-            if sync_lock
+            if sync_lock != nil
                 puts "[AreSearch] acquire_sync_lock_all acquired: #{index_alias_name} sync_lock_id=#{sync_lock.id}"
                 next
             end
@@ -28,7 +28,7 @@ namespace :are_search do
                 sync_stage_name:  AreSearch::SyncLock.index_target_lock_name,
             )
 
-            if existing_sync_lock
+            if existing_sync_lock != nil
                 puts "[AreSearch] acquire_sync_lock_all skipped: #{index_alias_name} " \
                     "existing_operation=#{existing_sync_lock.operation} sync_lock_id=#{existing_sync_lock.id}"
             else
@@ -90,7 +90,7 @@ namespace :are_search do
             File.open(lock_path, File::RDWR | File::CREAT) do |lock_file|
                 locked = lock_file.flock(File::LOCK_EX | File::LOCK_NB)
 
-                if locked
+                if locked != false
                     lock_file.flock(File::LOCK_UN)
                 else
                     lock_status = " locked"
@@ -189,9 +189,9 @@ namespace :are_search do
                     source_alias_name = AreSearch::IndexDefinition.index_alias_name_from_physical_index_name(physical_name)
                     source_alias_name != index_alias_name
                 end
-                warnings << "current physical index is not AreSearch format" if invalid_current_exists
+                warnings << "current physical index is not AreSearch format" if invalid_current_exists == true
 
-                if alias_named_physical_index_exists
+                if alias_named_physical_index_exists == true
                     warnings << "physical index with alias name exists"
                 end
 
@@ -199,7 +199,7 @@ namespace :are_search do
                     creation_date
                 end&.first
 
-                if newest_physical_name && current_physical_names.any?
+                if newest_physical_name != nil && current_physical_names.any?
                     if current_physical_names.include?(newest_physical_name) == false
                         warnings << "newest physical index is not current"
                     end
