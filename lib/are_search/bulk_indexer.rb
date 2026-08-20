@@ -211,6 +211,7 @@ module AreSearch
             missing_keys = recover_keys - existing_keys
 
             missing_keys.each do |key|
+                # DBから削除済みの場合はrecover対象外。削除同期はSyncRequest/Boundary側の責務
                 @logger.write_data_skip_result!(key)
             end
 

@@ -195,6 +195,8 @@ index 作成時に Elasticsearch の settings へ渡す analyzer 設定。
 ----------------------------------------------------------------
 
 Elasticsearchへ送信する検索bodyと mapping のフィールド名を検査する policy。
+ただし、runtime_mappings は対象外。
+
 デフォルトは AreSearch::ScriptDenySearchBodyPolicy。
 
 標準policyは script、script_*、*_script に一致するキーを拒否する。
