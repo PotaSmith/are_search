@@ -207,43 +207,54 @@ RSpec.describe AreSearch::ScriptDenySearchBodyPolicy do
 end
 
 RSpec.describe AreSearch::SearchParamPolicy do
-    describe ".valid?" do
-        it "基底policyは継承先でvalid?を実装するよう要求する" do
+    describe ".check_value" do
+        it "基底policyは継承先でcheck_valueを実装するよう要求する" do
             expect do
-                described_class.valid?("query_string", "value")
+                described_class.check_value("query_string", "value")
             end.to raise_error(
                 NotImplementedError,
-                "AreSearch::SearchParamPolicy.valid? を実装してください",
+                "AreSearch::SearchParamPolicy.check_value を実装してください",
             )
         end
     end
 end
 
 RSpec.describe AreSearch::SearchParamLengthPolicy do
-    describe ".valid?" do
-        it "query_stringは2048文字までtrueを返して2049文字でfalseを返す" do
-            expect(described_class.valid?("query_string", "a" * 2048)).to eq(true)
-            expect(described_class.valid?("query_string", "a" * 2049)).to eq(false)
+    describe ".check_value" do
+        it "query_stringは2048文字までnilを返して2049文字でエラーメッセージを返す" do
+            expect(described_class.check_value("query_string", "a" * 2048)).to eq(nil)
+            expect(described_class.check_value("query_string", "a" * 2049)).to eq(
+                "query_string は 2048 文字以内で指定してください",
+            )
         end
 
-        it "where系のterm値とterms、range全体は256文字までtrueを返して257文字でfalseを返す" do
+        it "where系のterm値とterms、range全体は256文字までnilを返して257文字でエラーメッセージを返す" do
             [:where, :where_not, :where_or].each do |key|
-                expect(described_class.valid?("#{key}.term", "a" * 256)).to eq(true)
-                expect(described_class.valid?("#{key}.term", "a" * 257)).to eq(false)
+                term_name = "#{key}.term"
+                expect(described_class.check_value(term_name, "a" * 256)).to eq(nil)
+                expect(described_class.check_value(term_name, "a" * 257)).to eq(
+                    "#{term_name} は 256 文字以内で指定してください",
+                )
 
                 terms_base_length = ["", "b"].to_s.length
                 valid_terms = ["a" * (256 - terms_base_length), "b"]
                 invalid_terms = ["a" * (257 - terms_base_length), "b"]
+                terms_name = "#{key}.terms"
 
-                expect(described_class.valid?("#{key}.terms", valid_terms)).to eq(true)
-                expect(described_class.valid?("#{key}.terms", invalid_terms)).to eq(false)
+                expect(described_class.check_value(terms_name, valid_terms)).to eq(nil)
+                expect(described_class.check_value(terms_name, invalid_terms)).to eq(
+                    "#{terms_name} は 256 文字以内で指定してください",
+                )
 
                 range_base_length = { gte: "", lte: "b" }.to_s.length
                 valid_range = { gte: "a" * (256 - range_base_length), lte: "b" }
                 invalid_range = { gte: "a" * (257 - range_base_length), lte: "b" }
+                range_name = "#{key}.range"
 
-                expect(described_class.valid?("#{key}.range", valid_range)).to eq(true)
-                expect(described_class.valid?("#{key}.range", invalid_range)).to eq(false)
+                expect(described_class.check_value(range_name, valid_range)).to eq(nil)
+                expect(described_class.check_value(range_name, invalid_range)).to eq(
+                    "#{range_name} は 256 文字以内で指定してください",
+                )
             end
         end
     end

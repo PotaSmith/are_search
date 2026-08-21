@@ -485,4 +485,8 @@ set_sync_request_boundary
 run_sync_request_before_boundary は、この境界までに bulk へ反映できなかった可能性がある
 SyncRequest だけを処理する。
 実行前の対象件数が0件になれば、今回の bulk 差分回収は完了となる。
+
+commitが遅れる等の理由で、後から増える可能性があるが、メイン同期が回収するため
+一度0件になれば問題ない。
+
 clear_sync_request_boundary は、差分回収に使用した BoundaryTarget を削除する。

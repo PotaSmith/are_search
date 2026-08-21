@@ -95,7 +95,6 @@ module AreSearch
         # Kaminari 前後ページ系 helper の使用を想定
         def previous_page
             return nil if first_page?
-            return nil if out_of_range?
 
             @page - 1
         end

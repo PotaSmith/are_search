@@ -158,6 +158,8 @@ index 作成時に Elasticsearch の settings へ渡す analyzer 設定。
 変更する場合は properties_method が返す field 定義から参照する analyzer をすべて定義する。
 変更後は対象targetの reindex が必要。
 
+analyzer_settings は :analysis を持つ Hash で指定する。
+
 
 ## 1-12. search_failure_mode
 ----------------------------------------------------------------
@@ -237,14 +239,18 @@ valid? は検索body全体、invalid_key? は mapping のフィールド名を�
 差し替える場合は AreSearch::SearchParamPolicy を継承する。
 
     class ApplicationSearchParamPolicy < AreSearch::SearchParamPolicy
-        def self.valid?(name, value)
-            value.to_s.length <= 4096
+        def self.check_value(name, value)
+            if value.to_s.length > 4096
+                "検索値は4096文字以内で指定してください"
+            else
+                nil
+            end
         end
     end
 
     AreSearch.search_param_policy = ApplicationSearchParamPolicy
 
-valid? の戻り値を使用して、外部入力として扱う値を検査する。
+check_value は、問題がある場合はエラーメッセージ、問題がない場合は nil を返す。
 
 
 ## 1-15. logger
@@ -365,6 +371,17 @@ properties は properties_method の戻り値を使用するため、ここで�
 
 Hash key は Symbol で指定する。
 _source.enabled に false は指定できない。
+
+AreSearch は検索 index の容量削減と ActiveRecord 復元のため、
+_source.includes に予約フィールドを必ず追加する。
+_source.includes を指定しない場合も予約フィールドだけの includes を設定する。
+
+利用側のフィールドを _source に保存する場合は、includes へ明示する。
+
+_source.includes を指定しない場合、excludes は予約フィールドだけの
+includes に対する除外となり、通常はほとんど意味をなさない。
+指定は可能だが注意が必要。
+ActiveRecord 復元用の予約フィールドは excludes に指定しない。
 
 
 ## 2-4. properties_method

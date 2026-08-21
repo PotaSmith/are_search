@@ -308,7 +308,7 @@ RSpec.describe AreSearch, "configuration" do
     end
 
     it "任意設定を変更できる" do
-        analyzer_settings = { analyzer: {} }
+        analyzer_settings = { analysis: {} }
         described_class.sync_request_delay = 30
         described_class.max_sync_try_count = 7
         described_class.sync_request_process_hang_wait = 600
@@ -328,6 +328,15 @@ RSpec.describe AreSearch, "configuration" do
         expect(described_class.rake_operation_enabled).to eq(true)
         expect(described_class.analyzer_settings).to equal(analyzer_settings)
         expect(described_class.lock_dir).to eq("/tmp/are_search_spec")
+    end
+
+    it "analyzer_settings は analysis Hash 必須" do
+        expect do
+            described_class.analyzer_settings = { analyzer: {} }
+        end.to raise_error(
+            ArgumentError,
+            "analyzer_settings は :analysis を持つ Hash を指定してください",
+        )
     end
 
     it "rake_operation_enabled が false の場合は rake task の実行を拒否する" do

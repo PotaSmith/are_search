@@ -5,35 +5,34 @@ module AreSearch
         class << self
 
             # 検索パラメーターの値の検査
-            def valid?(name, value)
+            def check_value(name, value)
                 case name
                 when 'query_string'
-                    value.to_s.length <= 2048
+                    return "#{name} は 2048 文字以内で指定してください" if value.to_s.length > 2048
 
                 when 'where.term'
-                    value.to_s.length <= 256
+                    return "#{name} は 256 文字以内で指定してください" if value.to_s.length > 256
                 when 'where.terms'
-                    value.to_s.length <= 256
+                    return "#{name} は 256 文字以内で指定してください" if value.to_s.length > 256
                 when 'where.range'
-                    value.to_s.length <= 256
+                    return "#{name} は 256 文字以内で指定してください" if value.to_s.length > 256
 
                 when 'where_not.term'
-                    value.to_s.length <= 256
+                    return "#{name} は 256 文字以内で指定してください" if value.to_s.length > 256
                 when 'where_not.terms'
-                    value.to_s.length <= 256
+                    return "#{name} は 256 文字以内で指定してください" if value.to_s.length > 256
                 when 'where_not.range'
-                    value.to_s.length <= 256
+                    return "#{name} は 256 文字以内で指定してください" if value.to_s.length > 256
 
                 when 'where_or.term'
-                    value.to_s.length <= 256
+                    return "#{name} は 256 文字以内で指定してください" if value.to_s.length > 256
                 when 'where_or.terms'
-                    value.to_s.length <= 256
+                    return "#{name} は 256 文字以内で指定してください" if value.to_s.length > 256
                 when 'where_or.range'
-                    value.to_s.length <= 256
-
-                else
-                    true
+                    return "#{name} は 256 文字以内で指定してください" if value.to_s.length > 256
                 end
+
+                nil
             end
         end
     end

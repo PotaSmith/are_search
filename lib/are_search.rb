@@ -120,6 +120,10 @@ module AreSearch
     end
 
     def self.analyzer_settings=(value)
+        if value.instance_of?(Hash) != true || value[:analysis].instance_of?(Hash) != true
+            raise ArgumentError, "analyzer_settings は :analysis を持つ Hash を指定してください"
+        end
+
         @analyzer_settings = value
     end
 

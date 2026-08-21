@@ -32,12 +32,14 @@ module AreSearch
                     MltLikeValidator.validate!(mlt_options[:like], mlt_options[:fields])
                 end
 
-                if options[:build_model_bool] == true
+                if options.key?(:build_model_bool)
                     if options.key?(:raw_body) == false
                         raise ArgumentError, ":build_model_bool を使用する場合は :raw_body が必要です"
                     end
 
-                    validate_model_bool_body!(options[:raw_body])
+                    if options[:build_model_bool] == true
+                        validate_model_bool_body!(options[:raw_body])
+                    end
                 end
 
                 options

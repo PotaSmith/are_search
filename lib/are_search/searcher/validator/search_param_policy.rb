@@ -4,9 +4,9 @@ module AreSearch
     class SearchParamPolicy
         class << self
 
-            # 継承先で1件の検索値を許可するか判定する。
-            def valid?(name, value)
-                raise NotImplementedError, "#{self.name}.valid? を実装してください"
+            # 継承先で1件の検索値を検査し、問題があればエラーメッセージを返す。
+            def check_value(name, value)
+                raise NotImplementedError, "#{self.name}.check_value を実装してください"
             end
 
             # 検証済み検索オプションから外部入力値を取り出し、policyで検査する。
@@ -15,8 +15,9 @@ module AreSearch
                     if key == :queries
                         next if value.nil?
                         value.each do |value_child|
-                            if valid?('query_string', value_child[:query_string]) != true
-                                raise AreSearch::InvalidSearchOption
+                            message = check_value('query_string', value_child[:query_string])
+                            if message != nil
+                                raise AreSearch::InvalidSearchOption, message
                             end
                         end
                     end
@@ -30,8 +31,9 @@ module AreSearch
                             condition_value.each do |field_name, field_param|
                                 next if field_param.nil?
                                 field_param.each do |param_type, param_value|
-                                    if valid?("#{key}.#{param_type}", param_value) != true
-                                        raise AreSearch::InvalidSearchOption
+                                    message = check_value("#{key}.#{param_type}", param_value)
+                                    if message != nil
+                                        raise AreSearch::InvalidSearchOption, message
                                     end
                                 end
                             end

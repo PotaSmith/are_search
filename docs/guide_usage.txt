@@ -245,6 +245,11 @@ raw_body には query.bool が必要。
 正確な総件数が必要な場合は track_total_hits: true を指定する。
 生レスポンスは result.raw_response で取得する。
 
+raw_body で _source を指定する場合、ActiveRecord の復元に使用する
+are_search_reserved_ar_model_class_name を取得対象に含める必要がある。
+標準検索の response.source では、この予約フィールドは自動で追加されるので
+dump_bodyで確認することが出来る。
+
 
 # 5. 共通オプション
 ================================================================
