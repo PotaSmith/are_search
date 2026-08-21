@@ -164,8 +164,8 @@ BulkIndexer の準備、実行、再開、recover、結果確認。
     他の処理と衝突して、処理できない場合があるため、件数が残る場合は
     処理を繰り返し0件になるまで続ける。
 
-    commitが遅れる等の理由で、後から増える可能性があるが、それは
-    メイン同期が回収するため、一度0件になれば問題ない。
+    必要なのはデータ投入中に commit された同期を拾うことで、commit されていない
+    同期要求は後にメイン同期が回収するため、一度0件になればよい。
 
 7．境界を削除する
 
@@ -457,7 +457,7 @@ recover_YYYY_MM_DD_HH_MM_SS_UUUUUU/ も履歴として保持し、編集、追�
 
 
 delete_sync_stage_all_sync_requests
-    それ以前に蓄積されていた bulk のSyncRequestを削除する。
+    それ以前に蓄積されていた bulk の 処理中以外の SyncRequest を削除する。
     今回の bulk で回収する範囲の開始点になる。
 
 データA
@@ -483,7 +483,7 @@ set_sync_request_boundary
 今回の境界へ固定して処理する必要はない。
 
 run_sync_request_before_boundary は、この境界までに bulk へ反映できなかった可能性がある
-SyncRequest だけを処理する。
+コミット済みの SyncRequest を処理できればよい。
 実行前の対象件数が0件になれば、今回の bulk 差分回収は完了となる。
 
 commitが遅れる等の理由で、後から増える可能性があるが、メイン同期が回収するため

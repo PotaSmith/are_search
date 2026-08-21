@@ -233,7 +233,7 @@ SampleGenerator で生成した専用 rake task のサンプルを利用側ア�
 ## 7-1. bulk開始前のSyncRequestを削除する
 ----------------------------------------------------------------
 
-対象stageに現在溜まっているSyncRequestを削除する。
+対象stageに現在溜まっている処理中以外のSyncRequestを削除する。
 
     bundle exec rake are_search:delete_sync_stage_all_sync_requests
 
@@ -253,20 +253,19 @@ bulkと必要なrecoverが完了した後に実行する。
 ## 7-3. 境界までのSyncRequestを同期する
 ----------------------------------------------------------------
 
-    bundle exec rake are_search:run_sync_request_before_boundary
-
 保存した境界以前に作成されたSyncRequestを同期対象にする。
 コミット時期は問わないため多めに拾う可能性がある。
 実行前に対象件数を表示し、対象が存在する場合は確認後に同期する。
 
+    bundle exec rake are_search:run_sync_request_before_boundary
+
+実行前には確認メッセージが表示される。
+
     同期を実行しますか？ [y/N]:
 
 実行後にも対象件数を表示する。
-実行前の対象件数が0件になるまで同じコマンドを繰り返す。
 
-commitが遅れる等の理由で、後から増える可能性がある。
-他の sync stage が無い場合は遅れ分が回収できないため、整合性を
-取るためには必ずメインとなる別の sync stage が必要。
+対象全ての同期が成功するとは限らないため処理後の件数の確認が必要。
 
 
 ## 7-4. 差分回収後に境界を削除する

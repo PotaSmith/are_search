@@ -14,11 +14,11 @@ module AreSearchSyncRequestBoundaryTask
         INDEX_TARGET_MODEL_CLASS_NAME.constantize.are_search_index_target(INDEX_TARGET_NAME)
     end
 
-    # 対象IndexTarget・stageのSyncRequestをすべて削除する。
+    # 対象 IndexTarget・stage の 処理中以外の SyncRequest をすべて削除する。
     def delete_sync_stage_all_sync_requests!
         AreSearch.validate_rake_operation_enabled!
 
-        deleted_count = sync_request_scope.delete_all
+        deleted_count = sync_request_scope.where(processing_token: nil).delete_all
 
         puts "#{Time.zone.now.strftime('%Y-%m-%d %H:%M:%S')} [AreSearch] sync_requestを削除しました。#{deleted_count}件"
     end
@@ -112,7 +112,7 @@ module AreSearchSyncRequestBoundaryTask
         puts "#{Time.zone.now.strftime('%Y-%m-%d %H:%M:%S')} [AreSearch] Boundary同期対象 実行後 #{after_count}件"
     end
 
-    # request_sequenceがBoundaryTargetのsequence_limitより後のSyncRequestを削除する。
+    # request_sequence が BoundaryTarget の sequence_limit より後の 処理中以外の SyncRequest を削除する。
     def delete_sync_requests_after_boundary_target!
         AreSearch.validate_rake_operation_enabled!
 
@@ -122,7 +122,7 @@ module AreSearchSyncRequestBoundaryTask
             return
         end
 
-        deleted_count = boundary_after_sync_request_scope(boundary_target).delete_all
+        deleted_count = boundary_after_sync_request_scope(boundary_target).where(processing_token: nil).delete_all
 
         puts "#{Time.zone.now.strftime('%Y-%m-%d %H:%M:%S')} [AreSearch] sync_requestを削除しました。#{deleted_count}件"
     end
