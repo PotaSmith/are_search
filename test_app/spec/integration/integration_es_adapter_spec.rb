@@ -4,6 +4,7 @@ require "rails_helper"
 require_relative "../support/integration_support"
 require "rake"
 require "tmpdir"
+require "json"
 
 RSpec.describe "AreSearch EsAdapter integration", type: :model do
     self.use_transactional_tests = false
@@ -135,7 +136,31 @@ RSpec.describe "AreSearch EsAdapter integration", type: :model do
                 index_alias_name: test_index_alias_name,
                 es_key:           "1",
             ),
-        ).to eq(AreSearch::EsAdapter.not_found)
+        ).to eq(AreSearch::EsAdapter.success)
+    end
+
+    it "deleteのignore 404でdocument不存在とalias不存在の応答を区別できる" do
+        physical_index_name = test_physical_index_name(1)
+        create_test_physical_index(physical_index_name)
+        add_test_alias(physical_index_name)
+
+        document_not_found_response = AreSearch.client.delete(
+            index:  test_index_alias_name,
+            id:     "missing",
+            ignore: 404,
+        )
+        expect(document_not_found_response["result"]).to eq("not_found")
+
+        AreSearch::EsAdapter.delete_physical_index(
+            physical_index_name: physical_index_name,
+        )
+
+        alias_not_found_response = AreSearch.client.delete(
+            index:  test_index_alias_name,
+            id:     "missing",
+            ignore: 404,
+        )
+        expect(alias_not_found_response.dig("error", "type")).to eq("index_not_found_exception")
     end
 
     it "bulkの一部失敗をitems内のerrorとして返す" do

@@ -17,6 +17,9 @@ module AreSearchSyncLimitAlertTask
     ALERT_MAIL_TO   = "admin@example.com"
     ALERT_MAIL_FROM = "noreply@example.com"
 
+    # メールの内容に記載する最大詳細データ数
+    ALERT_MAX_RESULTS = 10
+
     # sync_try_count がこの値に到達した行を通知対象にする
     ALERT_SYNC_TRY_THRESHOLD = 100
     # force_try_count がこの値に到達した行を通知対象にする
@@ -27,12 +30,7 @@ module AreSearchSyncLimitAlertTask
     # このタスク専用の Mailer。
     # 利用側の ApplicationMailer に依存しないよう ActionMailer::Base を直接継承する。
     class Mailer < ActionMailer::Base
-        def sync_limit_alert(sync_try_limit_reached_requests, force_try_limit_reached_requests, stuck_error_sync_requests)
-
-            sync_request_ids = sync_try_limit_reached_requests.map(&:id) +
-                force_try_limit_reached_requests.map(&:id) +
-                stuck_error_sync_requests.map(&:id)
-            total_count = sync_request_ids.uniq.size
+        def sync_limit_alert(total_count, sync_try_limit_reached_requests, force_try_limit_reached_requests, stuck_error_sync_requests)
 
             lines = []
             lines << "are_search_sync_requests に同期停止候補があります。"
@@ -75,7 +73,7 @@ module AreSearchSyncLimitAlertTask
             lines << "件数: #{sync_requests.size}"
             lines << ""
 
-            sync_requests.each do |sync_request|
+            sync_requests.limit(ALERT_MAX_RESULTS).each do |sync_request|
                 append_sync_request(lines, sync_request)
             end
 
@@ -111,35 +109,37 @@ end
 namespace :are_search do
     desc "are_search_sync_requests の sync_try / force_try / last_error 長期残留を検出して管理者にメール通知する"
     task sync_limit_alert: :environment do
-        sync_try_limit_reached_requests = AreSearch::SyncRequest
-            .where("sync_try_count >= ?", AreSearchSyncLimitAlertTask::ALERT_SYNC_TRY_THRESHOLD)
-            .order(sync_try_count: :desc)
-            .to_a
-
-        force_try_limit_reached_requests = AreSearch::SyncRequest
-            .where("force_try_count >= ?", AreSearchSyncLimitAlertTask::ALERT_FORCE_TRY_THRESHOLD)
-            .order(force_try_count: :desc)
-            .to_a
-
         stuck_error_border_time = Time.zone.now - AreSearchSyncLimitAlertTask::ALERT_STUCK_ERROR_WAIT
 
-        stuck_error_sync_requests = AreSearch::SyncRequest
-            .where.not(last_error: [nil, ""])
-            .where("last_error_at <= ?", stuck_error_border_time)
-            .order(last_error_at: :asc)
-            .to_a
-
-        total_count = (
-            sync_try_limit_reached_requests.pluck(:id) +
-            force_try_limit_reached_requests.pluck(:id) +
-            stuck_error_sync_requests.pluck(:id)
-        ).uniq.size
+        total_count = AreSearch::SyncRequest
+            .where(
+                "sync_try_count >= ? OR force_try_count >= ? OR " \
+                "(last_error IS NOT NULL AND last_error != '' AND last_error_at <= ?)",
+                AreSearchSyncLimitAlertTask::ALERT_SYNC_TRY_THRESHOLD,
+                AreSearchSyncLimitAlertTask::ALERT_FORCE_TRY_THRESHOLD,
+                stuck_error_border_time,
+            )
+            .count
 
         if total_count == 0
             puts "#{Time.zone.now.strftime('%Y-%m-%d %H:%M:%S')} [AreSearch] 同期停止候補の sync_request はありません"
         else
+            sync_try_limit_reached_requests = AreSearch::SyncRequest
+                .where("sync_try_count >= ?", AreSearchSyncLimitAlertTask::ALERT_SYNC_TRY_THRESHOLD)
+                .order(sync_try_count: :desc)
+
+            force_try_limit_reached_requests = AreSearch::SyncRequest
+                .where("force_try_count >= ?", AreSearchSyncLimitAlertTask::ALERT_FORCE_TRY_THRESHOLD)
+                .order(force_try_count: :desc)
+
+            stuck_error_sync_requests = AreSearch::SyncRequest
+                .where.not(last_error: [nil, ""])
+                .where("last_error_at <= ?", stuck_error_border_time)
+                .order(last_error_at: :asc)
+
             AreSearchSyncLimitAlertTask::Mailer
                 .sync_limit_alert(
+                    total_count,
                     sync_try_limit_reached_requests,
                     force_try_limit_reached_requests,
                     stuck_error_sync_requests,

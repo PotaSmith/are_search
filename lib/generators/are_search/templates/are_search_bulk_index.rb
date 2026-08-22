@@ -21,7 +21,7 @@ unless ["index", "recover"].include?(bulk_mode)
         "index または recover を指定してください"
 end
 
-index_target.are_search_bulk_index(
+result = index_target.are_search_bulk_index(
     sync_stage_name,
     result_dir: result_dir,
     max_bulk_bytes: max_bulk_bytes,
@@ -29,3 +29,5 @@ index_target.are_search_bulk_index(
     max_fail_count: max_fail_count,
     recover: bulk_mode == "recover",
 )
+
+puts result

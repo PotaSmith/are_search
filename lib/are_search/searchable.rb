@@ -226,7 +226,7 @@ module AreSearch
             end
 
             if result == false
-                AreSearch.logger.error do
+                AreSearch.logger.debug do
                     "[AreSearch] after_commit sync failed: model=#{self.class.name} id=#{id} " \
                         "index_target=#{index_target.index_target_name} sync_stage=#{sync_stage_name} " \
                         "mode=#{after_commit_mode}"

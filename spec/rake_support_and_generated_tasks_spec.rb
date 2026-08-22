@@ -1158,7 +1158,8 @@ RSpec.describe "are_search sync limit alert task" do
         delivery = double("delivery")
 
         expect(AreSearchSyncLimitAlertTask::Mailer)
-            .to receive(:sync_limit_alert) do |sync_requests, force_requests, stuck_requests|
+            .to receive(:sync_limit_alert) do |total_count, sync_requests, force_requests, stuck_requests|
+                expect(total_count).to eq(1)
                 expect(sync_requests.map(&:id)).to eq([boundary_request.id])
                 expect(sync_requests).not_to include(below_request)
                 expect(force_requests).to eq([])
@@ -1183,7 +1184,8 @@ RSpec.describe "are_search sync limit alert task" do
         delivery = double("delivery")
 
         expect(AreSearchSyncLimitAlertTask::Mailer)
-            .to receive(:sync_limit_alert) do |sync_requests, force_requests, stuck_requests|
+            .to receive(:sync_limit_alert) do |total_count, sync_requests, force_requests, stuck_requests|
+                expect(total_count).to eq(1)
                 expect(sync_requests).to eq([])
                 expect(force_requests.map(&:id)).to eq([boundary_request.id])
                 expect(force_requests).not_to include(below_request)
@@ -1215,7 +1217,8 @@ RSpec.describe "are_search sync limit alert task" do
             .to receive(:now)
             .and_return(now)
         expect(AreSearchSyncLimitAlertTask::Mailer)
-            .to receive(:sync_limit_alert) do |sync_requests, force_requests, stuck_requests|
+            .to receive(:sync_limit_alert) do |total_count, sync_requests, force_requests, stuck_requests|
+                expect(total_count).to eq(1)
                 expect(sync_requests).to eq([])
                 expect(force_requests).to eq([])
                 expect(stuck_requests.map(&:id)).to eq([boundary_request.id])
@@ -1245,7 +1248,8 @@ RSpec.describe "are_search sync limit alert task" do
         delivery = double("delivery")
 
         expect(AreSearchSyncLimitAlertTask::Mailer)
-            .to receive(:sync_limit_alert) do |sync_requests, force_requests, stuck_requests|
+            .to receive(:sync_limit_alert) do |total_count, sync_requests, force_requests, stuck_requests|
+                expect(total_count).to eq(3)
                 expect(sync_requests.map(&:id)).to eq([sync_request.id])
                 expect(force_requests.map(&:id)).to eq([force_request.id])
                 expect(stuck_requests.map(&:id)).to eq([stuck_request.id])
@@ -1266,15 +1270,22 @@ RSpec.describe "are_search sync limit alert task" do
             last_error:        "timeout",
             last_error_at:     Time.zone.now - 7201,
         )
+        delivery = double("delivery")
 
-        mail = AreSearchSyncLimitAlertTask::Mailer.new.sync_limit_alert(
-            [sync_request],
-            [sync_request],
-            [sync_request],
-        )
+        expect(AreSearchSyncLimitAlertTask::Mailer)
+            .to receive(:sync_limit_alert) do |total_count, sync_requests, force_requests, stuck_requests|
+                expect(total_count).to eq(1)
+                expect(sync_requests.map(&:id)).to eq([sync_request.id])
+                expect(force_requests.map(&:id)).to eq([sync_request.id])
+                expect(stuck_requests.map(&:id)).to eq([sync_request.id])
 
-        expect(mail.subject).to include("(1件)")
-        expect(mail.body.encoded).to include("合計件数: 1")
+                delivery
+            end
+        expect(delivery).to receive(:deliver_now)
+
+        expect do
+            Rake::Task["are_search:sync_limit_alert"].invoke
+        end.to output(/sync_request 1件/).to_stdout
     end
 
     it "長期残留判定はupdated_atではなくlast_error_atを使う" do
@@ -1296,7 +1307,8 @@ RSpec.describe "are_search sync limit alert task" do
         delivery = double("delivery")
 
         expect(AreSearchSyncLimitAlertTask::Mailer)
-            .to receive(:sync_limit_alert) do |sync_requests, force_requests, stuck_requests|
+            .to receive(:sync_limit_alert) do |total_count, sync_requests, force_requests, stuck_requests|
+                expect(total_count).to eq(1)
                 expect(sync_requests).to eq([])
                 expect(force_requests).to eq([])
                 expect(stuck_requests.map(&:id)).to eq([old_error.id])

@@ -42,15 +42,13 @@ module AreSearch
         def delete(index_alias_name:, es_key:)
             AreSearch::IndexDefinition.valid_index_alias_name!(index_alias_name)
 
-            response = AreSearch.client.delete(index: index_alias_name, id: es_key)
+            response = AreSearch.client.delete(index: index_alias_name, id: es_key, ignore: 404)
 
-            if response["result"] == 'deleted'
+            if response["result"] == 'deleted' || response["result"] == 'not_found'
                 return success
             else
                 return not_success
             end
-        rescue Elastic::Transport::Transport::Errors::NotFound
-            return not_found
         end
 
         # 呼び出し元で検査済みのbodyを使って Elasticsearch のbulk APIを呼び出す。

@@ -92,6 +92,16 @@ module AreSearch
 
             relation = build_index_relation
             index_records(relation)
+
+            last_key = @logger.get_last_check_point_key
+            return "同期対象はありません。" if last_key.nil?
+
+            fail_count = @logger.get_fail_key_uniq_size
+            if fail_count == 0
+                "id #{last_key} までの同期を終了しました。"
+            else
+                "id #{last_key} まで処理しました。recover対象 #{fail_count}件"
+            end
         end
 
         # 実行条件を確認してbulk投入を開始する。
@@ -120,9 +130,9 @@ module AreSearch
             if get_recover_keys.empty?
                 if get_recover_target_keys.size > 0
                     @logger.rename_all([@bulk_failure_target_file, @data_fail_target_file])
-                    raise AreSearch::Error, "recover対象がありません。終了処理が未処理であったため実施しました。"
+                    return "recover対象がありません。終了処理が未処理であったため実施しました。"
                 else
-                    raise AreSearch::Error, "recover対象がありません"
+                    return "recover対象がありません"
                 end
             end
 
@@ -131,6 +141,10 @@ module AreSearch
 
             if get_recover_keys.empty?
                 @logger.rename_all([@bulk_failure_target_file, @data_fail_target_file])
+
+                "recoverが完了しました。"
+            else
+                "recover対象が残っています。"
             end
         end
 

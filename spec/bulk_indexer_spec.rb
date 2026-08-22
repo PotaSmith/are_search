@@ -91,8 +91,9 @@ RSpec.describe AreSearch::BulkIndexer do
             expect(relation)
                 .to receive(:find_each)
 
-            indexer.bulk_index_index_target
+            result = indexer.bulk_index_index_target
 
+            expect(result).to eq("同期対象はありません。")
             expect(File.directory?(File.join(result_dir, "data"))).to eq(true)
             expect(File.directory?(File.join(result_dir, "recover"))).to eq(true)
         end
@@ -409,7 +410,9 @@ RSpec.describe AreSearch::BulkIndexer do
                     ],
                 )
 
-            indexer.bulk_recover_index_target
+            result = indexer.bulk_recover_index_target
+
+            expect(result).to eq("recoverが完了しました。")
 
             recover_dir = File.join(result_dir, "recover")
             expect(
@@ -524,7 +527,9 @@ RSpec.describe AreSearch::BulkIndexer do
                 .and_return(relation)
             allow_find_each(relation, [])
 
-            indexer.bulk_recover_index_target
+            result = indexer.bulk_recover_index_target
+
+            expect(result).to eq("recoverが完了しました。")
 
             archive_dir = Dir.glob(
                 File.join(result_dir, "recover_*"),
@@ -542,18 +547,18 @@ RSpec.describe AreSearch::BulkIndexer do
             expect(model_class)
                 .not_to receive(:where)
 
-            expect do
-                indexer.bulk_recover_index_target
-            end.to raise_error(AreSearch::Error, "recover対象がありません")
+            result = indexer.bulk_recover_index_target
+
+            expect(result).to eq("recover対象がありません")
         end
 
-        it "recover対象が無ければ拒否する" do
+        it "recover対象が無ければメッセージを返す" do
             expect(model_class)
                 .not_to receive(:where)
 
-            expect do
-                indexer.bulk_recover_index_target
-            end.to raise_error(AreSearch::Error, "recover対象がありません")
+            result = indexer.bulk_recover_index_target
+
+            expect(result).to eq("recover対象がありません")
         end
 
         it "通常実行の失敗対象IDがrecover上限と一致する場合は処理を開始する" do

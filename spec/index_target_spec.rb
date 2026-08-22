@@ -1104,20 +1104,32 @@ RSpec.describe AreSearch::IndexTarget do
         it "指定した id を alias から delete する" do
             expect(client)
                 .to receive(:delete)
-                .with(index: "test__articles__default", id: "123")
+                .with(index: "test__articles__default", id: "123", ignore: 404)
                 .and_return("result" => "deleted")
 
             searchable_index_target.are_search_delete!(123)
         end
 
-        it "NotFound は無視する" do
+        it "対象ドキュメントが存在しない場合も正常終了する" do
             allow(client)
                 .to receive(:delete)
-                .and_raise(Elastic::Transport::Transport::Errors::NotFound)
+                .with(index: "test__articles__default", id: "123", ignore: 404)
+                .and_return("result" => "not_found")
 
             expect do
                 searchable_index_target.are_search_delete!(123)
             end.not_to raise_error
+        end
+
+        it "delete結果がsuccessでない場合は例外にする" do
+            allow(client)
+                .to receive(:delete)
+                .with(index: "test__articles__default", id: "123", ignore: 404)
+                .and_return("error" => { "type" => "index_not_found_exception" })
+
+            expect do
+                searchable_index_target.are_search_delete!(123)
+            end.to raise_error(AreSearch::Error, "Elasticsearch document delete failed")
         end
 
         it "NotFound 以外の例外は伝播する" do

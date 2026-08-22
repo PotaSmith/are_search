@@ -728,7 +728,7 @@ RSpec.describe AreSearch::Searchable do
                 .with(kind_of(AreSearch::IndexTarget), "default")
                 .and_return(false)
 
-            expect(logger).to receive(:error) do |&block|
+            expect(logger).to receive(:debug) do |&block|
                 message = block.call
                 expect(message).to include("after_commit sync failed")
                 expect(message).to include("sync_stage=default")
@@ -755,7 +755,7 @@ RSpec.describe AreSearch::Searchable do
                 .with(123, "default")
                 .and_return(false)
 
-            expect(logger).to receive(:error) do |&block|
+            expect(logger).to receive(:debug) do |&block|
                 message = block.call
                 expect(message).to include("after_commit sync failed")
                 expect(message).to include("sync_stage=default")

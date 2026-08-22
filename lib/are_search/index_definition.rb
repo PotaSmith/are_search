@@ -19,7 +19,7 @@ module AreSearch
 
         RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME = :are_search_reserved_ar_model_class_name
         RESERVED_AR_INSTANCE_KEY_FIELD_NAME     = :are_search_reserved_ar_instance_key
-        RESERVED_INDEX_FIELD_NAME_SETTING = { type: 'keyword' }
+        RESERVED_INDEX_FIELD_NAME_SETTING = { type: 'keyword' }.freeze
 
         RESERVED_INDEX_FIELD_NAMES = [
             RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME,

@@ -210,7 +210,7 @@ module AreSearch
                 es_key:           ar_instance_key.to_s,
             )
 
-            if result == AreSearch::EsAdapter.not_success
+            if result != AreSearch::EsAdapter.success
                 raise AreSearch::Error, "Elasticsearch document delete failed"
             end
         end
