@@ -194,6 +194,10 @@ RSpec.describe AreSearch::SyncRequest do
                 .with(request_index_target_name)
                 .and_return(index_target)
 
+            allow(model)
+                .to receive(:unscoped)
+                .and_return(model)
+
             allow(index_target)
                 .to receive(:are_search_sync_stage_names)
                 .and_return([sync_stage_name])

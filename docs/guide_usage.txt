@@ -225,22 +225,6 @@ raw_body と同時に使用できる AreSearch 側のオプション。
 from と size は page / per_page から設定する。
 その他の指定は Elasticsearch へ渡す。
 
-build_model_bool: true を指定すると検索対象モデルの条件を追加する。
-raw_body には query.bool が必要。
-
-    result = AreSearch::Searcher.search(
-        [article_index],
-        raw_body: {
-            query: {
-                bool: {
-                    must: [
-                        { match: { title: "Rails" } },
-                    ],
-                },
-            },
-        },
-        build_model_bool: true,
-    )
 
 正確な総件数が必要な場合は track_total_hits: true を指定する。
 生レスポンスは result.raw_response で取得する。
@@ -249,6 +233,33 @@ raw_body で _source を指定する場合、ActiveRecord の復元に使用す�
 are_search_reserved_ar_model_class_name を取得対象に含める必要がある。
 標準検索の response.source では、この予約フィールドは自動で追加されるので
 dump_bodyで確認することが出来る。
+
+
+## 4-1. build_model_bool
+----------------------------------------------------------------
+
+build_model_bool: true を指定すると query.bool に 検索対象モデルの条件を
+filter として追加する。指定にはquery.bool が必要。
+
+should を使用している場合は、Elasticsearch の bool query の仕様により
+検索条件の意味が変わる可能性がある。
+条件に応じて minimum_should_match の指定が必要。
+
+    result = AreSearch::Searcher.search(
+        [article_index],
+        raw_body: {
+            query: {
+                bool: {
+                    should: [
+                        { term: { status: "published" } },
+                        { term: { status: "featured" } },
+                    ],
+                    minimum_should_match: 1,
+                },
+            },
+        },
+        build_model_bool: true,
+    )
 
 
 # 5. 共通オプション
@@ -388,7 +399,7 @@ raw_body検索では response を使用せず、_source、fields、stored_fields
     page
 
 標準の search_param_policy では、queries.query_string は2048文字まで、
-where系の term / terms / range は文字列化した長さが256文字までの場合に許可する。
+where系の term / terms / range は文字列化した長さが、それぞれの指定文字数までの場合に許可する。
 制限は AreSearch.search_param_policy で差し替えできる。
 
 値が制約に合わない場合、search_failure_mode が :empty_result なら STATUS_PARAMS_INVALID の空結果を返し、

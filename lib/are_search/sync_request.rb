@@ -217,7 +217,7 @@ module AreSearch
         end
 
         def find_record_by_ar_instance_key(index_target)
-            index_target.model_class.find_by(id: ar_instance_key)
+            index_target.model_class.unscoped.find_by(id: ar_instance_key)
         end
 
         def sync_or_delete_if_record_is_nil(record, index_target)

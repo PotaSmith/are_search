@@ -157,9 +157,11 @@ module AreSearch
         # where系オプションのHash形式とArray形式を表すnode定義。
         CONDITION_DEFINITIONS = {
             hash: {
+                allow_empty: true,
                 key_values: CONDITION_FIELD_KEY_VALUES,
             },
             array: {
+                allow_empty: true,
                 children: {
                     hash: {
                         key_values: CONDITION_FIELD_KEY_VALUES,

@@ -209,9 +209,9 @@ module AreSearch
             model_class = @index_target.model_class
 
             last_key = @logger.get_last_check_point_key
-            return model_class.all if last_key.nil?
+            return model_class.unscoped if last_key.nil?
 
-            model_class.where("id > ?", last_key)
+            model_class.unscoped.where("id > ?", last_key)
         end
 
         # recover時は未解決の失敗IDを対象にし、DBに存在しないIDはdata_skipとして記録する。
@@ -220,7 +220,7 @@ module AreSearch
 
             recover_keys = get_recover_keys
 
-            existing_keys = model_class.where(id: recover_keys).pluck(:id).map(&:to_s)
+            existing_keys = model_class.unscoped.where(id: recover_keys).pluck(:id).map(&:to_s)
 
             missing_keys = recover_keys - existing_keys
 
@@ -229,7 +229,7 @@ module AreSearch
                 @logger.write_data_skip_result!(key)
             end
 
-            model_class.where(id: existing_keys)
+            model_class.unscoped.where(id: existing_keys)
         end
 
         # relationを1件ずつ処理し、容量上限を超えた時点でbulk送信する。

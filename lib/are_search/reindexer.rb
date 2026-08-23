@@ -97,7 +97,7 @@ module AreSearch
         end
 
         def bulk_index_target(index_target, sync_stage_name, physical_index_name, result)
-            total      = index_target.model_class.count
+            total      = index_target.model_class.unscoped.count
             bar        = nil
             failed_ids = []
 
@@ -105,7 +105,7 @@ module AreSearch
                 bar = ::ProgressBar.new(total) if ::ProgressBar.respond_to?(:new)
             end
 
-            index_target.model_class.find_in_batches(batch_size: AreSearch.batch_size) do |batch|
+            index_target.model_class.unscoped.find_in_batches(batch_size: AreSearch.batch_size) do |batch|
                 body, ids = build_bulk_body(index_target, sync_stage_name, batch, physical_index_name)
                 bar.increment!(batch.size) if bar.respond_to?(:increment!)
 

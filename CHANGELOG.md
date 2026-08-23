@@ -5,6 +5,8 @@
 ## [Unreleased]
 
 - このバージョンは、DBの作り直しが必要だが、バージョンが1.0.0以下なので移行手順は用意しない
+- default_scope を適用せず対象レコードを取得するよう変更。
+- 検索条件の上限調整、空のwhere条件許可、Boundaryサンプルの複数配置対応、長期未処理SyncRequestの通知条件を追加。
 - 検索処理の失敗時動作を整理。必要なindexの事前確認を追加し、原因不明の検索失敗は `STATUS_SEARCH_FAIL` の空結果として返せるよう変更
 - `page` / `per_page` に `0` を指定した場合は既定値として扱うよう変更し、`params[:page].to_i` をそのまま利用できるよう調整
 - `max_result_window` により検索結果の表示上限へ到達したことを判定する `over_max_result_window?` と、使用中の上限値を取得する `max_result_window` を検索結果へ追加

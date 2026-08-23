@@ -232,7 +232,9 @@ valid? は検索body全体、invalid_key? は mapping のフィールド名を�
         2048文字
 
     where / where_not / where_or の term の値
+        128文字
     where / where_not / where_or の terms の Array 全体
+        1024文字
     where / where_not / where_or の range の Hash 全体
         256文字
 
@@ -402,6 +404,12 @@ IndexTarget の properties を返す、引数なしのクラスメソッド名�
 各fieldには :type が必要。field_name は search body policy でも検査する。
 STI 子クラスでは properties_method をオーバーライドできない。
 
+元のフィールド値を _source 以外から取得する mlt のような機能で使用する場合は
+
+    store: true
+
+を指定できる。
+
 
 ## 2-5. indexable_method
 ----------------------------------------------------------------
@@ -418,6 +426,8 @@ STI 子クラスでは properties_method をオーバーライドできない。
 false の場合は IndexTarget からdeleteする。
 indexable_method を省略した場合は、すべてのレコードを index 対象にする。
 indexable_method は IndexTarget 単位であり、stageごとには分かれない。
+
+gem は unscoped でレコードを取得するため、除外が必要であればここに条件を指定する。
 
 
 ## 2-6. stages
@@ -453,7 +463,23 @@ IndexTargetで使用する sync stage を Hash で設定順に定義する。1�
 stageの定義順は reindex の stage_position: :first / :last で使用する。
 
 
-## 2-7. _callbacks
+## 2-7. data_method
+----------------------------------------------------------------
+
+data_method は、指定stageへ投入する完成ドキュメント全体を Hash で返す。
+
+    def default_search_data
+        {
+            id:    id,
+            title: title,
+        }
+    end
+
+各stageは部分更新ではない。
+複数stageで同じ完成ドキュメントを使用する場合は、同じ data_method を指定できる。
+
+
+## 2-8. _callbacks
 ----------------------------------------------------------------
 
 モデル単位の同期callbackを指定する。省略できる。
@@ -483,51 +509,8 @@ false の間はその要求の同期を開始しない。
 are_search_upsert_sync_request は指定した IndexTarget・stage の sync request を登録または更新する。
 
 
-# 3. properties_method の戻り値
-================================================================
-
-properties_method は、その IndexTarget の properties 全体を返す。
-元のフィールド値を _source 以外から取得する機能で使用する場合は store: true を指定できる。
-
-    body: {
-        type:  "text",
-        store: true,
-    }
-
-properties 自体は searchable_class_setting の mappings へ指定しない。
-
-
-# 4. data_method の戻り値
-================================================================
-
-data_method は、指定stageへ投入する完成ドキュメント全体を Hash で返す。
-
-    def default_search_data
-        {
-            id:    id,
-            title: title,
-        }
-    end
-
-各stageは部分更新ではない。
-複数stageで同じ完成ドキュメントを使用する場合は、同じ data_method を指定できる。
-
-
-# 5. indexable_method
-================================================================
-
-indexable_method は IndexTarget 単位の対象判定。
-
-    def default_indexable?
-        published?
-    end
-
-data_method の完成ドキュメントを index するかどうかの指定。
-false の場合レコードはその IndexTarget からdeleteする。
-
-
-# 6. sync stage とコールバック
-================================================================
+## 2-9. sync stage とコールバック
+----------------------------------------------------------------
 
 保存時・after_commit の対象は stages 内の enqueue / after_commit でstageごとに指定する。
 重いstageをrakeへ残す場合は enqueue: true、after_commit: false にする。
@@ -541,7 +524,7 @@ false の場合レコードはその IndexTarget からdeleteする。
     )
 
 
-# 7. IndexTarget の操作
+# 3. IndexTarget の操作
 ================================================================
 
 IndexTarget を取得する。
@@ -594,7 +577,7 @@ stageを使用する直接操作。
     )
 
 
-## 7-1. index 操作の戻り値
+## 3-1. index 操作の戻り値
 ----------------------------------------------------------------
 
 are_search_reindex、are_search_clean_up の戻り値は処理結果を表す Hash。
@@ -608,7 +591,7 @@ are_search_reindex、are_search_clean_up の戻り値は処理結果を表す Ha
 処理中に例外が発生した場合は、Hashを返さず例外を送出することがあります。
 
 
-# 8. コールバックを通らない更新
+# 4. コールバックを通らない更新
 ================================================================
 
 通常saveと同じ同期経路へ乗せる場合は、DB更新と are_search_enqueue_sync_request を同じトランザクション内で行い、
@@ -631,7 +614,7 @@ update_all、delete_all、insert_all、upsert_all など複数件を変更する
 件数に応じて reindex を使用する。
 
 
-# 9. block形式の操作
+# 5. block形式の操作
 ================================================================
 
 block形式の操作は、処理中だけsync stage sync lockを取得する。
@@ -641,7 +624,7 @@ AreSearch.index_operation_enabled = true が必要。
 operation には状態確認時に処理を識別する名前を指定する。
 
 
-## 9-1. are_search_with_sync_stage_lock
+## 5-1. are_search_with_sync_stage_lock
 ----------------------------------------------------------------
 
     are_search_with_sync_stage_lock(sync_stage_name, operation:) { ... }
@@ -650,11 +633,11 @@ operation には状態確認時に処理を識別する名前を指定する。
 blockの戻り値を返す。
 
 
-# 10. 直接操作
+# 6. 直接操作
 ================================================================
 
 
-## 10-1. are_search_index_or_delete!
+## 6-1. are_search_index_or_delete!
 ----------------------------------------------------------------
 
 レコードの現在状態を直接 Elasticsearch へ反映する。
@@ -668,7 +651,7 @@ blockの戻り値を返す。
 sync request を経由しないため、通常の再試行経路が必要な処理では使用しない。
 
 
-## 10-2. are_search_delete!
+## 6-2. are_search_delete!
 ----------------------------------------------------------------
 
 ドキュメントを直接削除する。
@@ -682,7 +665,7 @@ sync request を経由しないため、通常の再試行経路が必要な処�
 対象が存在しない場合は無視する。
 
 
-## 10-3. 物理 index の手動削除
+## 6-3. 物理 index の手動削除
 ----------------------------------------------------------------
 
     AreSearch.delete_physical_index!(physical_index_name)
@@ -691,7 +674,7 @@ AreSearch.index_operation_enabled = true が必要。
 通常は clean up を使用し、手動削除は状態を確認したうえで行う。
 
 
-## 10-4. manual sync lock
+## 6-4. manual sync lock
 ----------------------------------------------------------------
 
 index target sync lock と sync stage sync lock は排他ではない。
@@ -734,7 +717,7 @@ index target sync lock と sync stage sync lock は別のlockとして共存で�
 AreSearch.index_operation_enabled = true が必要。
 
 
-## 10-5. are_search_index_data_validate
+## 6-5. are_search_index_data_validate
 ----------------------------------------------------------------
 
 レコードについて、各 IndexTarget・stage の are_search_index_data と mappings の整合性を確認する。
@@ -744,7 +727,7 @@ AreSearch.index_operation_enabled = true が必要。
 確認結果は article.errors から参照する。
 
 
-# 11. 利用側定義名
+# 7. 利用側定義名
 ================================================================
 
 AreSearch は次の名前を共通形式で検査する。
@@ -807,7 +790,7 @@ Searchableモデルの設定は Rails の after_initialize で検査する。
 are_search:check_all_models では STI 子クラスで解決される設定メソッドも含めて確認する。
 
 
-# 12. SyncRequest の状態確認
+# 8. SyncRequest の状態確認
 ================================================================
 
 rakeで同期要求を回収するときは、are_search_sync_requests の状態項目を確認できる。
@@ -838,7 +821,7 @@ rakeで同期要求を回収するときは、are_search_sync_requests の状態
         同期要求の処理完了時に記録をクリアする。
 
 
-# 13. 補助操作
+# 9. 補助操作
 ================================================================
 
 設定済みの index_prefix と Elasticsearch client を取得する。

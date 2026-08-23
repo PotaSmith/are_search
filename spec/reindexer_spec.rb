@@ -116,6 +116,10 @@ RSpec.describe AreSearch::Reindexer do
         allow(AreSearch).to receive(:client).and_return(client)
         stub_const("ProgressBar", progress_bar_class)
 
+        allow(model)
+            .to receive(:unscoped)
+            .and_return(model)
+
         allow(index_target)
             .to receive(:are_search_indexable?)
             .and_return(true)

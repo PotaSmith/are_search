@@ -228,22 +228,22 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
             )
         end
 
-        it "where系のterm値とterms、range全体は256文字までnilを返して257文字でエラーメッセージを返す" do
+        it "where系のterm値、terms全体、range全体の文字数境界を検査する" do
             [:where, :where_not, :where_or].each do |key|
                 term_name = "#{key}.term"
-                expect(described_class.check_value(term_name, "a" * 256)).to eq(nil)
-                expect(described_class.check_value(term_name, "a" * 257)).to eq(
-                    "#{term_name} は 256 文字以内で指定してください",
+                expect(described_class.check_value(term_name, "a" * 128)).to eq(nil)
+                expect(described_class.check_value(term_name, "a" * 129)).to eq(
+                    "#{term_name} は 128 文字以内で指定してください",
                 )
 
                 terms_base_length = ["", "b"].to_s.length
-                valid_terms = ["a" * (256 - terms_base_length), "b"]
-                invalid_terms = ["a" * (257 - terms_base_length), "b"]
+                valid_terms = ["a" * (1024 - terms_base_length), "b"]
+                invalid_terms = ["a" * (1025 - terms_base_length), "b"]
                 terms_name = "#{key}.terms"
 
                 expect(described_class.check_value(terms_name, valid_terms)).to eq(nil)
                 expect(described_class.check_value(terms_name, invalid_terms)).to eq(
-                    "#{terms_name} は 256 文字以内で指定してください",
+                    "#{terms_name} は 1024 文字以内で指定してください",
                 )
 
                 range_base_length = { gte: "", lte: "b" }.to_s.length
@@ -282,18 +282,18 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
             end.to raise_error(AreSearch::InvalidSearchOption)
         end
 
-        it "where系Hash形式はterm値とterms、range全体の256文字境界を検査する" do
+        it "where系Hash形式はterm値、terms全体、range全体の文字数境界を検査する" do
             terms_base_length = ["", "b"].to_s.length
             range_base_length = { gte: "", lte: "b" }.to_s.length
 
             valid_conditions = [
-                { status: { term: "a" * 256 } },
-                { status: { terms: ["a" * (256 - terms_base_length), "b"] } },
+                { status: { term: "a" * 128 } },
+                { status: { terms: ["a" * (1024 - terms_base_length), "b"] } },
                 { status: { range: { gte: "a" * (256 - range_base_length), lte: "b" } } },
             ]
             invalid_conditions = [
-                { status: { term: "a" * 257 } },
-                { status: { terms: ["a" * (257 - terms_base_length), "b"] } },
+                { status: { term: "a" * 129 } },
+                { status: { terms: ["a" * (1025 - terms_base_length), "b"] } },
                 { status: { range: { gte: "a" * (257 - range_base_length), lte: "b" } } },
             ]
 
@@ -312,13 +312,13 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
             end
         end
 
-        it "where系Array形式でもterm値とterms、range全体へ文字数制限を適用する" do
+        it "where系Array形式でもterm値、terms全体、range全体へ文字数制限を適用する" do
             terms_base_length = ["", "b"].to_s.length
             range_base_length = { gte: "", lte: "b" }.to_s.length
 
             invalid_conditions = [
-                { status: { term: "a" * 257 } },
-                { status: { terms: ["a" * (257 - terms_base_length), "b"] } },
+                { status: { term: "a" * 129 } },
+                { status: { terms: ["a" * (1025 - terms_base_length), "b"] } },
                 { status: { range: { gte: "a" * (257 - range_base_length), lte: "b" } } },
             ]
 
@@ -337,7 +337,7 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
                     queries: nil,
                     where: {
                         status: {
-                            term: "a" * 257,
+                            term: "a" * 129,
                         },
                     },
                 )
@@ -348,7 +348,7 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
                     where: nil,
                     where_or: {
                         status: {
-                            term: "a" * 257,
+                            term: "a" * 129,
                         },
                     },
                 )

@@ -59,6 +59,9 @@ RSpec.describe AreSearch::BulkIndexer do
         allow(model_class)
             .to receive(:superclass)
             .and_return(nil)
+        allow(model_class)
+            .to receive(:unscoped)
+            .and_return(model_class)
         allow(index_target)
             .to receive(:are_search_sync_stage_names)
             .and_return([sync_stage_name])
@@ -86,7 +89,7 @@ RSpec.describe AreSearch::BulkIndexer do
             relation = double("relation")
 
             expect(model_class)
-                .to receive(:all)
+                .to receive(:unscoped)
                 .and_return(relation)
             expect(relation)
                 .to receive(:find_each)
@@ -106,7 +109,7 @@ RSpec.describe AreSearch::BulkIndexer do
             data_failure_record = double("data_failure_record", id: 4)
 
             allow(model_class)
-                .to receive(:all)
+                .to receive(:unscoped)
                 .and_return(relation)
             allow_find_each(
                 relation,
@@ -260,7 +263,7 @@ RSpec.describe AreSearch::BulkIndexer do
             relation = double("relation")
 
             expect(model_class)
-                .to receive(:all)
+                .to receive(:unscoped)
                 .and_return(relation)
             expect(model_class)
                 .not_to receive(:where)
@@ -275,7 +278,7 @@ RSpec.describe AreSearch::BulkIndexer do
             record = double("record", id: "invalid id")
 
             allow(model_class)
-                .to receive(:all)
+                .to receive(:unscoped)
                 .and_return(relation)
             allow_find_each(relation, [record])
 
@@ -295,7 +298,7 @@ RSpec.describe AreSearch::BulkIndexer do
             record = double("record", id: 1)
 
             allow(model_class)
-                .to receive(:all)
+                .to receive(:unscoped)
                 .and_return(relation)
             allow_find_each(relation, [record])
             allow(record)
@@ -322,7 +325,7 @@ RSpec.describe AreSearch::BulkIndexer do
             success_record = double("success_record", id: 2)
 
             allow(model_class)
-                .to receive(:all)
+                .to receive(:unscoped)
                 .and_return(relation)
             allow_find_each(relation, [failed_record, success_record])
 
@@ -657,7 +660,7 @@ RSpec.describe AreSearch::BulkIndexer do
             expect(index_target)
                 .not_to receive(:are_search_sync_stage_names)
             expect(model_class)
-                .not_to receive(:all)
+                .not_to receive(:unscoped)
             expect(AreSearch::EsAdapter)
                 .not_to receive(:no_validation_bulk)
 
@@ -688,7 +691,7 @@ RSpec.describe AreSearch::BulkIndexer do
                 .and_return(false)
 
             expect(model_class)
-                .not_to receive(:all)
+                .not_to receive(:unscoped)
             expect(AreSearch::EsAdapter)
                 .not_to receive(:no_validation_bulk)
 
@@ -816,7 +819,7 @@ RSpec.describe AreSearch::BulkIndexer do
             )
 
             allow(model_class)
-                .to receive(:all)
+                .to receive(:unscoped)
                 .and_return(relation)
             expect(relation)
                 .to receive(:find_each)
@@ -856,7 +859,7 @@ RSpec.describe AreSearch::BulkIndexer do
             )
 
             allow(model_class)
-                .to receive(:all)
+                .to receive(:unscoped)
                 .and_return(relation)
             expect(relation)
                 .to receive(:find_each)

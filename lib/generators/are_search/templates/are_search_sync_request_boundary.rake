@@ -1,6 +1,10 @@
 # frozen_string_literal: true
 
-module AreSearchSyncRequestBoundaryTask
+module AreSearchSyncRequestBoundaryChangeYourTaskNameTask
+
+    # タスクのプレフィックスを指定する。
+    # 複数使用する場合は重複しないように注意。
+    TASK_NAME_PREFIX = "my_boundary_task"
 
     # 変更箇所: 対象のモデル・IndexTarget・stageを指定する。
     INDEX_TARGET_MODEL_CLASS_NAME = "SampleData"
@@ -157,32 +161,32 @@ end
 namespace :are_search do
 
     desc "BoundaryTargetのIndexTarget-stageのSyncRequestを削除する"
-    task delete_sync_stage_all_sync_requests: :environment do
-        AreSearchSyncRequestBoundaryTask.delete_sync_stage_all_sync_requests!
+    task "#{AreSearchSyncRequestBoundaryChangeYourTaskNameTask::TASK_NAME_PREFIX}_delete_sync_stage_all_sync_requests": :environment do
+        AreSearchSyncRequestBoundaryChangeYourTaskNameTask.delete_sync_stage_all_sync_requests!
     end
 
     desc "BoundaryTargetをセットする"
-    task set_sync_request_boundary: :environment do
-        AreSearchSyncRequestBoundaryTask.set_boundary_target!
+    task "#{AreSearchSyncRequestBoundaryChangeYourTaskNameTask::TASK_NAME_PREFIX}_set_sync_request_boundary": :environment do
+        AreSearchSyncRequestBoundaryChangeYourTaskNameTask.set_boundary_target!
     end
 
     desc "BoundaryTargetを確認する"
-    task show_sync_request_boundary: :environment do
-        AreSearchSyncRequestBoundaryTask.show_boundary_target!
+    task "#{AreSearchSyncRequestBoundaryChangeYourTaskNameTask::TASK_NAME_PREFIX}_show_sync_request_boundary": :environment do
+        AreSearchSyncRequestBoundaryChangeYourTaskNameTask.show_boundary_target!
     end
 
     desc "BoundaryTargetを削除する"
-    task clear_sync_request_boundary: :environment do
-        AreSearchSyncRequestBoundaryTask.clear_boundary_target!
+    task "#{AreSearchSyncRequestBoundaryChangeYourTaskNameTask::TASK_NAME_PREFIX}_clear_sync_request_boundary": :environment do
+        AreSearchSyncRequestBoundaryChangeYourTaskNameTask.clear_boundary_target!
     end
 
     desc "BoundaryTarget以前のSyncRequestを同期する"
-    task run_sync_request_before_boundary: :environment do
-        AreSearchSyncRequestBoundaryTask.run_sync_requests!
+    task "#{AreSearchSyncRequestBoundaryChangeYourTaskNameTask::TASK_NAME_PREFIX}_run_sync_request_before_boundary": :environment do
+        AreSearchSyncRequestBoundaryChangeYourTaskNameTask.run_sync_requests!
     end
 
     desc "BoundaryTarget以降のIndexTarget-stageのSyncRequestを削除する"
-    task delete_sync_requests_after_boundary_target: :environment do
-        AreSearchSyncRequestBoundaryTask.delete_sync_requests_after_boundary_target!
+    task "#{AreSearchSyncRequestBoundaryChangeYourTaskNameTask::TASK_NAME_PREFIX}_delete_sync_requests_after_boundary_target": :environment do
+        AreSearchSyncRequestBoundaryChangeYourTaskNameTask.delete_sync_requests_after_boundary_target!
     end
 end

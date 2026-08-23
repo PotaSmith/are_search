@@ -409,16 +409,20 @@ RSpec.describe AreSearch::Generators::SampleGenerator do
                 "task sync_limit_alert: :environment",
             )
             expect(sync_request_boundary_sample).to include(
-                "task delete_sync_stage_all_sync_requests: :environment",
+                'task "#{AreSearchSyncRequestBoundaryChangeYourTaskNameTask::TASK_NAME_PREFIX}' \
+                    '_delete_sync_stage_all_sync_requests": :environment',
             )
             expect(sync_request_boundary_sample).to include(
-                "task set_sync_request_boundary: :environment",
+                'task "#{AreSearchSyncRequestBoundaryChangeYourTaskNameTask::TASK_NAME_PREFIX}' \
+                    '_set_sync_request_boundary": :environment',
             )
             expect(sync_request_boundary_sample).to include(
-                "task run_sync_request_before_boundary: :environment",
+                'task "#{AreSearchSyncRequestBoundaryChangeYourTaskNameTask::TASK_NAME_PREFIX}' \
+                    '_run_sync_request_before_boundary": :environment',
             )
             expect(sync_request_boundary_sample).to include(
-                "task clear_sync_request_boundary: :environment",
+                'task "#{AreSearchSyncRequestBoundaryChangeYourTaskNameTask::TASK_NAME_PREFIX}' \
+                    '_clear_sync_request_boundary": :environment',
             )
             expect(ruby_sample).to include(
                 "result_dir = 'result_dir_path'",
@@ -518,8 +522,8 @@ RSpec.describe "are_search sync request boundary task" do
         Rake.application = Rake::Application.new
         Rake::Task.define_task(:environment)
 
-        if Object.const_defined?(:AreSearchSyncRequestBoundaryTask, false)
-            Object.send(:remove_const, :AreSearchSyncRequestBoundaryTask)
+        if Object.const_defined?(:AreSearchSyncRequestBoundaryChangeYourTaskNameTask, false)
+            Object.send(:remove_const, :AreSearchSyncRequestBoundaryChangeYourTaskNameTask)
         end
 
         load File.expand_path(
@@ -622,7 +626,7 @@ RSpec.describe "are_search sync request boundary task" do
             )
 
             expect do
-                Rake::Task["are_search:delete_sync_stage_all_sync_requests"].invoke
+                Rake::Task["are_search:my_boundary_task_delete_sync_stage_all_sync_requests"].invoke
             end.to output(/sync_requestを削除しました。1件/).to_stdout
 
             expect(AreSearch::SyncRequest.exists?(target_request.id)).to eq(false)
@@ -643,7 +647,7 @@ RSpec.describe "are_search sync request boundary task" do
                 .and_return(created_at)
 
             expect do
-                Rake::Task["are_search:set_sync_request_boundary"].invoke
+                Rake::Task["are_search:my_boundary_task_set_sync_request_boundary"].invoke
             end.to output(/BoundaryTargetをセットしました。limit=42/).to_stdout
 
             boundary_target = AreSearch::SyncRequestBoundaryTarget.find_by!(
@@ -661,7 +665,7 @@ RSpec.describe "are_search sync request boundary task" do
                 .not_to receive(:next_request_sequence)
 
             expect do
-                Rake::Task["are_search:set_sync_request_boundary"].invoke
+                Rake::Task["are_search:my_boundary_task_set_sync_request_boundary"].invoke
             end.to raise_error(ArgumentError, "SyncRequestBoundaryTarget は既に存在します: sample")
 
             expect(AreSearch::SyncRequestBoundaryTarget.count).to eq(1)
@@ -675,7 +679,7 @@ RSpec.describe "are_search sync request boundary task" do
             boundary_target = create_boundary_target
 
             expect do
-                Rake::Task["are_search:clear_sync_request_boundary"].invoke
+                Rake::Task["are_search:my_boundary_task_clear_sync_request_boundary"].invoke
             end.to output(/BoundaryTargetをクリアしました。/).to_stdout
 
             expect(AreSearch::SyncRequestBoundaryTarget.exists?(boundary_target.id)).to eq(false)
@@ -725,7 +729,7 @@ RSpec.describe "are_search sync request boundary task" do
                 end
 
             expect do
-                Rake::Task["are_search:run_sync_request_before_boundary"].invoke
+                Rake::Task["are_search:my_boundary_task_run_sync_request_before_boundary"].invoke
             end.to output(/Boundary同期対象 実行前 1件.*Boundary同期対象 実行後 1件/m).to_stdout
 
             boundary_target.reload
@@ -762,7 +766,7 @@ RSpec.describe "are_search sync request boundary task" do
                 .not_to receive(:run)
 
             expect do
-                Rake::Task["are_search:run_sync_request_before_boundary"].invoke
+                Rake::Task["are_search:my_boundary_task_run_sync_request_before_boundary"].invoke
             end.to output(/Boundary同期対象 実行前 0件/).to_stdout
         end
 
@@ -778,7 +782,7 @@ RSpec.describe "are_search sync request boundary task" do
                 .not_to receive(:run)
 
             expect do
-                Rake::Task["are_search:run_sync_request_before_boundary"].invoke
+                Rake::Task["are_search:my_boundary_task_run_sync_request_before_boundary"].invoke
             end.to output(/同期を実行しますか？.*Boundary同期をキャンセルしました。/m).to_stdout
         end
 
@@ -787,7 +791,7 @@ RSpec.describe "are_search sync request boundary task" do
                 .not_to receive(:run)
 
             expect do
-                Rake::Task["are_search:run_sync_request_before_boundary"].invoke
+                Rake::Task["are_search:my_boundary_task_run_sync_request_before_boundary"].invoke
             end.to output(/SyncRequestBoundaryTargetがありません/).to_stdout
         end
     end

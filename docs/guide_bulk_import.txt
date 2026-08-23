@@ -126,9 +126,20 @@ BulkIndexer の準備、実行、再開、recover、結果確認。
         tmp/are_search/sample/are_search_sync_request_boundary.rake.sample
 
     ファイル先頭の対象を変更する。
+        # 他と重複しないように
+        module AreSearchSyncRequestBoundaryDocumentBulkTask
+
+        # 他と重複しないように
+        TASK_NAME_PREFIX = "document_bulk"
+
         INDEX_TARGET_MODEL_CLASS_NAME = "Document" # クラス名に合わせる
         INDEX_TARGET_NAME = "default"
         SYNC_STAGE_NAME = "bulk"
+
+    rake ファイル内の AreSearchSyncRequestBoundaryChangeYourTaskNameTask は
+    全て書き換えた AreSearchSyncRequestBoundaryDocumentBulkTask に置換する。
+
+    以後の説明では、タスク名の TASK_NAME_PREFIX 部分を省略して記載する。
 
 2．処理前に bulk の 全同期データを削除する。
 

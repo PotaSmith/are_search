@@ -422,22 +422,22 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
         Rake.application = Rake::Application.new
         Rake::Task.define_task(:environment)
 
-        if Object.const_defined?(:AreSearchSyncRequestBoundaryTask, false)
-            Object.send(:remove_const, :AreSearchSyncRequestBoundaryTask)
+        if Object.const_defined?(:AreSearchSyncRequestBoundaryChangeYourTaskNameTask, false)
+            Object.send(:remove_const, :AreSearchSyncRequestBoundaryChangeYourTaskNameTask)
         end
 
         load are_search_template_path("are_search_sync_request_boundary.rake")
 
         stub_const(
-            "AreSearchSyncRequestBoundaryTask::INDEX_TARGET_MODEL_CLASS_NAME",
+            "AreSearchSyncRequestBoundaryChangeYourTaskNameTask::INDEX_TARGET_MODEL_CLASS_NAME",
             "DocumentFirst",
         )
         stub_const(
-            "AreSearchSyncRequestBoundaryTask::INDEX_TARGET_NAME",
+            "AreSearchSyncRequestBoundaryChangeYourTaskNameTask::INDEX_TARGET_NAME",
             "default",
         )
         stub_const(
-            "AreSearchSyncRequestBoundaryTask::SYNC_STAGE_NAME",
+            "AreSearchSyncRequestBoundaryChangeYourTaskNameTask::SYNC_STAGE_NAME",
             "huge_data_for_reindex",
         )
     end
@@ -802,7 +802,7 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
         load_sync_request_boundary_task
 
         expect do
-            Rake::Task["are_search:delete_sync_stage_all_sync_requests"].invoke
+            Rake::Task["are_search:my_boundary_task_delete_sync_stage_all_sync_requests"].invoke
         end.to output(
             /sync_requestを削除しました。2件/,
         ).to_stdout
@@ -865,7 +865,7 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
 
         # 11-5: bulk完了時点を境界として保存する。
         expect do
-            Rake::Task["are_search:set_sync_request_boundary"].invoke
+            Rake::Task["are_search:my_boundary_task_set_sync_request_boundary"].invoke
         end.to output(
             /BoundaryTargetをセットしました。limit=/,
         ).to_stdout
@@ -892,7 +892,7 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
             .to receive(:gets)
             .and_return("y\n")
 
-        boundary_run_task = Rake::Task["are_search:run_sync_request_before_boundary"]
+        boundary_run_task = Rake::Task["are_search:my_boundary_task_run_sync_request_before_boundary"]
 
         expect do
             boundary_run_task.invoke
@@ -930,7 +930,7 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
         ).to_stdout
 
         expect do
-            Rake::Task["are_search:clear_sync_request_boundary"].invoke
+            Rake::Task["are_search:my_boundary_task_clear_sync_request_boundary"].invoke
         end.to output(/BoundaryTargetをクリアしました。/).to_stdout
 
         expect(

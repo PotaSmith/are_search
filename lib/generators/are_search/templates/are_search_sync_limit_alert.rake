@@ -26,11 +26,19 @@ module AreSearchSyncLimitAlertTask
     ALERT_FORCE_TRY_THRESHOLD = 5
     # last_error があるままこの秒数以上残っている行を通知対象にする
     ALERT_STUCK_ERROR_WAIT = 7200
+    # request_sequence_at からこの秒数以上経過している行を通知対象にする
+    ALERT_STUCK_REQUEST_WAIT = 86400
 
     # このタスク専用の Mailer。
     # 利用側の ApplicationMailer に依存しないよう ActionMailer::Base を直接継承する。
     class Mailer < ActionMailer::Base
-        def sync_limit_alert(total_count, sync_try_limit_reached_requests, force_try_limit_reached_requests, stuck_error_sync_requests)
+        def sync_limit_alert(
+            total_count,
+            sync_try_limit_reached_requests,
+            force_try_limit_reached_requests,
+            stuck_error_sync_requests,
+            stuck_request_sync_requests
+        )
 
             lines = []
             lines << "are_search_sync_requests に同期停止候補があります。"
@@ -52,6 +60,12 @@ module AreSearchSyncLimitAlertTask
                 lines,
                 "last_error があり #{ALERT_STUCK_ERROR_WAIT} 秒以上残留",
                 stuck_error_sync_requests,
+            )
+
+            append_section(
+                lines,
+                "#{ALERT_STUCK_REQUEST_WAIT} 秒以上残留",
+                stuck_request_sync_requests,
             )
 
             body = lines.join("\n")
@@ -110,14 +124,18 @@ namespace :are_search do
     desc "are_search_sync_requests の sync_try / force_try / last_error 長期残留を検出して管理者にメール通知する"
     task sync_limit_alert: :environment do
         stuck_error_border_time = Time.zone.now - AreSearchSyncLimitAlertTask::ALERT_STUCK_ERROR_WAIT
+        stuck_request_border_time = Time.zone.now - AreSearchSyncLimitAlertTask::ALERT_STUCK_REQUEST_WAIT
 
         total_count = AreSearch::SyncRequest
             .where(
-                "sync_try_count >= ? OR force_try_count >= ? OR " \
-                "(last_error IS NOT NULL AND last_error != '' AND last_error_at <= ?)",
+                "sync_try_count >= ? OR " \
+                "force_try_count >= ? OR " \
+                "(last_error IS NOT NULL AND last_error != '' AND last_error_at <= ?) OR " \
+                "request_sequence_at <= ?",
                 AreSearchSyncLimitAlertTask::ALERT_SYNC_TRY_THRESHOLD,
                 AreSearchSyncLimitAlertTask::ALERT_FORCE_TRY_THRESHOLD,
                 stuck_error_border_time,
+                stuck_request_border_time,
             )
             .count
 
@@ -137,12 +155,17 @@ namespace :are_search do
                 .where("last_error_at <= ?", stuck_error_border_time)
                 .order(last_error_at: :asc)
 
+            stuck_request_sync_requests = AreSearch::SyncRequest
+                .where("request_sequence_at <= ?", stuck_request_border_time)
+                .order(request_sequence_at: :asc)
+
             AreSearchSyncLimitAlertTask::Mailer
                 .sync_limit_alert(
                     total_count,
                     sync_try_limit_reached_requests,
                     force_try_limit_reached_requests,
                     stuck_error_sync_requests,
+                    stuck_request_sync_requests,
                 )
                 .deliver_now
 

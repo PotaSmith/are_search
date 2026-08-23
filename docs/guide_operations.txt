@@ -64,6 +64,8 @@ AreSearch.batch_size の詳細は guide_reference.txt を参照する。
 対象 index を確認し、y または Y を入力した場合だけ順番に reindex する。
 各IndexTargetの末尾stageを使用する。
 
+alias 未接続の index がある場合、clean upで削除してから実行する。
+
 
 # 3. clean up
 ================================================================
@@ -173,6 +175,7 @@ are_search_sync_limit_alert.rake は実行前に、通知先・送信元と通�
     ALERT_SYNC_TRY_THRESHOLD
     ALERT_FORCE_TRY_THRESHOLD
     ALERT_STUCK_ERROR_WAIT
+    ALERT_STUCK_REQUEST_WAIT
 
 メール送信には利用側Railsアプリケーションの config.action_mailer の設定を使用する。
 
@@ -221,11 +224,22 @@ SampleGenerator で生成した専用 rake task のサンプルを利用側ア�
     cp tmp/are_search/sample/are_search_sync_request_boundary.rake.sample \
         lib/tasks/are_search_sync_request_boundary.rake
 
-コピーした rake ファイルで対象を指定する。
+コピーした rake ファイル先頭の対象を変更する。
 
-    INDEX_TARGET_MODEL_CLASS_NAME = "Article"
+    # 他と重複しないように
+    module AreSearchSyncRequestBoundaryDocumentBulkTask
+
+    # 他と重複しないように
+    TASK_NAME_PREFIX = "document_bulk"
+
+    INDEX_TARGET_MODEL_CLASS_NAME = "Document" # クラス名に合わせる
     INDEX_TARGET_NAME = "default"
-    SYNC_STAGE_NAME = "huge_data_for_reindex"
+    SYNC_STAGE_NAME = "bulk"
+
+rake ファイル内の AreSearchSyncRequestBoundaryChangeYourTaskNameTask は
+全て書き換えた AreSearchSyncRequestBoundaryDocumentBulkTask に置換する。
+
+以後の説明では、タスク名の TASK_NAME_PREFIX 部分を省略して記載する。
 
 タスクを実行する環境では AreSearch.rake_operation_enabled を有効にする。
 
