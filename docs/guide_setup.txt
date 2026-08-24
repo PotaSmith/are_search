@@ -18,12 +18,13 @@ Gemfile に追加する。
 
     bundle install
     rails generate are_search:install
+    # config/are_search_searchable.rb.sample を config/are_search_searchable.rb に変更
     rails db:migrate
 
 主に以下のファイルが生成される。
 
     config/initializers/are_search.rb
-    config/are_search_searchable.rb
+    config/are_search_searchable.rb.sample # ファイル名を変更して使用する
     db/migrate/xxxxxxxxxxxxxx_create_are_search_tables.rb
 
 AreSearch は標準のDB固有処理として PostgreSQL 向け実装を使用する。

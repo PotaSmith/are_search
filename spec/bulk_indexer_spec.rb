@@ -890,6 +890,15 @@ RSpec.describe AreSearch::BulkIndexer do
 end
 
 RSpec.describe AreSearch::IndexTarget, "#are_search_bulk_index" do
+    around do |example|
+        original_index_operation_enabled = AreSearch.index_operation_enabled
+        AreSearch.index_operation_enabled = true
+
+        example.run
+    ensure
+        AreSearch.index_operation_enabled = original_index_operation_enabled
+    end
+
     let(:index_target) do
         described_class.allocate
     end
@@ -905,6 +914,23 @@ RSpec.describe AreSearch::IndexTarget, "#are_search_bulk_index" do
             max_bulk_count:  5,
             max_fail_count:  5,
         }
+    end
+
+    it "index 操作が許可されていない場合は IndexOperationViolation を出す" do
+        AreSearch.index_operation_enabled = false
+
+        expect(AreSearch::BulkIndexer)
+            .not_to receive(:new)
+
+        expect do
+            index_target.are_search_bulk_index(
+                "default",
+                **arguments,
+            )
+        end.to raise_error(
+            AreSearch::IndexOperationViolation,
+            /index 操作が許可されていません/,
+        )
     end
 
     it "通常実行では BulkIndexer#bulk_index_index_target へ委譲する" do

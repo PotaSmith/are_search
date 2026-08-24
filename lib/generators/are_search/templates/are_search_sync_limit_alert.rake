@@ -8,7 +8,7 @@ module AreSearchSyncLimitAlertTask
     # または last_error があるまま長時間残っている行を検出し、
     # 管理者へメールで通知する rake タスクのサンプル。
     #
-    #   bundle exec rake are_search:sync_limit_alert
+    #   bundle exec rake 'are_search:sync_limit_alert[default]'
     #
     # 宛先・送信元は AreSearchSyncLimitAlertTask 内の定数を環境に合わせて書き換えること。
     # メール送信は利用側Railsアプリの config.action_mailer の設定を使う。
@@ -122,7 +122,18 @@ end
 
 namespace :are_search do
     desc "are_search_sync_requests の sync_try / force_try / last_error 長期残留を検出して管理者にメール通知する"
-    task sync_limit_alert: :environment do
+    task :sync_limit_alert, [:sync_stage_names] => :environment do |_task, args|
+
+        # sync_stage_names は引数で取得する
+        sync_stage_names = args.to_a
+        if sync_stage_names.empty?
+            raise ArgumentError, "sync_stage_names を1件以上指定してください"
+        end
+
+        # このタスク内で処理対象にするSearchableモデルの一覧を作成する。
+        models = AreSearch::RakeUtils::ArgCheck.load_models
+        AreSearch::RakeUtils::ArgCheck.check_sync_stage_names(models, sync_stage_names)
+
         stuck_error_border_time = Time.zone.now - AreSearchSyncLimitAlertTask::ALERT_STUCK_ERROR_WAIT
         stuck_request_border_time = Time.zone.now - AreSearchSyncLimitAlertTask::ALERT_STUCK_REQUEST_WAIT
 
@@ -137,6 +148,7 @@ namespace :are_search do
                 stuck_error_border_time,
                 stuck_request_border_time,
             )
+            .where(sync_stage_name: sync_stage_names)
             .count
 
         if total_count == 0
@@ -144,19 +156,23 @@ namespace :are_search do
         else
             sync_try_limit_reached_requests = AreSearch::SyncRequest
                 .where("sync_try_count >= ?", AreSearchSyncLimitAlertTask::ALERT_SYNC_TRY_THRESHOLD)
+                .where(sync_stage_name: sync_stage_names)
                 .order(sync_try_count: :desc)
 
             force_try_limit_reached_requests = AreSearch::SyncRequest
                 .where("force_try_count >= ?", AreSearchSyncLimitAlertTask::ALERT_FORCE_TRY_THRESHOLD)
+                .where(sync_stage_name: sync_stage_names)
                 .order(force_try_count: :desc)
 
             stuck_error_sync_requests = AreSearch::SyncRequest
                 .where.not(last_error: [nil, ""])
                 .where("last_error_at <= ?", stuck_error_border_time)
+                .where(sync_stage_name: sync_stage_names)
                 .order(last_error_at: :asc)
 
             stuck_request_sync_requests = AreSearch::SyncRequest
                 .where("request_sequence_at <= ?", stuck_request_border_time)
+                .where(sync_stage_name: sync_stage_names)
                 .order(request_sequence_at: :asc)
 
             AreSearchSyncLimitAlertTask::Mailer

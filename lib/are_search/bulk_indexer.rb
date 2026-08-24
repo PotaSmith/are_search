@@ -12,6 +12,8 @@ module AreSearch
             max_fail_count: 100,
             recover: false
         )
+            AreSearch.validate_index_operation_enabled!
+
             bulk_indexer = AreSearch::BulkIndexer.new(
                 self,
                 sync_stage_name,

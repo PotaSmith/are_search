@@ -290,7 +290,8 @@ sync request の採番と登録で使用するDB固有処理を指定する。
 ================================================================
 
 Searchableモデルの IndexTarget・sync stage 構成は AreSearch.searchable_class_setting へまとめて指定する。
-生成される config/are_search_searchable.rb に定義する。
+生成される config/are_search_searchable.rb.sample を config/are_search_searchable.rb に変更し
+config/are_search_searchable.rb に定義する。
 生成される config/initializers/are_search.rb の先頭からこのファイルを読み込む。
 
     AreSearch.searchable_class_setting = {

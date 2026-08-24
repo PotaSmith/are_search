@@ -414,7 +414,7 @@ RSpec.describe "AreSearch force sync integration", type: :model do
         expect do
             Rake::Task["are_search:run_sync_requests"].invoke("default")
         end.to output(
-            /通常 0 件 強制 1 件/,
+            /通常同期 0 件 強制同期 1 件/,
         ).to_stdout
 
         reloaded = AreSearch::SyncRequest.find(sync_request.id)
@@ -887,7 +887,7 @@ RSpec.describe "AreSearch sync limit alert integration", type: :model do
             sync_try_count: AreSearchSyncLimitAlertTask::ALERT_SYNC_TRY_THRESHOLD,
         )
 
-        Rake::Task["are_search:sync_limit_alert"].invoke
+        Rake::Task["are_search:sync_limit_alert"].invoke("default")
 
         expect(ActionMailer::Base.deliveries.length).to eq(1)
 
@@ -910,7 +910,7 @@ RSpec.describe "AreSearch sync limit alert integration", type: :model do
 
     it "通知対象が無ければメールを送信しない" do
         expect do
-            Rake::Task["are_search:sync_limit_alert"].invoke
+            Rake::Task["are_search:sync_limit_alert"].invoke("default")
         end.to output(
             /同期停止候補の sync_request はありません/,
         ).to_stdout

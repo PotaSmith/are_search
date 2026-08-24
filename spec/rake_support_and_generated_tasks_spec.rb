@@ -403,26 +403,22 @@ RSpec.describe AreSearch::Generators::SampleGenerator do
                 "task :run_sync_requests",
             )
             expect(run_sync_sample).to include(
-                "定義されていない sync_stage_name があります",
+                "AreSearch::RakeUtils::ArgCheck.check_sync_stage_names(models, sync_stage_names)",
             )
             expect(sync_limit_alert_sample).to include(
-                "task sync_limit_alert: :environment",
+                "task :sync_limit_alert, [:sync_stage_names] => :environment",
             )
             expect(sync_request_boundary_sample).to include(
-                'task "#{AreSearchSyncRequestBoundaryChangeYourTaskNameTask::TASK_NAME_PREFIX}' \
-                    '_delete_sync_stage_all_sync_requests": :environment',
+                'task "#{prefix}_delete_sync_stage_all_sync_requests": :environment',
             )
             expect(sync_request_boundary_sample).to include(
-                'task "#{AreSearchSyncRequestBoundaryChangeYourTaskNameTask::TASK_NAME_PREFIX}' \
-                    '_set_sync_request_boundary": :environment',
+                'task "#{prefix}_set_sync_request_boundary": :environment',
             )
             expect(sync_request_boundary_sample).to include(
-                'task "#{AreSearchSyncRequestBoundaryChangeYourTaskNameTask::TASK_NAME_PREFIX}' \
-                    '_run_sync_request_before_boundary": :environment',
+                'task "#{prefix}_run_sync_request_before_boundary": :environment',
             )
             expect(sync_request_boundary_sample).to include(
-                'task "#{AreSearchSyncRequestBoundaryChangeYourTaskNameTask::TASK_NAME_PREFIX}' \
-                    '_clear_sync_request_boundary": :environment',
+                'task "#{prefix}_clear_sync_request_boundary": :environment',
             )
             expect(ruby_sample).to include(
                 "result_dir = 'result_dir_path'",
@@ -613,6 +609,10 @@ RSpec.describe "are_search sync request boundary task" do
 
     describe "are_search:delete_sync_stage_all_sync_requests" do
         it "対象IndexTargetとstageのSyncRequestだけを削除する" do
+            allow($stdin)
+                .to receive(:gets)
+                .and_return("y\n")
+
             target_request = create_boundary_sync_request
             other_stage_request = create_boundary_sync_request(
                 ar_instance_key:  "2",
@@ -627,7 +627,7 @@ RSpec.describe "are_search sync request boundary task" do
 
             expect do
                 Rake::Task["are_search:my_boundary_task_delete_sync_stage_all_sync_requests"].invoke
-            end.to output(/sync_requestを削除しました。1件/).to_stdout
+            end.to output(/sync_request を削除しました。1件/).to_stdout
 
             expect(AreSearch::SyncRequest.exists?(target_request.id)).to eq(false)
             expect(AreSearch::SyncRequest.exists?(other_stage_request.id)).to eq(true)
@@ -1059,7 +1059,7 @@ RSpec.describe "are_search run sync requests task" do
                 "with_external_file",
             )
         end.to output(
-            /sync_stage_names=\["default", "with_external_file"\].*通常 2 件 強制 1 件/m,
+            /sync_stage_names=\["default", "with_external_file"\].*通常同期 2 件 強制同期 1 件/m,
         ).to_stdout
     end
 
@@ -1089,6 +1089,12 @@ RSpec.describe "are_search sync limit alert task" do
             "../lib/generators/are_search/templates/are_search_sync_limit_alert.rake",
             __dir__,
         )
+
+        allow(AreSearch::RakeUtils::ArgCheck)
+            .to receive(:load_models)
+            .and_return([])
+        allow(AreSearch::RakeUtils::ArgCheck)
+            .to receive(:check_sync_stage_names)
     end
 
     after do
@@ -1162,18 +1168,19 @@ RSpec.describe "are_search sync limit alert task" do
         delivery = double("delivery")
 
         expect(AreSearchSyncLimitAlertTask::Mailer)
-            .to receive(:sync_limit_alert) do |total_count, sync_requests, force_requests, stuck_requests|
+            .to receive(:sync_limit_alert) do |total_count, sync_requests, force_requests, stuck_requests, old_requests|
                 expect(total_count).to eq(1)
                 expect(sync_requests.map(&:id)).to eq([boundary_request.id])
                 expect(sync_requests).not_to include(below_request)
                 expect(force_requests).to eq([])
                 expect(stuck_requests).to eq([])
+                expect(old_requests).to eq([])
 
                 delivery
             end
         expect(delivery).to receive(:deliver_now)
 
-        Rake::Task["are_search:sync_limit_alert"].invoke
+        Rake::Task["are_search:sync_limit_alert"].invoke("default")
     end
 
     it "force_try_countは閾値未満を除外して閾値を通知する" do
@@ -1188,18 +1195,19 @@ RSpec.describe "are_search sync limit alert task" do
         delivery = double("delivery")
 
         expect(AreSearchSyncLimitAlertTask::Mailer)
-            .to receive(:sync_limit_alert) do |total_count, sync_requests, force_requests, stuck_requests|
+            .to receive(:sync_limit_alert) do |total_count, sync_requests, force_requests, stuck_requests, old_requests|
                 expect(total_count).to eq(1)
                 expect(sync_requests).to eq([])
                 expect(force_requests.map(&:id)).to eq([boundary_request.id])
                 expect(force_requests).not_to include(below_request)
                 expect(stuck_requests).to eq([])
+                expect(old_requests).to eq([])
 
                 delivery
             end
         expect(delivery).to receive(:deliver_now)
 
-        Rake::Task["are_search:sync_limit_alert"].invoke
+        Rake::Task["are_search:sync_limit_alert"].invoke("default")
     end
 
     it "last_error_atは残留時間の境界を含み境界より新しい要求を除外する" do
@@ -1221,18 +1229,51 @@ RSpec.describe "are_search sync limit alert task" do
             .to receive(:now)
             .and_return(now)
         expect(AreSearchSyncLimitAlertTask::Mailer)
-            .to receive(:sync_limit_alert) do |total_count, sync_requests, force_requests, stuck_requests|
+            .to receive(:sync_limit_alert) do |total_count, sync_requests, force_requests, stuck_requests, old_requests|
                 expect(total_count).to eq(1)
                 expect(sync_requests).to eq([])
                 expect(force_requests).to eq([])
                 expect(stuck_requests.map(&:id)).to eq([boundary_request.id])
                 expect(stuck_requests).not_to include(recent_request)
+                expect(old_requests).to eq([])
 
                 delivery
             end
         expect(delivery).to receive(:deliver_now)
 
-        Rake::Task["are_search:sync_limit_alert"].invoke
+        Rake::Task["are_search:sync_limit_alert"].invoke("default")
+    end
+
+    it "request_sequence_atは残留時間の境界を含み境界より新しい要求を除外する" do
+        now = Time.zone.parse("2026-08-10 18:00:00")
+        border_time = now - AreSearchSyncLimitAlertTask::ALERT_STUCK_REQUEST_WAIT
+        recent_request = create_sync_request(
+            ar_instance_key:     "1",
+            request_sequence_at: border_time + 1,
+        )
+        boundary_request = create_sync_request(
+            ar_instance_key:     "2",
+            request_sequence_at: border_time,
+        )
+        delivery = double("delivery")
+
+        allow(Time.zone)
+            .to receive(:now)
+            .and_return(now)
+        expect(AreSearchSyncLimitAlertTask::Mailer)
+            .to receive(:sync_limit_alert) do |total_count, sync_requests, force_requests, stuck_requests, old_requests|
+                expect(total_count).to eq(1)
+                expect(sync_requests).to eq([])
+                expect(force_requests).to eq([])
+                expect(stuck_requests).to eq([])
+                expect(old_requests.map(&:id)).to eq([boundary_request.id])
+                expect(old_requests).not_to include(recent_request)
+
+                delivery
+            end
+        expect(delivery).to receive(:deliver_now)
+
+        Rake::Task["are_search:sync_limit_alert"].invoke("default")
     end
 
     it "3種類の通知条件に別々の要求が該当する場合は3種類をまとめて通知する" do
@@ -1252,18 +1293,19 @@ RSpec.describe "are_search sync limit alert task" do
         delivery = double("delivery")
 
         expect(AreSearchSyncLimitAlertTask::Mailer)
-            .to receive(:sync_limit_alert) do |total_count, sync_requests, force_requests, stuck_requests|
+            .to receive(:sync_limit_alert) do |total_count, sync_requests, force_requests, stuck_requests, old_requests|
                 expect(total_count).to eq(3)
                 expect(sync_requests.map(&:id)).to eq([sync_request.id])
                 expect(force_requests.map(&:id)).to eq([force_request.id])
                 expect(stuck_requests.map(&:id)).to eq([stuck_request.id])
+                expect(old_requests).to eq([])
 
                 delivery
             end
         expect(delivery).to receive(:deliver_now)
 
         expect do
-            Rake::Task["are_search:sync_limit_alert"].invoke
+            Rake::Task["are_search:sync_limit_alert"].invoke("default")
         end.to output(/sync_request 3件/).to_stdout
     end
 
@@ -1277,18 +1319,19 @@ RSpec.describe "are_search sync limit alert task" do
         delivery = double("delivery")
 
         expect(AreSearchSyncLimitAlertTask::Mailer)
-            .to receive(:sync_limit_alert) do |total_count, sync_requests, force_requests, stuck_requests|
+            .to receive(:sync_limit_alert) do |total_count, sync_requests, force_requests, stuck_requests, old_requests|
                 expect(total_count).to eq(1)
                 expect(sync_requests.map(&:id)).to eq([sync_request.id])
                 expect(force_requests.map(&:id)).to eq([sync_request.id])
                 expect(stuck_requests.map(&:id)).to eq([sync_request.id])
+                expect(old_requests).to eq([])
 
                 delivery
             end
         expect(delivery).to receive(:deliver_now)
 
         expect do
-            Rake::Task["are_search:sync_limit_alert"].invoke
+            Rake::Task["are_search:sync_limit_alert"].invoke("default")
         end.to output(/sync_request 1件/).to_stdout
     end
 
@@ -1311,11 +1354,12 @@ RSpec.describe "are_search sync limit alert task" do
         delivery = double("delivery")
 
         expect(AreSearchSyncLimitAlertTask::Mailer)
-            .to receive(:sync_limit_alert) do |total_count, sync_requests, force_requests, stuck_requests|
+            .to receive(:sync_limit_alert) do |total_count, sync_requests, force_requests, stuck_requests, old_requests|
                 expect(total_count).to eq(1)
                 expect(sync_requests).to eq([])
                 expect(force_requests).to eq([])
                 expect(stuck_requests.map(&:id)).to eq([old_error.id])
+                expect(old_requests).to eq([])
 
                 delivery
             end
@@ -1323,6 +1367,6 @@ RSpec.describe "are_search sync limit alert task" do
         expect(delivery)
             .to receive(:deliver_now)
 
-        Rake::Task["are_search:sync_limit_alert"].invoke
+        Rake::Task["are_search:sync_limit_alert"].invoke("default")
     end
 end

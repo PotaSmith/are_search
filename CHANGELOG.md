@@ -5,6 +5,9 @@
 ## [Unreleased]
 
 - このバージョンは、DBの作り直しが必要だが、バージョンが1.0.0以下なので移行手順は用意しない
+- sync request回収用rakeサンプルの運用性を改善。`sync_limit_alert` の監視stage指定、Boundary削除処理の確認入力、`run_sync_requests` の設定箇所・出力を整理。
+- `BulkIndexer` の実行に `index_operation_enabled` の権限チェックを追加。
+- `config/are_search_searchable.rb` はインストール時に直接生成せず、`.sample` として生成するよう変更。
 - default_scope を適用せず対象レコードを取得するよう変更。
 - 検索条件の上限調整、空のwhere条件許可、Boundaryサンプルの複数配置対応、長期未処理SyncRequestの通知条件を追加。
 - 検索処理の失敗時動作を整理。必要なindexの事前確認を追加し、原因不明の検索失敗は `STATUS_SEARCH_FAIL` の空結果として返せるよう変更

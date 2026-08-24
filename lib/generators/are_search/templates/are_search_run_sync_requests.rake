@@ -15,6 +15,9 @@ namespace :are_search do
     task :run_sync_requests, [:sync_stage_names] => :environment do |_task, args|
         AreSearch.validate_rake_operation_enabled!
 
+        # ロックファイル
+        lock_file_path = AreSearch.sync_runner_lock_file_path
+
         # rake異常中断後に同じ処理として再開するため、固定tokenを使用する。
         # UUIDと衝突しないようにスペースを入れる
         # 既定値は AreSearch::SyncRequest::RAKE_PROCESSING_TOKEN の "rake task"
@@ -26,34 +29,12 @@ namespace :are_search do
             raise ArgumentError, "sync_stage_names を1件以上指定してください"
         end
 
+        # このタスク内で処理対象にするSearchableモデルの一覧を作成する。
+        models = AreSearch::RakeUtils::ArgCheck.load_models
+        AreSearch::RakeUtils::ArgCheck.check_sync_stage_names(models, sync_stage_names)
+
         puts "#{Time.zone.now.strftime('%Y-%m-%d %H:%M:%S')} [AreSearch] run_sync_requests を開始しました。" \
             "sync_stage_names=#{sync_stage_names.inspect}"
-
-        Rails.application.eager_load!
-
-        # このタスク内で処理対象にするSearchableモデルの一覧を作成する。
-        models = ActiveRecord::Base.descendants.select do |klass|
-            klass.include?(AreSearch::Searchable)
-        end
-
-        # 指定されたstageが、いずれかのSearchableモデルに定義されていることを確認する。
-        defined_sync_stage_names = []
-
-        models.each do |model|
-            model.are_search_index_targets.each do |index_target|
-                stage_names = index_target.are_search_sync_stage_names
-                defined_sync_stage_names.concat(stage_names)
-            end
-        end
-
-        undefined_sync_stage_names = sync_stage_names - defined_sync_stage_names
-
-        if undefined_sync_stage_names.any?
-            raise ArgumentError,
-                "定義されていない sync_stage_name があります: #{undefined_sync_stage_names.inspect}"
-        end
-
-        lock_file_path = AreSearch.sync_runner_lock_file_path
 
         # 通常同期の対象条件。
         normal_threshold = AreSearch.sync_request_delay.seconds.ago
@@ -86,6 +67,6 @@ namespace :are_search do
         end
 
         puts "#{Time.zone.now.strftime('%Y-%m-%d %H:%M:%S')} [AreSearch] run_sync_requests を終了しました。" \
-            "通常 #{result[:normal_count]} 件 強制 #{result[:force_count]} 件"
+            "通常同期 #{result[:normal_count]} 件 強制同期 #{result[:force_count]} 件"
     end
 end

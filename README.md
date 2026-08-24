@@ -77,6 +77,7 @@ Run the installer.
 
 ```bash
 rails generate are_search:install
+# rename generated config/are_search_searchable.rb.sample to config/are_search_searchable.rb
 rails db:migrate
 ```
 
@@ -84,7 +85,7 @@ The main generated files are:
 
 ```text
 config/initializers/are_search.rb
-config/are_search_searchable.rb
+config/are_search_searchable.rb.sample
 db/migrate/xxxxxxxxxxxxxx_create_are_search_tables.rb
 ```
 

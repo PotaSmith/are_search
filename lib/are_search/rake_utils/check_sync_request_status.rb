@@ -2,6 +2,39 @@
 
 module AreSearch
     module RakeUtils
+        module ArgCheck
+            extend self
+
+            # 処理対象にするSearchableモデルの一覧を作成する。
+            def load_models
+                Rails.application.eager_load!
+
+                # このタスク内で処理対象にするSearchableモデルの一覧を作成する。
+                ActiveRecord::Base.descendants.select do |klass|
+                    klass.include?(AreSearch::Searchable)
+                end
+            end
+
+            # 現在残っている sync lock を状態確認用の行データとして返す。
+            def check_sync_stage_names(models, sync_stage_names)
+                # 指定されたstageが、いずれかのSearchableモデルに定義されていることを確認する。
+                defined_sync_stage_names = []
+
+                models.each do |model|
+                    model.are_search_index_targets.each do |index_target|
+                        stage_names = index_target.are_search_sync_stage_names
+                        defined_sync_stage_names.concat(stage_names)
+                    end
+                end
+
+                undefined_sync_stage_names = sync_stage_names - defined_sync_stage_names
+
+                if undefined_sync_stage_names.any?
+                    raise ArgumentError, "定義されていない sync_stage_name があります: #{undefined_sync_stage_names.inspect}"
+                end
+            end
+        end
+
         module CheckSyncRequestStatus
             extend self
 

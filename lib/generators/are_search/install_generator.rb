@@ -15,7 +15,7 @@ module AreSearch
 
             # Searchableモデル構成用設定ファイルを生成する。
             def copy_searchable_class_setting
-                template "searchable_class_setting.rb", "config/are_search_searchable.rb"
+                template "searchable_class_setting.rb", "config/are_search_searchable.rb.sample"
             end
 
             def copy_migration

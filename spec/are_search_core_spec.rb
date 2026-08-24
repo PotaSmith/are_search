@@ -510,8 +510,13 @@ RSpec.describe AreSearch do
     end
 
     describe ".delete_physical_index!" do
-        before do
+        around do |example|
+            original_index_operation_enabled = described_class.index_operation_enabled
             described_class.index_operation_enabled = true
+
+            example.run
+        ensure
+            described_class.index_operation_enabled = original_index_operation_enabled
         end
 
         it "index 操作が許可されていない場合は IndexOperationViolation を出す" do

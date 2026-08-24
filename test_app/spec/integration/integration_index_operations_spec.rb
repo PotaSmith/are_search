@@ -615,7 +615,7 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
                 "default",
             )
         end.to output(
-            /通常 2 件 強制 0 件/,
+            /通常同期 2 件 強制同期 0 件/,
         ).to_stdout
 
         remaining_new_version_requests = AreSearch::SyncRequest.where(
@@ -789,7 +789,7 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
                 "huge_data",
             )
         end.to output(
-            /通常 2 件 強制 0 件/,
+            /通常同期 2 件 強制同期 0 件/,
         ).to_stdout
 
         reindex_stage_scope = AreSearch::SyncRequest.where(
@@ -801,10 +801,14 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
         # 11-2, 11-3: Boundary taskを読み込み、bulk開始前に差分回収stageだけをclearする。
         load_sync_request_boundary_task
 
+        allow($stdin)
+            .to receive(:gets)
+            .and_return("y\n")
+
         expect do
             Rake::Task["are_search:my_boundary_task_delete_sync_stage_all_sync_requests"].invoke
         end.to output(
-            /sync_requestを削除しました。2件/,
+            /sync_request を削除しました。2件/,
         ).to_stdout
         expect(reindex_stage_scope.count).to eq(0)
 

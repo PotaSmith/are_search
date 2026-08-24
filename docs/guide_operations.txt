@@ -207,7 +207,7 @@ SyncRequest の状態項目は guide_reference.txt の「SyncRequest の状態�
 
 通知用タスク。
 
-    bundle exec rake are_search:sync_limit_alert
+    bundle exec rake 'are_search:sync_limit_alert[default]'
 
 
 # 7. SyncRequest Boundary

@@ -22,9 +22,24 @@ module AreSearchSyncRequestBoundaryChangeYourTaskNameTask
     def delete_sync_stage_all_sync_requests!
         AreSearch.validate_rake_operation_enabled!
 
+        before_count = sync_request_scope.where(processing_token: nil).count
+        puts "#{Time.zone.now.strftime('%Y-%m-%d %H:%M:%S')} [AreSearch] #{SYNC_STAGE_NAME} の sync_request を削除します。#{before_count} 件"
+
+        print "削除を実行しますか？ [y/N]: "
+
+        answer = $stdin.gets
+        if answer.nil?
+            answer = ""
+        end
+
+        if answer.strip.downcase != "y"
+            puts "[AreSearch] 削除をキャンセルしました。"
+            return
+        end
+
         deleted_count = sync_request_scope.where(processing_token: nil).delete_all
 
-        puts "#{Time.zone.now.strftime('%Y-%m-%d %H:%M:%S')} [AreSearch] sync_requestを削除しました。#{deleted_count}件"
+        puts "#{Time.zone.now.strftime('%Y-%m-%d %H:%M:%S')} [AreSearch] sync_request を削除しました。#{deleted_count}件"
     end
 
     # 現在のBoundaryTargetを表示する。
@@ -126,9 +141,24 @@ module AreSearchSyncRequestBoundaryChangeYourTaskNameTask
             return
         end
 
+        before_count = boundary_after_sync_request_scope(boundary_target).where(processing_token: nil).count
+        puts "#{Time.zone.now.strftime('%Y-%m-%d %H:%M:%S')} [AreSearch] #{SYNC_STAGE_NAME} の sync_request を削除します。#{before_count} 件"
+
+        print "削除を実行しますか？ [y/N]: "
+
+        answer = $stdin.gets
+        if answer.nil?
+            answer = ""
+        end
+
+        if answer.strip.downcase != "y"
+            puts "[AreSearch] 削除をキャンセルしました。"
+            return
+        end
+
         deleted_count = boundary_after_sync_request_scope(boundary_target).where(processing_token: nil).delete_all
 
-        puts "#{Time.zone.now.strftime('%Y-%m-%d %H:%M:%S')} [AreSearch] sync_requestを削除しました。#{deleted_count}件"
+        puts "#{Time.zone.now.strftime('%Y-%m-%d %H:%M:%S')} [AreSearch] sync_request を削除しました。#{deleted_count}件"
     end
 
     private
@@ -160,33 +190,36 @@ end
 
 namespace :are_search do
 
+    task_module = AreSearchSyncRequestBoundaryChangeYourTaskNameTask
+    prefix = task_module::TASK_NAME_PREFIX
+
     desc "BoundaryTargetのIndexTarget-stageのSyncRequestを削除する"
-    task "#{AreSearchSyncRequestBoundaryChangeYourTaskNameTask::TASK_NAME_PREFIX}_delete_sync_stage_all_sync_requests": :environment do
-        AreSearchSyncRequestBoundaryChangeYourTaskNameTask.delete_sync_stage_all_sync_requests!
+    task "#{prefix}_delete_sync_stage_all_sync_requests": :environment do
+        task_module.delete_sync_stage_all_sync_requests!
     end
 
     desc "BoundaryTargetをセットする"
-    task "#{AreSearchSyncRequestBoundaryChangeYourTaskNameTask::TASK_NAME_PREFIX}_set_sync_request_boundary": :environment do
-        AreSearchSyncRequestBoundaryChangeYourTaskNameTask.set_boundary_target!
+    task "#{prefix}_set_sync_request_boundary": :environment do
+        task_module.set_boundary_target!
     end
 
     desc "BoundaryTargetを確認する"
-    task "#{AreSearchSyncRequestBoundaryChangeYourTaskNameTask::TASK_NAME_PREFIX}_show_sync_request_boundary": :environment do
-        AreSearchSyncRequestBoundaryChangeYourTaskNameTask.show_boundary_target!
+    task "#{prefix}_show_sync_request_boundary": :environment do
+        task_module.show_boundary_target!
     end
 
     desc "BoundaryTargetを削除する"
-    task "#{AreSearchSyncRequestBoundaryChangeYourTaskNameTask::TASK_NAME_PREFIX}_clear_sync_request_boundary": :environment do
-        AreSearchSyncRequestBoundaryChangeYourTaskNameTask.clear_boundary_target!
+    task "#{prefix}_clear_sync_request_boundary": :environment do
+        task_module.clear_boundary_target!
     end
 
     desc "BoundaryTarget以前のSyncRequestを同期する"
-    task "#{AreSearchSyncRequestBoundaryChangeYourTaskNameTask::TASK_NAME_PREFIX}_run_sync_request_before_boundary": :environment do
-        AreSearchSyncRequestBoundaryChangeYourTaskNameTask.run_sync_requests!
+    task "#{prefix}_run_sync_request_before_boundary": :environment do
+        task_module.run_sync_requests!
     end
 
     desc "BoundaryTarget以降のIndexTarget-stageのSyncRequestを削除する"
-    task "#{AreSearchSyncRequestBoundaryChangeYourTaskNameTask::TASK_NAME_PREFIX}_delete_sync_requests_after_boundary_target": :environment do
-        AreSearchSyncRequestBoundaryChangeYourTaskNameTask.delete_sync_requests_after_boundary_target!
+    task "#{prefix}_delete_sync_requests_after_boundary_target": :environment do
+        task_module.delete_sync_requests_after_boundary_target!
     end
 end

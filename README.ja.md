@@ -80,6 +80,7 @@ bundle install
 
 ```bash
 rails generate are_search:install
+# 生成されている config/are_search_searchable.rb.sample を config/are_search_searchable.rb に変更
 rails db:migrate
 ```
 
@@ -87,7 +88,7 @@ rails db:migrate
 
 ```text
 config/initializers/are_search.rb
-config/are_search_searchable.rb
+config/are_search_searchable.rb.sample
 db/migrate/xxxxxxxxxxxxxx_create_are_search_tables.rb
 ```
 
