@@ -52,7 +52,7 @@ AreSearch allows index data to be updated without relying on reindexing by runni
 Add this to your Gemfile.
 
 ```ruby
-gem "are_search", git: "https://github.com/PotaSmith/are_search.git", tag: "v0.9.0"
+gem "are_search", git: "https://github.com/PotaSmith/are_search.git", tag: "v0.9.1"
 ```
 
 To use the latest development version directly, specify `branch: "main"`.

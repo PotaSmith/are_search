@@ -55,7 +55,7 @@ AreSearch では複数の index の同時稼働、境界設定による bulk 投
 Gemfile に追加します。
 
 ```ruby
-gem "are_search", git: "https://github.com/PotaSmith/are_search.git", tag: "v0.9.0"
+gem "are_search", git: "https://github.com/PotaSmith/are_search.git", tag: "v0.9.1"
 ```
 
 開発中の最新版を直接使う場合は `branch: "main"` を指定できます。

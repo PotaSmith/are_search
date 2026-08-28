@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-08-28
+
 - このバージョンは、DBの作り直しが必要だが、バージョンが1.0.0以下なので移行手順は用意しない
 - sync request回収用rakeサンプルの運用性を改善。`sync_limit_alert` の監視stage指定、Boundary削除処理の確認入力、`run_sync_requests` の設定箇所・出力を整理。
 - `BulkIndexer` の実行に `index_operation_enabled` の権限チェックを追加。
