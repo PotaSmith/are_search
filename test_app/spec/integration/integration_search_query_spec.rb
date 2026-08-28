@@ -410,9 +410,10 @@ RSpec.describe "AreSearch search features integration", type: :model do
         expect(crossing_result.records.length).to eq(500)
         expect(crossing_result.records.first.user_id).to eq(1_501)
         expect(crossing_result.records.last.user_id).to eq(2_000)
-        expect(crossing_result.records.es_total_count).to eq(2_001)
+        expect(crossing_result.es_total_count).to eq(2_001)
+        expect(crossing_result.total_count).to eq(2_001)
         expect(crossing_result.records.total_count).to eq(2_001)
-        expect(crossing_result.records.pagination_total_count).to eq(2_000)
+        expect(crossing_result.pagination_total_count).to eq(2_000)
         expect(crossing_result.records.total_pages).to eq(2)
         expect(crossing_result.records.last_page?).to eq(true)
         expect(crossing_result.records.next_page).to eq(nil)
@@ -434,8 +435,8 @@ RSpec.describe "AreSearch search features integration", type: :model do
 
         expect(edge_result.status).to eq(AreSearch::SearchResult::STATUS_OK)
         expect(edge_result.records.map(&:user_id)).to eq([2_000])
-        expect(edge_result.records.es_total_count).to eq(2_001)
-        expect(edge_result.records.pagination_total_count).to eq(2_000)
+        expect(edge_result.es_total_count).to eq(2_001)
+        expect(edge_result.pagination_total_count).to eq(2_000)
         expect(edge_result.records.last_page?).to eq(true)
         expect(edge_result.records.next_page).to eq(nil)
 

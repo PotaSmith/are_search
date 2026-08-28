@@ -236,9 +236,10 @@ RSpec.describe "search paging" do
             per_page: 20,
         )
 
+        expect(result.total_count).to eq(100)
         expect(result.records.total_count).to eq(100)
-        expect(result.records.es_total_count).to eq(100)
-        expect(result.records.pagination_total_count).to eq(30)
+        expect(result.es_total_count).to eq(100)
+        expect(result.pagination_total_count).to eq(30)
         expect(result.records.total_pages).to eq(2)
         expect(result.records.next_page).to eq(2)
     end
@@ -291,9 +292,10 @@ RSpec.describe "search paging" do
         )
 
         expect(result.records).to eq(records)
-        expect(result.records.es_total_count).to eq(100)
+        expect(result.es_total_count).to eq(100)
+        expect(result.total_count).to eq(97)
         expect(result.records.total_count).to eq(97)
-        expect(result.records.pagination_total_count).to eq(27)
+        expect(result.pagination_total_count).to eq(27)
         expect(result.records.total_pages).to eq(2)
         expect(result.records.next_page).to eq(nil)
     end
@@ -326,8 +328,9 @@ RSpec.describe "search paging" do
 
         expect(result.records).to eq([])
         expect(result.records_with_hit).to eq([])
+        expect(result.total_count).to eq(0)
         expect(result.records.total_count).to eq(0)
-        expect(result.records.es_total_count).to eq(0)
+        expect(result.es_total_count).to eq(0)
         expect(result.raw_response).to equal(response)
     end
 
@@ -380,9 +383,10 @@ RSpec.describe "search paging" do
 
         expect(result.records).to eq([])
         expect(result.records_with_hit).to eq([])
+        expect(result.total_count).to eq(98)
         expect(result.records.total_count).to eq(98)
-        expect(result.records.es_total_count).to eq(100)
-        expect(result.records.pagination_total_count).to eq(28)
+        expect(result.es_total_count).to eq(100)
+        expect(result.pagination_total_count).to eq(28)
         expect(result.aggs(:status)).to eq([["published", 10]])
         expect(result.raw_response).to equal(response)
     end

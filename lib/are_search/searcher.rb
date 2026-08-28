@@ -240,15 +240,18 @@ module AreSearch
 
         # 検索を実行せず返す空結果を、終了理由の status 付きで作る。
         def empty_search_result(page, per_page, status: SearchResult::STATUS_OK)
-            paginated = PaginatedCollection.new(
+            SearchResult.new(
                 [],
+                [],
+                {},
+                {},
                 page:              page,
                 per_page:          per_page,
                 es_total_count:    0,
                 hits_count:        0,
                 max_result_window: 0,
+                status:            status,
             )
-            SearchResult.new(paginated, [], {}, {}, status: status)
         end
 
         # index_targets から { index_alias_name => [index_target] } の逆引きマップを組み立てる。
@@ -272,16 +275,38 @@ module AreSearch
         # ES リクエストを実行し、結果復元情報を使って SearchResult を組み立てる
         def build_result(response, index_to_index_targets, model_relations, page, per_page, max_result_window)
 
-            paginated_results = build_paginated_results(response, index_to_index_targets, model_relations, page, per_page, max_result_window)
+            records = []
+            records_with_hit = []
+            es_total_count = 0
+            hits_count = 0
+
+            hits = response.dig("hits", "hits")
+
+            if hits.nil? == false
+                es_total_count = response.dig("hits", "total", "value").to_i
+                hits_count = hits.size
+
+                if hits.all? { |hit| hit["_source"].nil? == false }
+                    record_result = build_records_results(hits, index_to_index_targets, model_relations)
+
+                    records = record_result[:records]
+                    records_with_hit = record_result[:records_with_hit]
+                end
+            end
 
             aggs_results = build_aggs_results(response)
 
             SearchResult.new(
-                paginated_results[:paginated_records],
-                paginated_results[:records_with_hit],
+                records,
+                records_with_hit,
                 aggs_results[:aggs],
                 aggs_results[:str_key_aggs],
-                raw_response: response,
+                page:              page,
+                per_page:          per_page,
+                es_total_count:    es_total_count,
+                hits_count:        hits_count,
+                max_result_window: max_result_window,
+                raw_response:      response,
             )
         end
 
@@ -341,54 +366,6 @@ module AreSearch
         #########################################################################
         # レコード関連生成
         #########################################################################
-
-        def build_paginated_results(response, index_to_index_targets, model_relations, page, per_page, max_result_window)
-            hits = response.dig("hits", "hits")
-
-            if hits.nil?
-                return empty_paginated_results(page, per_page, 0, 0, max_result_window)
-            end
-
-            es_total_count = response.dig("hits", "total", "value").to_i
-
-            if hits.any? { |hit| hit["_source"].nil? }
-                return empty_paginated_results(page, per_page, es_total_count, hits.size, max_result_window)
-            end
-
-            record_result    = build_records_results(hits, index_to_index_targets, model_relations)
-            records          = record_result[:records]
-            records_with_hit = record_result[:records_with_hit]
-
-            paginated_records = PaginatedCollection.new(
-                records,
-                page:              page,
-                per_page:          per_page,
-                es_total_count:    es_total_count,
-                hits_count:        hits.size,
-                max_result_window: max_result_window,
-            )
-
-            {
-                paginated_records: paginated_records,
-                records_with_hit:  records_with_hit,
-            }
-        end
-
-        def empty_paginated_results(page, per_page, es_total_count, hits_count, max_result_window)
-            paginated_records = PaginatedCollection.new(
-                [],
-                page:              page,
-                per_page:          per_page,
-                es_total_count:    es_total_count,
-                hits_count:        hits_count,
-                max_result_window: max_result_window,
-            )
-
-            {
-                paginated_records: paginated_records,
-                records_with_hit:  [],
-            }
-        end
 
         # ヒット一覧からレコードを復元し、対応する target・_source・highlight とともに検索順で返す
         def build_records_results(hits, index_to_index_targets, model_relations)

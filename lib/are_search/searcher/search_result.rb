@@ -6,62 +6,38 @@ module AreSearch
         # ページネーション結果コレクション
 
         # Kaminari paginate / 前後ページ系 helper の使用を想定
-        attr_reader :page, :per_page
+        attr_reader :page, :per_page, :pagination_total_count
         alias current_page page # Kaminari will_paginate 互換
         alias limit_value per_page # Kaminari paginate / page_entries_info 互換
 
-        # Kaminari page_entries_info の使用を想定
-        attr_reader :total_count
-
-        attr_reader :es_total_count, :hits_count, :max_result_window, :pagination_total_count
+        attr_reader :total_count # Kaminari page_entries_info の使用を想定
         alias total_entries total_count # will_paginate 互換
 
-        # 検索で得た件数情報を保持し、ページング用件数を組み立てる。
+        # 検索結果から計算済みのページング用件数を受け取り、レコードのページング情報だけを保持する。
         def initialize(
             records,
             page:,
             per_page:,
-            es_total_count:,
-            hits_count:,
-            max_result_window:
+            total_count:,
+            pagination_total_count:
         )
             raise ArgumentError, "per_page は1以上で指定してください" if per_page.to_i < 1
             super(records)
 
-            # 検索パラメータ
             @page = page.to_i
             @per_page = per_page.to_i
-
-            # 検索結果
-            @es_total_count = es_total_count.to_i
-            @hits_count = hits_count.to_i
-            @max_result_window = max_result_window.to_i
-
-            # これ以降が計算
-
-            # 補正値
-            dropped_count = (hits_count - records.size)
-
-            # 補正込の es内データ件数
-            @total_count = @es_total_count - dropped_count
-
-            # 補正込の esが検索結果として返却した総数
-            @pagination_total_count = [es_total_count, max_result_window].min - dropped_count
+            @total_count = total_count.to_i
+            @pagination_total_count = pagination_total_count.to_i
         end
 
         def dup
             PaginatedCollection.new(
                 to_a.dup,
-                page:              @page,
-                per_page:          @per_page,
-                es_total_count:    @es_total_count,
-                hits_count:        @hits_count,
-                max_result_window: @max_result_window,
+                page:                   @page,
+                per_page:               @per_page,
+                total_count:            @total_count,
+                pagination_total_count: @pagination_total_count,
             )
-        end
-
-        def over_max_result_window?
-            es_total_count > max_result_window && (offset + hits_count) >= max_result_window
         end
 
         #
@@ -140,14 +116,8 @@ module AreSearch
         # status
         #   検索の終了状態を返す。
         #   :ok は検索実行済み、:params_invalid と :index_not_found と :search_fail は検索未実行。
-        #
-        # @param records [PaginatedCollection]
-        # @param records_with_hit [Array]
-        # @param aggs [Hash{Symbol => Array}]
-        # @param str_key_aggs [Hash{Symbol => Array}]
-        # @param status [Symbol]
 
-        STATUS_OK = :ok
+        STATUS_OK              = :ok
         STATUS_PARAMS_INVALID  = :params_invalid
         STATUS_INDEX_NOT_FOUND = :index_not_found
         STATUS_SEARCH_FAIL     = :search_fail
@@ -162,27 +132,59 @@ module AreSearch
         attr_reader :status,
             :records,
             :records_with_hit,
-            :raw_response
+            :raw_response,
+            :total_count,
+            :es_total_count,
+            :hits_count,
+            :max_result_window,
+            :pagination_total_count
 
-        # 検索結果として定義された終了状態だけを受け付ける。
+        # 検索結果の件数情報を組み立て、recordsをページネーション用コレクションへ変換する。
         def initialize(
             records,
             records_with_hit,
             aggs,
             str_key_aggs,
+            page:,
+            per_page:,
+            es_total_count:,
+            hits_count:,
+            max_result_window:,
             raw_response: nil,
             status: STATUS_OK
         )
-            unless STATUSES.include?(status)
+            if STATUSES.include?(status) == false
                 raise ArgumentError, "未知の検索結果statusです: #{status.inspect}"
             end
 
             @status = status
-            @records = records
             @records_with_hit = records_with_hit
             @aggs = aggs
             @str_key_aggs = str_key_aggs
             @raw_response = raw_response
+
+            # これ以降が計算
+
+            @es_total_count = es_total_count.to_i
+            @hits_count = hits_count.to_i
+            @max_result_window = max_result_window.to_i
+
+            # 補正値
+            dropped_count = @hits_count - records.size
+
+            # 補正込の es内データ件数
+            @total_count = @es_total_count - dropped_count
+
+            # 補正込の esが検索結果として返却した総数
+            @pagination_total_count = [@es_total_count, @max_result_window].min - dropped_count
+
+            @records = PaginatedCollection.new(
+                records,
+                page:                   page,
+                per_page:               per_page,
+                total_count:            @total_count,
+                pagination_total_count: @pagination_total_count,
+            )
         end
 
         # 集計名を指定した場合は表示用キーの簡易結果を返し、省略時は内部キーの全体を返す。
@@ -192,12 +194,8 @@ module AreSearch
             @str_key_aggs.fetch(name.to_sym, [])
         end
 
-        def max_result_window
-            @records.max_result_window
-        end
-
         def over_max_result_window?
-            @records.over_max_result_window?
+            @es_total_count > @max_result_window && (@records.offset + @hits_count) >= @max_result_window
         end
     end
 end

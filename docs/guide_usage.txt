@@ -593,10 +593,11 @@ result.records は Kaminari の paginate ヘルパーに対応する。
 
     result.records.page
     result.records.per_page
-    result.records.total_count
-    result.records.es_total_count
-    result.records.pagination_total_count
     result.records.total_pages
+
+    result.total_count
+    result.es_total_count
+    result.pagination_total_count
 
 取得範囲の上限は target の max_result_window。複数targetでは最小値を使用する。
 開始位置が max_result_window 以上になる指定は検索パラメータ不正になる。

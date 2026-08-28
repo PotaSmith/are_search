@@ -76,7 +76,7 @@ current_user のデータのみを検索する場合
 # 2-2. view
 ----------------------------------------------------------------
 
-検索結果 <%= @search_result.records.total_count %> 件
+検索結果 <%= @search_result.total_count %> 件
 
 <% @search_result.records.each do |record| %>
 	<div class="result-block">
@@ -125,7 +125,7 @@ per_page 25
 # 3-2. view
 ----------------------------------------------------------------
 
-検索結果 <%= @search_result.records.total_count %> 件
+検索結果 <%= @search_result.total_count %> 件
 
 <% @search_result.records.each do |record| %>
 	<div class="result-block">
@@ -191,7 +191,7 @@ where_clause = {
 # 4-2. view
 ----------------------------------------------------------------
 
-検索結果 <%= @search_result.records.total_count %> 件
+検索結果 <%= @search_result.total_count %> 件
 
 <% @search_result.records.each do |record| %>
 	<!-- この時点でクラスに分かれている -->
@@ -248,7 +248,7 @@ search_target = Document.are_search_index_target_alias(:default)
 ハイライトはデフォルトでは <em> タグになっているため、スタイル等で
 好みの形式でハイライトされるように調整しておく。
 
-検索結果 <%= @search_result.records.total_count %> 件
+検索結果 <%= @search_result.total_count %> 件
 
 <% @search_result.records_with_hit.each do |record, hit| %>
 	<div class="result-block">

@@ -229,7 +229,7 @@ stage の選択方法は guide_index_targets_and_stages.txt を参照する。
     )
 
     @articles = result.records
-    @total = result.records.total_count
+    @total = result.total_count
 
 検索オプションと検索結果は guide_usage.txt を参照する。
 

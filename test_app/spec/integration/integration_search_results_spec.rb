@@ -241,9 +241,10 @@ RSpec.describe "AreSearch relation search integration", type: :model do
 
         expect(result.raw_response.dig("hits", "total", "value")).to eq(2)
         expect(result.records.map(&:id)).to eq([included.id])
-        expect(result.records.es_total_count).to eq(2)
+        expect(result.es_total_count).to eq(2)
+        expect(result.total_count).to eq(1)
         expect(result.records.total_count).to eq(1)
-        expect(result.records.pagination_total_count).to eq(1)
+        expect(result.pagination_total_count).to eq(1)
     end
 
     it "DBから消えた実Elasticsearchのhitを件数から補正する" do
@@ -278,9 +279,10 @@ RSpec.describe "AreSearch relation search integration", type: :model do
 
         expect(result.raw_response.dig("hits", "total", "value")).to eq(2)
         expect(result.records.map(&:id)).to eq([existing.id])
-        expect(result.records.es_total_count).to eq(2)
+        expect(result.es_total_count).to eq(2)
+        expect(result.total_count).to eq(1)
         expect(result.records.total_count).to eq(1)
-        expect(result.records.pagination_total_count).to eq(1)
+        expect(result.pagination_total_count).to eq(1)
     end
 
 end

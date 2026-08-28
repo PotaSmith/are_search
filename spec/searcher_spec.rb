@@ -150,6 +150,7 @@ RSpec.describe AreSearch::Searcher do
             expect(result.records).to eq([])
             expect(result.records.page).to eq(1)
             expect(result.records.per_page).to eq(25)
+            expect(result.total_count).to eq(0)
             expect(result.records.total_count).to eq(0)
             expect(result.records_with_hit).to eq([])
         end
@@ -175,6 +176,7 @@ RSpec.describe AreSearch::Searcher do
             expect(result.records).to eq([])
             expect(result.records.page).to eq(1)
             expect(result.records.per_page).to eq(25)
+            expect(result.total_count).to eq(0)
             expect(result.records.total_count).to eq(0)
             expect(result.records_with_hit).to eq([])
         end
@@ -320,6 +322,7 @@ RSpec.describe AreSearch::Searcher do
             expect(result.records).to eq([])
             expect(result.records.page).to eq(1)
             expect(result.records.per_page).to eq(25)
+            expect(result.total_count).to eq(0)
             expect(result.records.total_count).to eq(0)
             expect(result.records_with_hit).to eq([])
         end
@@ -413,6 +416,7 @@ RSpec.describe AreSearch::Searcher do
             expect(result.records).to eq([])
             expect(result.records.page).to eq(1)
             expect(result.records.per_page).to eq(25)
+            expect(result.total_count).to eq(0)
             expect(result.records.total_count).to eq(0)
             expect(result.records_with_hit).to eq([])
         end
