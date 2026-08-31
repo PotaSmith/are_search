@@ -52,8 +52,6 @@ RSpec.describe "query builder fields" do
             queries: [],
             runtime_mappings: {},
             where: {},
-            where_not: [],
-            where_or: {},
             model_relations: {},
             sort: {},
             aggs: [],
@@ -780,10 +778,10 @@ RSpec.describe AreSearch::Searcher, "filters" do
         double(
             "index_target",
             model_class:                       model_class,
-            index_target_name:                       :default,
-            are_search_index_alias_name:          "test__sync_requests__default",
-            are_search_index_alias_exists?: true,
-            are_search_index_mappings:            {
+            index_target_name:                 :default,
+            are_search_index_alias_name:       "test__sync_requests__default",
+            are_search_index_alias_exists?:    true,
+            are_search_index_mappings:         {
                 properties: {
                     search_text:         { type: "text" },
                     ar_model_class_name: { type: "keyword" },
@@ -813,7 +811,14 @@ RSpec.describe AreSearch::Searcher, "filters" do
             .and_return(client)
     end
 
-    it "where、where_not、where_orを異なるbool節へ組み立てる" do
+    # トップレベルfilter内に置かれた利用側whereのbool句を返す。
+    def where_bool_clause(body)
+        body.dig(:query, :bool, :filter).find do |filter_clause|
+            filter_clause.key?(:bool)
+        end
+    end
+
+    it "whereの4節とminimum_should_matchをfilter内boolへ組み立てる" do
         body = described_class.search(
             [index_target],
             queries: [
@@ -823,52 +828,57 @@ RSpec.describe AreSearch::Searcher, "filters" do
                 },
             ],
             where: {
-                retry_count: {
-                    term: 0,
-                },
-            },
-            where_not: {
-                ar_model_class_name: {
-                    term: "Blocked",
-                },
-            },
-            where_or: {
-                index_target_name: {
-                    terms: ["default", "archive"],
-                },
+                must: [
+                    { retry_count: { term: 0 } },
+                ],
+                filter: [
+                    { index_target_name: { terms: ["default", "archive"] } },
+                ],
+                should: [
+                    {
+                        score: {
+                            range: {
+                                gte: 1.0,
+                                lt:  2.0,
+                            },
+                        },
+                    },
+                ],
+                must_not: [
+                    { ar_model_class_name: { term: "Blocked" } },
+                ],
+                minimum_should_match: 1,
             },
             dump_body: true,
         )
 
-        expect(body.dig(:query, :bool, :filter)).to include(
-            {
-                term: {
-                    retry_count: 0,
-                },
-            },
-            {
-                bool: {
-                    should: [
-                        {
-                            terms: {
-                                index_target_name: ["default", "archive"],
+        expect(where_bool_clause(body)).to eq(
+            bool: {
+                must: [
+                    { term: { retry_count: 0 } },
+                ],
+                filter: [
+                    { terms: { index_target_name: ["default", "archive"] } },
+                ],
+                should: [
+                    {
+                        range: {
+                            score: {
+                                gte: 1.0,
+                                lt:  2.0,
                             },
                         },
-                    ],
-                    minimum_should_match: 1,
-                },
+                    },
+                ],
+                must_not: [
+                    { term: { ar_model_class_name: "Blocked" } },
+                ],
+                minimum_should_match: 1,
             },
         )
-        expect(body.dig(:query, :bool, :must_not)).to eq([
-            {
-                term: {
-                    ar_model_class_name: "Blocked",
-                },
-            },
-        ])
     end
 
-    it "HashとArray<Hash>の条件を入力順にterm、terms、rangeへ変換する" do
+    it "whereのboolを再帰して(A AND B) OR Cの構造を維持する" do
         body = described_class.search(
             [index_target],
             queries: [
@@ -877,47 +887,51 @@ RSpec.describe AreSearch::Searcher, "filters" do
                     fields: [:search_text],
                 },
             ],
-            where: [
-                {
-                    retry_count: {
-                        term: 0,
-                    },
-                },
-                {
-                    index_target_name: {
-                        terms: ["default", "archive"],
-                    },
-                },
-                {
-                    retry_count: {
-                        range: {
-                            gte: 1,
-                            lt:  10,
+            where: {
+                should: [
+                    {
+                        bool: {
+                            filter: [
+                                { retry_count: { term: 0 } },
+                                { index_target_name: { term: "default" } },
+                            ],
                         },
                     },
-                },
-            ],
+                    {
+                        retry_count: {
+                            range: {
+                                gte: 1,
+                                lt:  10,
+                            },
+                        },
+                    },
+                ],
+                minimum_should_match: 1,
+            },
             dump_body: true,
         )
 
-        expect(body.dig(:query, :bool, :filter)).to include(
-            {
-                term: {
-                    retry_count: 0,
-                },
-            },
-            {
-                terms: {
-                    index_target_name: ["default", "archive"],
-                },
-            },
-            {
-                range: {
-                    retry_count: {
-                        gte: 1,
-                        lt:  10,
+        expect(where_bool_clause(body)).to eq(
+            bool: {
+                should: [
+                    {
+                        bool: {
+                            filter: [
+                                { term: { retry_count: 0 } },
+                                { term: { index_target_name: "default" } },
+                            ],
+                        },
                     },
-                },
+                    {
+                        range: {
+                            retry_count: {
+                                gte: 1,
+                                lt:  10,
+                            },
+                        },
+                    },
+                ],
+                minimum_should_match: 1,
             },
         )
     end
@@ -933,9 +947,9 @@ RSpec.describe AreSearch::Searcher, "filters" do
                     },
                 ],
                 where: {
-                    retry_count: {
-                        term: value,
-                    },
+                    filter: [
+                        { retry_count: { term: value } },
+                    ],
                 },
                 dump_body: true,
             )
@@ -961,9 +975,9 @@ RSpec.describe AreSearch::Searcher, "filters" do
                     },
                 ],
                 where: {
-                    index_target_name: {
-                        terms: value,
-                    },
+                    filter: [
+                        { index_target_name: { terms: value } },
+                    ],
                 },
                 dump_body: true,
             )
@@ -983,16 +997,18 @@ RSpec.describe AreSearch::Searcher, "filters" do
                 },
             ],
             where: {
-                index_target_name: {
-                    terms: [],
-                },
+                filter: [
+                    { index_target_name: { terms: [] } },
+                ],
             },
             dump_body: true,
         )
 
-        expect(body.dig(:query, :bool, :filter)).to include(
-            terms: {
-                index_target_name: [],
+        expect(where_bool_clause(body)).to eq(
+            bool: {
+                filter: [
+                    { terms: { index_target_name: [] } },
+                ],
             },
         )
     end
@@ -1006,47 +1022,37 @@ RSpec.describe AreSearch::Searcher, "filters" do
                     fields: [:search_text],
                 },
             ],
-            where: [
-                {
-                    score: {
-                        term: 1.5,
-                    },
-                },
-                {
-                    score: {
-                        terms: [1.5, 2.5],
-                    },
-                },
-                {
-                    score: {
-                        range: {
-                            gte: 1.5,
-                            lt:  2.5,
+            where: {
+                filter: [
+                    { score: { term: 1.5 } },
+                    { score: { terms: [1.5, 2.5] } },
+                    {
+                        score: {
+                            range: {
+                                gte: 1.5,
+                                lt:  2.5,
+                            },
                         },
                     },
-                },
-            ],
+                ],
+            },
             dump_body: true,
         )
 
-        expect(body.dig(:query, :bool, :filter)).to include(
-            {
-                term: {
-                    score: 1.5,
-                },
-            },
-            {
-                terms: {
-                    score: [1.5, 2.5],
-                },
-            },
-            {
-                range: {
-                    score: {
-                        gte: 1.5,
-                        lt:  2.5,
+        expect(where_bool_clause(body)).to eq(
+            bool: {
+                filter: [
+                    { term: { score: 1.5 } },
+                    { terms: { score: [1.5, 2.5] } },
+                    {
+                        range: {
+                            score: {
+                                gte: 1.5,
+                                lt:  2.5,
+                            },
+                        },
                     },
-                },
+                ],
             },
         )
     end
@@ -1062,9 +1068,9 @@ RSpec.describe AreSearch::Searcher, "filters" do
                     },
                 ],
                 where: {
-                    retry_count: {
-                        range: value,
-                    },
+                    filter: [
+                        { retry_count: { range: value } },
+                    ],
                 },
                 dump_body: true,
             )
@@ -1074,7 +1080,7 @@ RSpec.describe AreSearch::Searcher, "filters" do
         end
     end
 
-    it "旧省略形式とfieldを持たないArray要素を拒否する" do
+    it "whereの旧Array形式とfieldの旧省略形式を拒否する" do
         allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
 
         expect do
@@ -1086,9 +1092,9 @@ RSpec.describe AreSearch::Searcher, "filters" do
                         fields: [:search_text],
                     },
                 ],
-                where: {
-                    retry_count: 0,
-                },
+                where: [
+                    { retry_count: { term: 0 } },
+                ],
                 dump_body: true,
             )
         end.to raise_error(ArgumentError)
@@ -1102,11 +1108,11 @@ RSpec.describe AreSearch::Searcher, "filters" do
                         fields: [:search_text],
                     },
                 ],
-                where: [
-                    {
-                        retry_count: :retry_count,
-                    },
-                ],
+                where: {
+                    filter: [
+                        { retry_count: 0 },
+                    ],
+                },
                 dump_body: true,
             )
         end.to raise_error(ArgumentError)
@@ -1125,9 +1131,9 @@ RSpec.describe AreSearch::Searcher, "filters" do
                     },
                 ],
                 where: {
-                    retry_count: {
-                        match: 0,
-                    },
+                    filter: [
+                        { retry_count: { match: 0 } },
+                    ],
                 },
                 dump_body: true,
             )
@@ -1143,17 +1149,21 @@ RSpec.describe AreSearch::Searcher, "filters" do
                     },
                 ],
                 where: {
-                    retry_count: {
-                        term: 0,
-                        terms: [0, 1],
-                    },
+                    filter: [
+                        {
+                            retry_count: {
+                                term: 0,
+                                terms: [0, 1],
+                            },
+                        },
+                    ],
                 },
                 dump_body: true,
             )
         end.to raise_error(ArgumentError, /1 件/)
     end
 
-    it "text型フィールドをwhere系条件に使用できない" do
+    it "text型フィールドをwhere条件に使用できない" do
         allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
 
         expect do
@@ -1166,19 +1176,17 @@ RSpec.describe AreSearch::Searcher, "filters" do
                     },
                 ],
                 where: {
-                    search_text: {
-                        term: "Rails",
-                    },
+                    filter: [
+                        { search_text: { term: "Rails" } },
+                    ],
                 },
                 dump_body: true,
             )
         end.to raise_error(
             ArgumentError,
-            /opts\[:where\] に未知のキーがあります: :search_text/,
+            /opts\[:where\]\[filter\]\[0\] に未知のキーがあります: :search_text/,
         )
     end
-
-
 end
 
 RSpec.describe AreSearch::Searcher do

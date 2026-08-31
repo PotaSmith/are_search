@@ -300,8 +300,6 @@ should を使用している場合は、Elasticsearch の bool query の仕様�
 
     :runtime_mappings
     :where
-    :where_not
-    :where_or
     :aggs
     :page
     :per_page
@@ -325,7 +323,7 @@ sort は標準検索でのみ使用できる。
     highlight.fields
         text または keyword フィールド。
 
-    where / where_not / where_or
+    where
         text 型ではないフィールド。
 
     sort
@@ -360,9 +358,9 @@ response.source、response.fields、response.stored_fields、response.docvalue_f
             },
         ],
         where: {
-            runtime_status: {
-                term: "published",
-            },
+            filter: [
+                { runtime_status: { term: "published" } },
+            ]
         },
         response: {
             fields: ["runtime_status"],
@@ -426,7 +424,7 @@ raw_body検索では response を使用せず、_source、fields、stored_fields
 外部入力として指定できる値。
 
     queries の query_string / suggest の名前配下の text
-    where / where_not / where_or の条件値
+    where の条件値
     page
 
 標準の search_param_policy では、queries.query_string は 2048 文字まで、
@@ -476,9 +474,9 @@ where系の term / terms / range は文字列化した長さが、それぞれ�
             },
         ],
         where: {
-            status: {
-                term: params[:filter_value].to_s,
-            },
+            filter: [
+                { status: { term: params[:filter_value].to_s } },
+            ]
         },
     )
 
@@ -498,68 +496,54 @@ where系の term / terms / range は文字列化した長さが、それぞれ�
     )
 
 
-# 9. where / where_not / where_or
+# 9. where
 ================================================================
 
     where: {
-        status: {
-            term: "published",
-        },
-        user_id: {
-            terms: [1, 2, 3],
-        },
-        price: {
-            range: {
-                gte: 1_000,
-                lte: 5_000,
-            },
-        },
+        filter: [
+            { status: { term: "published" } },
+            { user_id: { terms: [1, 2, 3] } },
+            { price: { range: { gte: 1_000, lte: 5_000 } } },
+        ],
     }
 
 同じ field の条件を複数指定する場合は Array を使用する。
 
-    where: [
-        {
-            price: {
-                range: {
-                    gte: 1_000,
-                },
-            },
-        },
-        {
-            price: {
-                range: {
-                    lte: 5_000,
-                },
-            },
-        },
-    ]
+    must: [
+        { price: { range: { gte: 1_000 } } },
+        { price: { range: { lte: 5_000 } } },
+    ],
 
-    where_not: {
-        status: {
-            terms: ["draft", "deleted"],
-        },
-    }
+    must_not: [
+        { status: { terms: ["draft", "deleted"] } },
+    ],
 
-    where_or: [
-        {
-            status: {
-                term: "featured",
-            },
-        },
-        {
-            user_id: {
-                terms: [1, 2, 3],
-            },
-        },
-    ]
+    should: [
+        { status: { term: "featured" } },
+        { user_id: { terms: [1, 2, 3] } },
+    ],
+    minimum_should_match: 1,
 
 text 型フィールドは指定できない。
-where はすべて一致、where_not は除外、where_or はいずれか1件一致。
+must / filter はすべて一致、must_not は除外。
+should はいずれかが minimum_should_match の指定数以上の一致。
 
 term、terms、range の値は String、Integer、Float、true、false。
 terms は Array、range は1件以上の Hash で指定する。terms には空Arrayも指定できる。
 日付は Elasticsearch が解釈できる String または Integer で指定する。
+
+must / filter / must_not / should の下には boolを4階層まで追加できる
+
+    must: [
+        { status: { terms: ["draft", "deleted"] } },
+        { bool: {
+            should: [
+                { status: { term: "featured" } },
+                { user_id: { terms: [1, 2, 3] } },
+            ],
+            minimum_should_match: 1,
+        }},
+    ],
 
 
 # 10. model_relations / relation
@@ -669,7 +653,7 @@ sort の値は String または Symbol。
 # 13. aggs
 ================================================================
 
-非textフィールドを aggregation に使用する。
+field を指定する aggregation では非textフィールドを使用する。
 フィールド名だけを指定する場合は Array を使用する。
 
     aggs: [:status, :category]
@@ -695,9 +679,34 @@ sort の値は String または Symbol。
                 ],
             },
         },
+        event_status: {
+            filters: {
+                filters: {
+                    ongoing: {
+                        bool: {
+                            filter: [
+                                { range: { end_date:   { gt: today - 1.day } } },
+                                { range: { start_date: { lt: today + 1.day } } },
+                            ],
+                        },
+                    },
+                    upcoming: {
+                        range: {
+                            start_date: { gt: today + 1.day },
+                        },
+                    },
+                    ended: {
+                        range: {
+                            end_date: { lt: today },
+                        },
+                    },
+                },
+            },
+        },
     }
 
-aggregation body の field は必須。
+aggregation body の field は原則必須。
+filter / filters aggregation は例外として field を必要とせず、内容は Elasticsearch の形式でそのまま指定する。
 その他の Elasticsearch aggregation オプションはその形式で指定する。
 
     result.aggs(:status_count).each do |name, count|
@@ -712,6 +721,9 @@ result.aggs(name) の簡易結果。
 
     key がない
         [doc_count, ...]
+
+    buckets がない
+        [doc_count]
 
 簡易結果で扱えない aggregation は result.raw_response を参照する。
 
@@ -798,9 +810,9 @@ field 以外は Elasticsearch の suggest オプションとして指定する�
             },
         ],
         where: {
-            status: {
-                term: "published",
-            },
+            filter: [
+                { status: { term: "published" } },
+            ],
         },
         dump_body: true,
     )

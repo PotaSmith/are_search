@@ -31,94 +31,77 @@ module AreSearch
 
             private
 
-            # Hash または Array<Hash> を、検証済みの条件種別を保持した
-            # field / condition_type / value 条件へ変換する。
-            def normalize_condition_options(condition_opts)
-                normalized_conditions = []
-                return normalized_conditions if condition_opts.nil?
+            # where をトップレベルfilter内のboolへ変換し、検索対象モデルのfilter条件と並べる。
+            def build_bool_base(index_targets, where_opts)
+                filter_clauses = []
 
-                if condition_opts.instance_of?(Hash)
-                    condition_opts.each do |field, value|
-                        value.each do |condition_type, query_value|
-                            normalized_conditions << {
-                                field:          field,
-                                condition_type: condition_type,
-                                value:          query_value,
-                            }
-                        end
-                    end
-
-                    return normalized_conditions
+                where_bool_clause = build_bool_clause(where_opts)
+                if where_bool_clause.empty? == false
+                    filter_clauses << { bool: where_bool_clause }
                 end
 
-                condition_opts.each do |condition_opt|
-                    condition_opt.each do |field, value|
-                        value.each do |condition_type, query_value|
-                            normalized_conditions << {
-                                field:          field,
-                                condition_type: condition_type,
-                                value:          query_value,
-                            }
-                        end
-                    end
-                end
+                model_filter_clause = AreSearch::SearcherUtils.build_model_filter_clause(index_targets)
+                filter_clauses << model_filter_clause
 
-                normalized_conditions
+                { filter: filter_clauses }
             end
 
-            # 共通の field / condition_type / value 条件から ES の query 句配列を組み立てる。
-            def build_field_clauses(conditions)
+            # where またはネストしたboolの条件節とminimum_should_matchを Elasticsearch bool 形式へ変換する。
+            def build_bool_clause(bool_opts)
+                bool_clause = {}
+                return bool_clause if bool_opts.nil?
+
+                [:must, :filter, :should, :must_not].each do |clause_type|
+                    condition_opts = bool_opts[clause_type]
+                    next if condition_opts.nil? || condition_opts.empty?
+
+                    bool_clause[clause_type] = build_condition_clauses(condition_opts)
+                end
+
+                minimum_should_match = bool_opts[:minimum_should_match]
+                if minimum_should_match.nil? == false
+                    bool_clause[:minimum_should_match] = minimum_should_match
+                end
+
+                bool_clause
+            end
+
+            # Array<condition> を Elasticsearch query句の配列へ変換する。
+            def build_condition_clauses(condition_opts)
                 clauses = []
 
-                conditions.each do |condition|
-                    clauses << build_field_clause(condition)
+                condition_opts.each do |condition_opt|
+                    build_condition_clause(clauses, condition_opt)
                 end
 
                 clauses
             end
 
-            # 検証時に確定した condition_type に従って、1件の条件を ES query 句へ変換する。
-            # value の Ruby 型から条件種別を再推定しない。
-            def build_field_clause(condition)
-                field = condition[:field]
-                condition_type = condition[:condition_type]
-                value = condition[:value]
-
-                if condition_type == :term
-                    return { term: { field => value } }
+            # condition内の field 条件またはネストしたbool条件をquery句へ追加する。
+            def build_condition_clause(clauses, condition_opt)
+                condition_opt.each do |condition_name, condition_value|
+                    if condition_name == :bool
+                        clauses << { bool: build_bool_clause(condition_value) }
+                    else
+                        build_field_clauses(clauses, condition_name, condition_value)
+                    end
                 end
-
-                if condition_type == :terms
-                    return { terms: { field => value } }
-                end
-
-                if condition_type == :range
-                    return { range: { field => value } }
-                end
-
-                raise ArgumentError, "未知の条件種別です: #{condition_type.inspect}"
             end
 
-            # filter / must_not / should 節を持つ bool_clause のベースを組み立てる。
-            def build_bool_base(index_targets, filter_clauses, must_not_clauses, where_or_clauses)
-                all_filter_clauses = filter_clauses.dup
-                model_filter_clause = AreSearch::SearcherUtils.build_model_filter_clause(index_targets)
-                all_filter_clauses << model_filter_clause
-
-                if where_or_clauses.any?
-                    all_filter_clauses << {
-                        bool: {
-                            should: where_or_clauses,
-                            minimum_should_match: 1,
-                        },
-                    }
+            # field内の term / terms / range 条件を Elasticsearch query句へ追加する。
+            def build_field_clauses(clauses, field, condition_opt)
+                condition_opt.each do |condition_type, value|
+                    case condition_type
+                    when :term
+                        clauses << { term: { field => value } }
+                    when :terms
+                        clauses << { terms: { field => value } }
+                    when :range
+                        clauses << { range: { field => value } }
+                    else
+                        raise ArgumentError, "未知の条件種別です: #{condition_type.inspect}"
+                    end
                 end
-
-                bool_clause = {}
-                bool_clause[:filter] = all_filter_clauses
-                bool_clause[:must_not] = must_not_clauses if must_not_clauses.any?
-
-                bool_clause
             end
         end
     end

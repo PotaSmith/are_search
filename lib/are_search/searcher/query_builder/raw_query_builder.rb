@@ -18,8 +18,6 @@ module AreSearch
                     :mlt,
                     :queries,
                     :where,
-                    :where_not,
-                    :where_or,
                     :aggs,
                     :sort,
                     :highlight,

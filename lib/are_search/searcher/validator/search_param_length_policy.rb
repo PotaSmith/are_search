@@ -25,20 +25,6 @@ module AreSearch
                     return "#{name} は 1024 文字以内で指定してください" if value.to_s.length > 1024
                 when 'where.range'
                     return "#{name} は 256 文字以内で指定してください" if value.to_s.length > 256
-
-                when 'where_not.term'
-                    return "#{name} は 128 文字以内で指定してください" if value.to_s.length > 128
-                when 'where_not.terms'
-                    return "#{name} は 1024 文字以内で指定してください" if value.to_s.length > 1024
-                when 'where_not.range'
-                    return "#{name} は 256 文字以内で指定してください" if value.to_s.length > 256
-
-                when 'where_or.term'
-                    return "#{name} は 128 文字以内で指定してください" if value.to_s.length > 128
-                when 'where_or.terms'
-                    return "#{name} は 1024 文字以内で指定してください" if value.to_s.length > 1024
-                when 'where_or.range'
-                    return "#{name} は 256 文字以内で指定してください" if value.to_s.length > 256
                 end
 
                 nil

@@ -237,11 +237,11 @@ valid? は検索body全体、invalid_key? は mapping のフィールド名を�
 
     check_field_value で検査する
 
-        where / where_not / where_or の term の値
+        where の term の値
             128文字
-        where / where_not / where_or の terms の Array 全体
+        where の terms の Array 全体
             1024文字
-        where / where_not / where_or の range の Hash 全体
+        where の range の Hash 全体
             256文字
 
 差し替える場合は AreSearch::SearchParamPolicy を継承する。

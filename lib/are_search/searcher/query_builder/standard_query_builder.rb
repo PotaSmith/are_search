@@ -30,27 +30,12 @@ module AreSearch
                 ].freeze
             end
 
-            # queries の各要素から標準の bool query を組み立てる。
+            # queries の各要素とwhereから標準の bool query を組み立てる。
             def build(index_targets, valid_options)
-                queries_opts   = valid_options.delete(:queries)
-                where_opts     = valid_options.delete(:where)
-                where_not_opts = valid_options.delete(:where_not)
-                where_or_opts  = valid_options.delete(:where_or)
+                queries_opts = valid_options.delete(:queries)
+                where_opts = valid_options.delete(:where)
 
-                where_conditions     = normalize_condition_options(where_opts)
-                where_not_conditions = normalize_condition_options(where_not_opts)
-                where_or_conditions  = normalize_condition_options(where_or_opts)
-
-                filter_clauses   = build_field_clauses(where_conditions)
-                must_not_clauses = build_field_clauses(where_not_conditions)
-                where_or_clauses = build_field_clauses(where_or_conditions)
-
-                bool_clause = build_bool_base(
-                    index_targets,
-                    filter_clauses,
-                    must_not_clauses,
-                    where_or_clauses,
-                )
+                bool_clause = build_bool_base(index_targets, where_opts)
 
                 query_clauses = build_query_clauses(queries_opts)
                 if query_clauses.any?

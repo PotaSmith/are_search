@@ -38,22 +38,46 @@ module AreSearch
                         end
                     end
 
-                    if [:where, :where_not, :where_or].include?(key)
+                    if key == :where
                         next if value.nil?
 
-                        condition_values = value.instance_of?(Array) ? value : [value]
+                        validate_where_values(value)
+                    end
+                end
+            end
 
-                        condition_values.each do |condition_value|
-                            condition_value.each do |field_name, field_param|
-                                next if field_param.nil?
-                                field_param.each do |param_type, param_value|
-                                    message = check_field_value(field_name, "#{key}.#{param_type}", param_value)
-                                    if message != nil
-                                        raise AreSearch::InvalidSearchOption, message
-                                    end
-                                end
-                            end
-                        end
+            # where以下のbool条件を再帰的に辿り、field条件の値をpolicyで検査する。
+            def validate_where_values(bool_value)
+                [:must, :filter, :should, :must_not].each do |clause_type|
+                    condition_values = bool_value[clause_type]
+                    next if condition_values.nil?
+
+                    condition_values.each do |condition_value|
+                        validate_where_condition(condition_value)
+                    end
+                end
+            end
+
+            # condition内のfield条件を検査し、bool条件なら再帰する。
+            def validate_where_condition(condition_value)
+                condition_value.each do |field_name, field_param|
+                    if field_name == :bool
+                        validate_where_values(field_param)
+                        next
+                    end
+
+                    validate_where_field_value(field_name, field_param)
+                end
+            end
+
+            # fieldのterm / terms / range値をpolicyへ渡す。
+            def validate_where_field_value(field_name, field_param)
+                return if field_param.nil?
+
+                field_param.each do |param_type, param_value|
+                    message = check_field_value(field_name, "where.#{param_type}", param_value)
+                    if message != nil
+                        raise AreSearch::InvalidSearchOption, message
                     end
                 end
             end

@@ -836,19 +836,16 @@ RSpec.describe AreSearch::IndexTarget do
                     title: 2.0,
                 },
                 where: {
-                    id: {
-                        term: 1,
-                    },
-                },
-                where_not: {
-                    id: {
-                        term: 2,
-                    },
-                },
-                where_or: {
-                    id: {
-                        terms: [3, 4],
-                    },
+                    filter: [
+                        { id: { term: 1 } },
+                    ],
+                    must_not: [
+                        { id: { term: 2 } },
+                    ],
+                    should: [
+                        { id: { terms: [3, 4] } },
+                    ],
+                    minimum_should_match: 1,
                 },
                 aggs: [:id],
                 page: 2,

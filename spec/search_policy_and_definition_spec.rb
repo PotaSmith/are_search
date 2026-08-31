@@ -230,19 +230,45 @@ RSpec.describe AreSearch::SearchParamPolicy do
     end
 
     describe ".validate!" do
-        it "where系のfield名をSymbolのままcheck_field_valueへ渡す" do
+        it "where内のfield名をSymbolのままcheck_field_valueへ渡す" do
             policy_class = Class.new(described_class)
             allow(policy_class).to receive(:check_field_value).and_return(nil)
 
             policy_class.validate!(
                 where: {
-                    status: {
-                        term: "published",
-                    },
+                    filter: [
+                        { status: { term: "published" } },
+                    ],
                 },
             )
 
             expect(policy_class).to have_received(:check_field_value).with(
+                :status,
+                "where.term",
+                "published",
+            )
+        end
+
+        it "whereのネストbool内も再帰してfield値を検査する" do
+            policy_class = Class.new(described_class)
+            allow(policy_class).to receive(:check_field_value).and_return(nil)
+
+            policy_class.validate!(
+                where: {
+                    should: [
+                        {
+                            bool: {
+                                filter: [
+                                    { status: { term: "published" } },
+                                ],
+                            },
+                        },
+                    ],
+                    minimum_should_match: 1,
+                },
+            )
+
+            expect(policy_class).to have_received(:check_field_value).once.with(
                 :status,
                 "where.term",
                 "published",
@@ -269,34 +295,29 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
     end
 
     describe ".check_field_value" do
-        it "where系のterm値、terms全体、range全体の文字数境界を検査する" do
-            [:where, :where_not, :where_or].each do |key|
-                term_name = "#{key}.term"
-                expect(described_class.check_field_value(:status, term_name, "a" * 128)).to eq(nil)
-                expect(described_class.check_field_value(:status, term_name, "a" * 129)).to eq(
-                    "#{term_name} は 128 文字以内で指定してください",
-                )
+        it "whereのterm値、terms全体、range全体の文字数境界を検査する" do
+            expect(described_class.check_field_value(:status, "where.term", "a" * 128)).to eq(nil)
+            expect(described_class.check_field_value(:status, "where.term", "a" * 129)).to eq(
+                "where.term は 128 文字以内で指定してください",
+            )
 
-                terms_base_length = ["", "b"].to_s.length
-                valid_terms = ["a" * (1024 - terms_base_length), "b"]
-                invalid_terms = ["a" * (1025 - terms_base_length), "b"]
-                terms_name = "#{key}.terms"
+            terms_base_length = ["", "b"].to_s.length
+            valid_terms = ["a" * (1024 - terms_base_length), "b"]
+            invalid_terms = ["a" * (1025 - terms_base_length), "b"]
 
-                expect(described_class.check_field_value(:status, terms_name, valid_terms)).to eq(nil)
-                expect(described_class.check_field_value(:status, terms_name, invalid_terms)).to eq(
-                    "#{terms_name} は 1024 文字以内で指定してください",
-                )
+            expect(described_class.check_field_value(:status, "where.terms", valid_terms)).to eq(nil)
+            expect(described_class.check_field_value(:status, "where.terms", invalid_terms)).to eq(
+                "where.terms は 1024 文字以内で指定してください",
+            )
 
-                range_base_length = { gte: "", lte: "b" }.to_s.length
-                valid_range = { gte: "a" * (256 - range_base_length), lte: "b" }
-                invalid_range = { gte: "a" * (257 - range_base_length), lte: "b" }
-                range_name = "#{key}.range"
+            range_base_length = { gte: "", lte: "b" }.to_s.length
+            valid_range = { gte: "a" * (256 - range_base_length), lte: "b" }
+            invalid_range = { gte: "a" * (257 - range_base_length), lte: "b" }
 
-                expect(described_class.check_field_value(:status, range_name, valid_range)).to eq(nil)
-                expect(described_class.check_field_value(:status, range_name, invalid_range)).to eq(
-                    "#{range_name} は 256 文字以内で指定してください",
-                )
-            end
+            expect(described_class.check_field_value(:status, "where.range", valid_range)).to eq(nil)
+            expect(described_class.check_field_value(:status, "where.range", invalid_range)).to eq(
+                "where.range は 256 文字以内で指定してください",
+            )
         end
     end
 
@@ -345,7 +366,7 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
             end.to raise_error(AreSearch::InvalidSearchOption)
         end
 
-        it "where系Hash形式はterm値、terms全体、range全体の文字数境界を検査する" do
+        it "where内のterm値、terms全体、range全体の文字数境界を検査する" do
             terms_base_length = ["", "b"].to_s.length
             range_base_length = { gte: "", lte: "b" }.to_s.length
 
@@ -360,38 +381,44 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
                 { status: { range: { gte: "a" * (257 - range_base_length), lte: "b" } } },
             ]
 
-            [:where, :where_not, :where_or].each do |key|
-                valid_conditions.each do |condition|
-                    expect do
-                        described_class.validate!({ key => condition })
-                    end.not_to raise_error
-                end
+            valid_conditions.each do |condition|
+                expect do
+                    described_class.validate!(
+                        where: {
+                            filter: [condition],
+                        },
+                    )
+                end.not_to raise_error
+            end
 
-                invalid_conditions.each do |condition|
-                    expect do
-                        described_class.validate!({ key => condition })
-                    end.to raise_error(AreSearch::InvalidSearchOption)
-                end
+            invalid_conditions.each do |condition|
+                expect do
+                    described_class.validate!(
+                        where: {
+                            filter: [condition],
+                        },
+                    )
+                end.to raise_error(AreSearch::InvalidSearchOption)
             end
         end
 
-        it "where系Array形式でもterm値、terms全体、range全体へ文字数制限を適用する" do
-            terms_base_length = ["", "b"].to_s.length
-            range_base_length = { gte: "", lte: "b" }.to_s.length
-
-            invalid_conditions = [
-                { status: { term: "a" * 129 } },
-                { status: { terms: ["a" * (1025 - terms_base_length), "b"] } },
-                { status: { range: { gte: "a" * (257 - range_base_length), lte: "b" } } },
-            ]
-
-            [:where, :where_not, :where_or].each do |key|
-                invalid_conditions.each do |condition|
-                    expect do
-                        described_class.validate!({ key => [condition] })
-                    end.to raise_error(AreSearch::InvalidSearchOption)
-                end
-            end
+        it "ネストbool内でもwhereの文字数制限を適用する" do
+            expect do
+                described_class.validate!(
+                    where: {
+                        should: [
+                            {
+                                bool: {
+                                    filter: [
+                                        { status: { term: "a" * 129 } },
+                                    ],
+                                },
+                            },
+                        ],
+                        minimum_should_match: 1,
+                    },
+                )
+            end.to raise_error(AreSearch::InvalidSearchOption)
         end
 
         it "nilのオプションがあっても後続の検索値を検査する" do
@@ -399,20 +426,20 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
                 described_class.validate!(
                     queries: nil,
                     where: {
-                        status: {
-                            term: "a" * 129,
-                        },
+                        filter: [
+                            { status: { term: "a" * 129 } },
+                        ],
                     },
                 )
             end.to raise_error(AreSearch::InvalidSearchOption)
 
             expect do
                 described_class.validate!(
-                    where: nil,
-                    where_or: {
-                        status: {
-                            term: "a" * 129,
-                        },
+                    suggest: nil,
+                    where: {
+                        filter: [
+                            { status: { term: "a" * 129 } },
+                        ],
                     },
                 )
             end.to raise_error(AreSearch::InvalidSearchOption)

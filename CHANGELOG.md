@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+- `where_not` / `where_or` を廃止。`where` を `must` / `filter` / `should` / `must_not` + 再帰 `bool` 形式へ変更
+- `aggs` での `filter`、`filters` の対応
 - `total_count` 等のカウント情報を `SearchResult` に移動
 - `suggest` の追加
 - 検索パラメータの省略値の整理

@@ -506,11 +506,15 @@ RSpec.describe "search runtime mappings" do
             runtime_mappings: runtime_mappings,
             enable_runtime_mappings: true,
             where: {
-                :"runtime.score" => {
-                    range: {
-                        gte: 0,
+                filter: [
+                    {
+                        :"runtime.score" => {
+                            range: {
+                                gte: 0,
+                            },
+                        },
                     },
-                },
+                ],
             },
             sort: {
                 :"runtime.score" => :desc,
@@ -520,13 +524,20 @@ RSpec.describe "search runtime mappings" do
         )
 
         expect(body[:runtime_mappings]).to eq(runtime_mappings)
-        expect(body.dig(:query, :bool, :filter)).to include(
-            {
-                range: {
-                    :"runtime.score" => {
-                        gte: 0,
+        where_bool = body.dig(:query, :bool, :filter).find do |filter_clause|
+            filter_clause.key?(:bool)
+        end
+        expect(where_bool).to eq(
+            bool: {
+                filter: [
+                    {
+                        range: {
+                            :"runtime.score" => {
+                                gte: 0,
+                            },
+                        },
                     },
-                },
+                ],
             },
         )
         expect(body[:sort]).to eq([
@@ -556,9 +567,9 @@ RSpec.describe "search runtime mappings" do
             },
             enable_runtime_mappings: true,
             where: {
-                title: {
-                    term: "runtime",
-                },
+                filter: [
+                    { title: { term: "runtime" } },
+                ],
             },
             sort: {
                 title: :asc,
@@ -566,11 +577,18 @@ RSpec.describe "search runtime mappings" do
             dump_body: true,
         )
 
-        expect(body.dig(:query, :bool, :filter)).to include(
-            {
-                term: {
-                    title: "runtime",
-                },
+        where_bool = body.dig(:query, :bool, :filter).find do |filter_clause|
+            filter_clause.key?(:bool)
+        end
+        expect(where_bool).to eq(
+            bool: {
+                filter: [
+                    {
+                        term: {
+                            title: "runtime",
+                        },
+                    },
+                ],
             },
         )
         expect(body[:sort]).to eq([
@@ -656,14 +674,16 @@ RSpec.describe "search runtime mappings" do
             },
             enable_runtime_mappings: true,
             where: {
-                runtime_status: {
-                    term: "published",
-                },
-                runtime_score: {
-                    range: {
-                        gte: 0,
+                filter: [
+                    { runtime_status: { term: "published" } },
+                    {
+                        runtime_score: {
+                            range: {
+                                gte: 0,
+                            },
+                        },
                     },
-                },
+                ],
             },
             sort: {
                 runtime_score: :desc,
@@ -681,18 +701,25 @@ RSpec.describe "search runtime mappings" do
         expect(
             body.dig(:query, :bool, :must, 0, :combined_fields, :fields),
         ).to eq(["runtime_title"])
-        expect(body.dig(:query, :bool, :filter)).to include(
-            {
-                term: {
-                    runtime_status: "published",
-                },
-            },
-            {
-                range: {
-                    runtime_score: {
-                        gte: 0,
+        where_bool = body.dig(:query, :bool, :filter).find do |filter_clause|
+            filter_clause.key?(:bool)
+        end
+        expect(where_bool).to eq(
+            bool: {
+                filter: [
+                    {
+                        term: {
+                            runtime_status: "published",
+                        },
                     },
-                },
+                    {
+                        range: {
+                            runtime_score: {
+                                gte: 0,
+                            },
+                        },
+                    },
+                ],
             },
         )
         expect(body[:sort]).to eq([

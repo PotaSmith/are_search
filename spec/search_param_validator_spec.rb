@@ -126,7 +126,20 @@ RSpec.describe AreSearch::SearchParamValidator do
                         fields: [:title],
                     },
                 ],
-                where: [
+                where: {
+                    filter: [
+                        {
+                            status: {
+                                term: "published",
+                            },
+                        },
+                    ],
+                },
+            )
+
+            expect(result.dig(:queries, 0, :fields)).to eq([:title])
+            expect(result[:where]).to eq(
+                filter: [
                     {
                         status: {
                             term: "published",
@@ -134,15 +147,6 @@ RSpec.describe AreSearch::SearchParamValidator do
                     },
                 ],
             )
-
-            expect(result.dig(:queries, 0, :fields)).to eq([:title])
-            expect(result[:where]).to eq([
-                {
-                    status: {
-                        term: "published",
-                    },
-                },
-            ])
         end
 
         it "queries配下のfieldsはtext型のArrayまたは正のboostを持つHashを受け付ける" do
@@ -487,34 +491,34 @@ RSpec.describe AreSearch::SearchParamValidator do
                     },
                 ],
                 where: {
-                    status: {
-                        term: "published",
-                    },
-                    count: {
-                        terms: [1, 2],
-                    },
-                    published_at: {
-                        range: {
-                            gte: "2026-01-01",
-                            lte: "2026-12-31",
+                    filter: [
+                        { status: { term: "published" } },
+                        { count: { terms: [1, 2] } },
+                        {
+                            published_at: {
+                                range: {
+                                    gte: "2026-01-01",
+                                    lte: "2026-12-31",
+                                },
+                            },
                         },
-                    },
+                    ],
                 },
             )
 
             expect(result[:where]).to eq(
-                status: {
-                    term: "published",
-                },
-                count: {
-                    terms: [1, 2],
-                },
-                published_at: {
-                    range: {
-                        gte: "2026-01-01",
-                        lte: "2026-12-31",
+                filter: [
+                    { status: { term: "published" } },
+                    { count: { terms: [1, 2] } },
+                    {
+                        published_at: {
+                            range: {
+                                gte: "2026-01-01",
+                                lte: "2026-12-31",
+                            },
+                        },
                     },
-                },
+                ],
             )
 
             expect do
@@ -529,14 +533,14 @@ RSpec.describe AreSearch::SearchParamValidator do
                         },
                     ],
                     where: {
-                        title: {
-                            term: "Rails",
-                        },
+                        filter: [
+                            { title: { term: "Rails" } },
+                        ],
                     },
                 )
             end.to raise_error(
                 ArgumentError,
-                /opts\[:where\] に未知のキーがあります: :title/,
+                /opts\[:where\]\[filter\]\[0\] に未知のキーがあります: :title/,
             )
 
             expect do
@@ -551,7 +555,9 @@ RSpec.describe AreSearch::SearchParamValidator do
                         },
                     ],
                     where: {
-                        status: "published",
+                        filter: [
+                            { status: "published" },
+                        ],
                     },
                 )
             end.to raise_error(ArgumentError)
@@ -567,17 +573,26 @@ RSpec.describe AreSearch::SearchParamValidator do
                         fields: [:title],
                     },
                 ],
-                where: [
-                    {
-                        score: {
-                            term: 1.5,
+                where: {
+                    filter: [
+                        { score: { term: 1.5 } },
+                        { score: { terms: [1.5, 2.5] } },
+                        {
+                            score: {
+                                range: {
+                                    gte: 1.5,
+                                    lte: 2.5,
+                                },
+                            },
                         },
-                    },
-                    {
-                        score: {
-                            terms: [1.5, 2.5],
-                        },
-                    },
+                    ],
+                },
+            )
+
+            expect(result[:where]).to eq(
+                filter: [
+                    { score: { term: 1.5 } },
+                    { score: { terms: [1.5, 2.5] } },
                     {
                         score: {
                             range: {
@@ -588,27 +603,6 @@ RSpec.describe AreSearch::SearchParamValidator do
                     },
                 ],
             )
-
-            expect(result[:where]).to eq([
-                {
-                    score: {
-                        term: 1.5,
-                    },
-                },
-                {
-                    score: {
-                        terms: [1.5, 2.5],
-                    },
-                },
-                {
-                    score: {
-                        range: {
-                            gte: 1.5,
-                            lte: 2.5,
-                        },
-                    },
-                },
-            ])
         end
 
         it "外部入力として使用する値が不正な場合はInvalidSearchOptionを送出する" do
@@ -629,9 +623,9 @@ RSpec.describe AreSearch::SearchParamValidator do
                         },
                     ],
                     where: {
-                        status: {
-                            term: [],
-                        },
+                        filter: [
+                            { status: { term: [] } },
+                        ],
                     },
                 },
                 {
@@ -642,9 +636,9 @@ RSpec.describe AreSearch::SearchParamValidator do
                         },
                     ],
                     where: {
-                        status: {
-                            terms: ["published", {}],
-                        },
+                        filter: [
+                            { status: { terms: ["published", {}] } },
+                        ],
                     },
                 },
                 {
@@ -655,11 +649,15 @@ RSpec.describe AreSearch::SearchParamValidator do
                         },
                     ],
                     where: {
-                        count: {
-                            range: {
-                                gte: 1..2,
+                        filter: [
+                            {
+                                count: {
+                                    range: {
+                                        gte: 1..2,
+                                    },
+                                },
                             },
-                        },
+                        ],
                     },
                 },
                 {
@@ -893,7 +891,7 @@ RSpec.describe AreSearch::SearchParamValidator do
             end.to raise_error(ArgumentError, /all_valid_non_text_fields/)
         end
 
-        it "aggsはArray簡易形式とfieldを持つElasticsearch形式を受け付ける" do
+        it "aggsはArray簡易形式、fieldを持つ形式、filter/filtersを受け付ける" do
             array_result = validate_options(
                 [article_index_target],
                 [article_model],
@@ -942,6 +940,22 @@ RSpec.describe AreSearch::SearchParamValidator do
                             missing: 0,
                         },
                     },
+                    published_filter: {
+                        filter: {
+                            term: {
+                                status: "published",
+                            },
+                        },
+                    },
+                    status_filters: {
+                        filters: {
+                            keyed: false,
+                            filters: [
+                                { term: { status: "published" } },
+                                { term: { status: "draft" } },
+                            ],
+                        },
+                    },
                 },
             )
 
@@ -972,6 +986,22 @@ RSpec.describe AreSearch::SearchParamValidator do
                     avg: {
                         field: :score,
                         missing: 0,
+                    },
+                },
+                published_filter: {
+                    filter: {
+                        term: {
+                            status: "published",
+                        },
+                    },
+                },
+                status_filters: {
+                    filters: {
+                        keyed: false,
+                        filters: [
+                            { term: { status: "published" } },
+                            { term: { status: "draft" } },
+                        ],
                     },
                 },
             )

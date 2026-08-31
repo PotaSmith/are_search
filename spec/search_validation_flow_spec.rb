@@ -384,14 +384,14 @@ RSpec.describe AreSearch::SearchParamValidator do
                     [article_model, document_model],
                     max_result_window,
                     where: {
-                        status: {
-                            term: "published",
-                        },
+                        filter: [
+                            { status: { term: "published" } },
+                        ],
                     },
                 )
             end.to raise_error(
                 ArgumentError,
-                /opts\[:where\] に未知のキーがあります: :status/,
+                /opts\[:where\]\[filter\]\[0\] に未知のキーがあります: :status/,
             )
         end
     end
@@ -671,6 +671,22 @@ RSpec.describe "search option flow" do
                         ],
                     },
                 },
+                published_filter: {
+                    filter: {
+                        term: {
+                            status: "published",
+                        },
+                    },
+                },
+                status_filters: {
+                    filters: {
+                        keyed: false,
+                        filters: [
+                            { term: { status: "published" } },
+                            { term: { status: "draft" } },
+                        ],
+                    },
+                },
             },
             highlight: {
                 fields: {
@@ -681,21 +697,22 @@ RSpec.describe "search option flow" do
                 max_analyzed_offset: 0,
             },
             where: {
-                count: {
-                    range: {
-                        gte: 0,
+                filter: [
+                    {
+                        count: {
+                            range: {
+                                gte: 0,
+                            },
+                        },
                     },
-                },
-            },
-            where_not: {
-                status: {
-                    terms: ["deleted"],
-                },
-            },
-            where_or: {
-                status: {
-                    term: "published",
-                },
+                ],
+                should: [
+                    { status: { term: "published" } },
+                ],
+                must_not: [
+                    { status: { terms: ["deleted"] } },
+                ],
+                minimum_should_match: 1,
             },
             dump_body: true,
         )
@@ -703,34 +720,37 @@ RSpec.describe "search option flow" do
         expect(body.dig(:query, :bool, :must, 0, :combined_fields, :fields)).to eq([
             "title^2.5",
         ])
-        expect(body.dig(:query, :bool, :filter)).to include(
-            {
-                range: {
-                    count: {
-                        gte: 0,
-                    },
-                },
-            },
-            {
-                bool: {
-                    should: [
-                        {
-                            term: {
-                                status: "published",
+        where_bool = body.dig(:query, :bool, :filter).find do |filter_clause|
+            filter_clause.key?(:bool)
+        end
+        expect(where_bool).to eq(
+            bool: {
+                filter: [
+                    {
+                        range: {
+                            count: {
+                                gte: 0,
                             },
                         },
-                    ],
-                    minimum_should_match: 1,
-                },
+                    },
+                ],
+                should: [
+                    {
+                        term: {
+                            status: "published",
+                        },
+                    },
+                ],
+                must_not: [
+                    {
+                        terms: {
+                            status: ["deleted"],
+                        },
+                    },
+                ],
+                minimum_should_match: 1,
             },
         )
-        expect(body.dig(:query, :bool, :must_not)).to eq([
-            {
-                terms: {
-                    status: ["deleted"],
-                },
-            },
-        ])
         expect(body[:sort]).to eq([
             {
                 status: "desc",
@@ -750,6 +770,18 @@ RSpec.describe "search option flow" do
                 { to: 10 },
                 { from: 10, to: 20, key: "middle" },
                 { from: 20 },
+            ],
+        )
+        expect(body.dig(:aggs, :published_filter, :filter)).to eq(
+            term: {
+                status: "published",
+            },
+        )
+        expect(body.dig(:aggs, :status_filters, :filters)).to eq(
+            keyed: false,
+            filters: [
+                { term: { status: "published" } },
+                { term: { status: "draft" } },
             ],
         )
         expect(body[:highlight]).to include(
@@ -793,7 +825,7 @@ RSpec.describe "search option flow" do
         )
     end
 
-    it "標準検索とMore Like This検索でwhere_orをfilter内のbool.shouldへ入れる" do
+    it "標準検索とMore Like This検索でwhereのshouldを独立したfilter内boolへ入れる" do
         standard_body = AreSearch::Searcher.search(
             [article_index_target],
             queries: [
@@ -802,10 +834,11 @@ RSpec.describe "search option flow" do
                     fields: [:title],
                 },
             ],
-            where_or: {
-                status: {
-                    term: "published",
-                },
+            where: {
+                should: [
+                    { status: { term: "published" } },
+                ],
+                minimum_should_match: 1,
             },
             dump_body: true,
         )
@@ -818,20 +851,21 @@ RSpec.describe "search option flow" do
                     index_target: article_index_target,
                 },
             },
-            where_or: {
-                status: {
-                    term: "published",
-                },
+            where: {
+                should: [
+                    { status: { term: "published" } },
+                ],
+                minimum_should_match: 1,
             },
             dump_body: true,
         )
 
         [standard_body, mlt_body].each do |body|
-            where_or_bool = body.dig(:query, :bool, :filter).find do |filter_clause|
+            where_bool = body.dig(:query, :bool, :filter).find do |filter_clause|
                 filter_clause.key?(:bool)
             end
 
-            expect(where_or_bool).to eq(
+            expect(where_bool).to eq(
                 bool: {
                     should: [
                         {
@@ -844,30 +878,6 @@ RSpec.describe "search option flow" do
                 },
             )
         end
-    end
-
-    it "where系オプションを持ち、shouldを未知のオプションとして扱う" do
-        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
-
-        expect(AreSearch::SearchOptionValidator::OPTION_DEFINITIONS.keys).to include(
-            :where,
-            :where_not,
-            :where_or,
-        )
-        expect(AreSearch::SearchOptionValidator::OPTION_DEFINITIONS.keys).not_to include(:should)
-
-        expect do
-            AreSearch::Searcher.search(
-                [article_index_target],
-                queries: [
-                    {
-                        query_string: "",
-                        fields: [:title],
-                    },
-                ],
-                should: [],
-            )
-        end.to raise_error(ArgumentError, /未知の検索オプション/)
     end
 
     it "MLT固有パラメーターはmlt配下だけで受け付ける" do
@@ -934,15 +944,15 @@ RSpec.describe "search option flow" do
             AreSearch::Searcher.search(
                 [article_index_target],
                 where: {
-                    :"OtherModel.secret" => {
-                        term: "value",
-                    },
+                    filter: [
+                        { :"OtherModel.secret" => { term: "value" } },
+                    ],
                 },
                 dump_body: true,
             )
         end.to raise_error(
             ArgumentError,
-            /opts\[:where\] に未知のキーがあります: :"OtherModel\.secret"/,
+            /opts\[:where\]\[filter\]\[0\] に未知のキーがあります: :"OtherModel\.secret"/,
         )
     end
 
@@ -1185,7 +1195,7 @@ RSpec.describe "search option flow" do
         expect(mlt).not_to have_key(:boost_terms)
     end
 
-    it "where_orとMLTのminimum_should_matchを別階層へ出力する" do
+    it "whereとMLTのminimum_should_matchを別階層へ出力する" do
         body = AreSearch::Searcher.search(
             [article_index_target],
             mlt: {
@@ -1196,19 +1206,20 @@ RSpec.describe "search option flow" do
                 },
                 minimum_should_match: "50%",
             },
-            where_or: {
-                status: {
-                    term: "published",
-                },
+            where: {
+                should: [
+                    { status: { term: "published" } },
+                ],
+                minimum_should_match: 1,
             },
             dump_body: true,
         )
 
-        where_or_bool = body.dig(:query, :bool, :filter).find do |filter_clause|
+        where_bool = body.dig(:query, :bool, :filter).find do |filter_clause|
             filter_clause.key?(:bool)
         end
 
-        expect(where_or_bool.dig(:bool, :minimum_should_match)).to eq(1)
+        expect(where_bool.dig(:bool, :minimum_should_match)).to eq(1)
         expect(
             body.dig(:query, :bool, :must, :more_like_this, :minimum_should_match),
         ).to eq("50%")

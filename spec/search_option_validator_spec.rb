@@ -52,13 +52,13 @@ RSpec.describe AreSearch::SearchOptionValidator do
     describe ".validate! のトップレベルオプション処理" do
         it "nilは未指定として正規化結果から除外する" do
             options = {}
-            AreSearch::SearchOptionValidator::OPTION_DEFINITIONS.each_key do |option_name|
+            AreSearch::SearchOptionDefinition.definitions.each_key do |option_name|
                 options[option_name] = nil
             end
 
             result = described_class.validate!(
                 options,
-                AreSearch::SearchOptionValidator::OPTION_DEFINITIONS,
+                AreSearch::SearchOptionDefinition.definitions,
                 build_context,
             )
 
@@ -69,7 +69,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
             expect do
                 described_class.validate!(
                     { unknown_option: nil },
-                    AreSearch::SearchOptionValidator::OPTION_DEFINITIONS,
+                    AreSearch::SearchOptionDefinition.definitions,
                     build_context,
                 )
             end.to raise_error(ArgumentError, /未知の検索オプション/)
@@ -81,8 +81,6 @@ RSpec.describe AreSearch::SearchOptionValidator do
                 runtime_mappings: {},
                 queries: [],
                 where: {},
-                where_not: [],
-                where_or: {},
                 model_relations: {},
                 sort: {},
                 aggs: [],
@@ -93,7 +91,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
 
             result = described_class.validate!(
                 options,
-                AreSearch::SearchOptionValidator::OPTION_DEFINITIONS,
+                AreSearch::SearchOptionDefinition.definitions,
                 build_context,
             )
 
@@ -104,7 +102,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
             expect do
                 described_class.validate!(
                     { mlt: {} },
-                    AreSearch::SearchOptionValidator::OPTION_DEFINITIONS,
+                    AreSearch::SearchOptionDefinition.definitions,
                     build_context,
                 )
             end.to raise_error(ArgumentError, /1件以上指定してください/)
@@ -566,6 +564,25 @@ RSpec.describe AreSearch::SearchOptionValidator do
         }
     end
 
+    # 指定数のboolをfilterでネストし、末端にfield条件を置く。
+    def nested_bool_condition(depth)
+        condition = {
+            status: {
+                term: "published",
+            },
+        }
+
+        depth.times do
+            condition = {
+                bool: {
+                    filter: [condition],
+                },
+            }
+        end
+
+        condition
+    end
+
     describe ".validate! のcontext参照型処理" do
         let(:article_model) do
             Class.new
@@ -760,7 +777,134 @@ RSpec.describe AreSearch::SearchOptionValidator do
 
     end
 
-    describe "OPTION_DEFINITIONSによるfields検査" do
+    describe "SearchOptionDefinitionによるwhere検査" do
+        let(:where_context) do
+            build_context(
+                any_non_text_without_text_fields: [:status, :retry_count],
+            )
+        end
+
+        it "where直下とbool配下でmust、filter、should、must_notを使用できる" do
+            where = {
+                must: [
+                    {
+                        status: {
+                            term: "published",
+                        },
+                    },
+                ],
+                filter: [
+                    {
+                        bool: {
+                            must: [
+                                {
+                                    retry_count: {
+                                        range: {
+                                            gte: 1,
+                                        },
+                                    },
+                                },
+                            ],
+                            filter: [
+                                {
+                                    status: {
+                                        terms: ["published", "draft"],
+                                    },
+                                },
+                            ],
+                            should: [
+                                {
+                                    status: {
+                                        term: "featured",
+                                    },
+                                },
+                            ],
+                            must_not: [
+                                {
+                                    status: {
+                                        term: "deleted",
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                ],
+                should: [],
+                must_not: [],
+            }
+
+            result = described_class.validate!(
+                { where: where },
+                AreSearch::SearchOptionDefinition.definitions,
+                where_context,
+            )
+
+            expect(result[:where]).to eq(where)
+        end
+
+        it "whereの旧Array形式を拒否する" do
+            expect do
+                described_class.validate!(
+                    {
+                        where: [
+                            {
+                                status: {
+                                    term: "published",
+                                },
+                            },
+                        ],
+                    },
+                    AreSearch::SearchOptionDefinition.definitions,
+                    where_context,
+                )
+            end.to raise_error(ArgumentError, /node_type :array は定義されていません/)
+        end
+
+        it "conditionはfield条件またはbool条件の1件だけを受け付ける" do
+            expect do
+                described_class.validate!(
+                    {
+                        where: {
+                            filter: [
+                                {
+                                    status: { term: "published" },
+                                    retry_count: { term: 1 },
+                                },
+                            ],
+                        },
+                    },
+                    AreSearch::SearchOptionDefinition.definitions,
+                    where_context,
+                )
+            end.to raise_error(ArgumentError, /は 1 件で指定してください/)
+        end
+
+        it "boolは4階層まで許可し5階層目を拒否する" do
+            valid_where = {
+                filter: [nested_bool_condition(4)],
+            }
+            invalid_where = {
+                filter: [nested_bool_condition(5)],
+            }
+
+            result = described_class.validate!(
+                { where: valid_where },
+                AreSearch::SearchOptionDefinition.definitions,
+                where_context,
+            )
+            expect(result[:where]).to eq(valid_where)
+
+            expect do
+                described_class.validate!(
+                    { where: invalid_where },
+                    AreSearch::SearchOptionDefinition.definitions,
+                    where_context,
+                )
+            end.to raise_error(ArgumentError, /未知のキーがあります: :bool/)
+        end
+    end
+
+    describe "SearchOptionDefinitionによるfields検査" do
         it "トップレベルのquery_string・fields・query_typeを拒否する" do
             context = build_context(
                 any_text_without_non_text_fields: [:title],
@@ -775,7 +919,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
                 expect do
                     described_class.validate!(
                         options,
-                        AreSearch::SearchOptionValidator::OPTION_DEFINITIONS,
+                        AreSearch::SearchOptionDefinition.definitions,
                         context,
                     )
                 end.to raise_error(ArgumentError, /未知の検索オプション/)
@@ -802,7 +946,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
                         },
                     ],
                 },
-                AreSearch::SearchOptionValidator::OPTION_DEFINITIONS,
+                AreSearch::SearchOptionDefinition.definitions,
                 context,
             )
 
@@ -869,12 +1013,16 @@ RSpec.describe AreSearch::SearchOptionValidator do
                 [
                     {
                         where: {
-                            "status" => {
-                                term: "published",
-                            },
+                            filter: [
+                                {
+                                    "status" => {
+                                        term: "published",
+                                    },
+                                },
+                            ],
                         },
                     },
-                    /opts\[:where\] に未知のキーがあります: "status"/,
+                    /opts\[:where\]\[filter\]\[0\] に未知のキーがあります: "status"/,
                 ],
                 [
                     {
@@ -928,7 +1076,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
                 expect do
                     described_class.validate!(
                         options,
-                        AreSearch::SearchOptionValidator::OPTION_DEFINITIONS,
+                        AreSearch::SearchOptionDefinition.definitions,
                         context,
                     )
                 end.to raise_error(ArgumentError, expected_message)

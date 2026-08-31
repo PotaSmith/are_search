@@ -391,7 +391,7 @@ RSpec.describe "search paging" do
         expect(result.raw_response).to equal(response)
     end
 
-    it "raw_body検索はArray形式のbucketsを簡易結果へ変換しkeyがない場合はdoc_countだけを返す" do
+    it "raw_body検索はbucketsと直下doc_countを簡易結果へ変換する" do
         client = double("client")
         response = {
             "hits" => {
@@ -429,6 +429,9 @@ RSpec.describe "search paging" do
                         { "doc_count" => 10 },
                         { "doc_count" => 3 },
                     ],
+                },
+                "published_filter" => {
+                    "doc_count" => 10,
                 },
                 "keyed_status" => {
                     "buckets" => {
@@ -500,12 +503,24 @@ RSpec.describe "search paging" do
                             ],
                         },
                     },
+                    published_filter: {
+                        filter: {
+                            term: {
+                                status: "published",
+                            },
+                        },
+                    },
                     keyed_status: {
                         filters: {
                             filters: {
                                 published: {
                                     term: {
                                         status: "published",
+                                    },
+                                },
+                                draft: {
+                                    term: {
+                                        status: "draft",
                                     },
                                 },
                             },
@@ -548,7 +563,13 @@ RSpec.describe "search paging" do
             ],
         )
         expect(result.aggs(:anonymous_filters)).to eq([10, 3])
-        expect(result.aggs(:keyed_status)).to eq([])
+        expect(result.aggs(:published_filter)).to eq([10])
+        expect(result.aggs(:keyed_status)).to eq(
+            [
+                ["published", 10],
+                ["draft", 3],
+            ],
+        )
         expect(result.aggs(:avg_price)).to eq([])
         expect(result.aggs).to eq(
             status: [
@@ -569,6 +590,11 @@ RSpec.describe "search paging" do
                 ["2.0-*", 1],
             ],
             anonymous_filters: [10, 3],
+            published_filter: [10],
+            keyed_status: [
+                ["published", 10],
+                ["draft", 3],
+            ],
         )
         expect(result.raw_response).to equal(response)
     end

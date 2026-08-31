@@ -873,7 +873,7 @@ RSpec.describe "AreSearch search DSL integration", type: :model do
         expect(result.records.map(&:id)).to eq([documents[0].id])
     end
 
-    it "where系のterm、terms、rangeを組み合わせて実Elasticsearchで絞り込む" do
+    it "whereのネストboolで(A AND B) OR Cを実Elasticsearchで絞り込む" do
         documents = create_search_dsl_documents
 
         result = AreSearch::Searcher.search(
@@ -885,26 +885,79 @@ RSpec.describe "AreSearch search DSL integration", type: :model do
                 },
             ],
             where: {
-                status: {
-                    term: "published",
-                },
+                should: [
+                    {
+                        bool: {
+                            filter: [
+                                { status: { term: "published" } },
+                                { user_id: { terms: [1] } },
+                            ],
+                        },
+                    },
+                    {
+                        user_id: {
+                            range: {
+                                gte: 3,
+                                lte: 3,
+                            },
+                        },
+                    },
+                ],
+                minimum_should_match: 1,
             },
-            where_not: {
-                user_id: {
-                    terms: [1],
+        )
+
+        expect(result.status).to eq(AreSearch::SearchResult::STATUS_OK)
+        expect(result.records.map(&:id).sort).to eq([documents[0].id, documents[2].id].sort)
+    end
+
+    it "filterとfilters aggregationを実Elasticsearchで集計する" do
+        create_search_dsl_documents
+
+        result = AreSearch::Searcher.search(
+            [document_first_index_target],
+            queries: [
+                {
+                    query_string: "",
+                    fields:       [:title],
                 },
-            },
-            where_or: {
-                user_id: {
-                    range: {
-                        gte: 3,
-                        lte: 3,
+            ],
+            aggs: {
+                published_filter: {
+                    filter: {
+                        term: {
+                            status: "published",
+                        },
+                    },
+                },
+                status_filters: {
+                    filters: {
+                        keyed: false,
+                        filters: [
+                            { term: { status: "published" } },
+                            { term: { status: "draft" } },
+                        ],
+                    },
+                },
+                keyed_status_filters: {
+                    filters: {
+                        filters: {
+                            published: { term: { status: "published" } },
+                            draft:     { term: { status: "draft" } },
+                        },
                     },
                 },
             },
         )
 
         expect(result.status).to eq(AreSearch::SearchResult::STATUS_OK)
-        expect(result.records.map(&:id)).to eq([documents[2].id])
+        expect(result.aggs(:published_filter)).to eq([2])
+        expect(result.aggs(:status_filters)).to eq([2, 1])
+        expect(result.aggs(:keyed_status_filters)).to match_array(
+            [
+                ["published", 2],
+                ["draft", 1],
+            ],
+        )
     end
 end

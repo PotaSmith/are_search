@@ -245,7 +245,7 @@ module AreSearch
         # 簡易アクセスaggs生成
         #########################################################################
 
-        # Array形式のbucketを、内部キー用と表示用の簡易結果へ変換する。
+        # buckets 無しと、Hash/Array形式のbucketを、内部キー用と表示用の簡易結果へ変換する。
         # keyがないbucketはdoc_countだけを結果へ追加する。
         def build_aggs_results
             return if @raw_response.nil?
@@ -254,37 +254,70 @@ module AreSearch
             return if aggregations.nil?
 
             aggregations.each do |name, agg|
-                buckets = agg["buckets"]
-                next if buckets.nil?
-                next if buckets.instance_of?(Array) == false
 
-                agg_result = []
-                str_key_agg_result = []
+                # buckets 無しの場合
+                if agg.key?("doc_count")
+                    agg_result = [agg["doc_count"]]
+                    str_key_agg_result = [agg["doc_count"]]
 
-                buckets.each do |bucket|
-                    if bucket.key?("key")
-                        # keyがある通常のbucket
-                        key = bucket["key"]
-                        str_key = key
-
-                        if bucket.key?("key_as_string")
-                            str_key = bucket["key_as_string"]
-                        end
-
-                        doc_count = bucket["doc_count"]
-                        agg_result << [key, doc_count]
-                        str_key_agg_result << [str_key, doc_count]
-                    else
-                        # keyがないbucket
-                        doc_count = bucket["doc_count"]
-                        agg_result << doc_count
-                        str_key_agg_result << doc_count
-                    end
+                    name_key = name.to_sym
+                    @aggs[name_key] = agg_result
+                    @str_key_aggs[name_key] = str_key_agg_result
+                    next
                 end
 
-                name_key = name.to_sym
-                @aggs[name_key] = agg_result
-                @str_key_aggs[name_key] = str_key_agg_result
+                # buckets ありの場合
+                if agg.key?("buckets")
+                    buckets = agg["buckets"]
+
+                    if buckets.instance_of?(Hash)
+                        agg_result = []
+                        str_key_agg_result = []
+
+                        buckets.each do |key_name, bucket|
+                            # Hashのkeyをbucketのkeyとして使用
+                            doc_count = bucket["doc_count"]
+                            agg_result << [key_name, doc_count]
+                            str_key_agg_result << [key_name, doc_count]
+                        end
+
+                        name_key = name.to_sym
+                        @aggs[name_key] = agg_result
+                        @str_key_aggs[name_key] = str_key_agg_result
+                        next
+                    end
+
+                    if buckets.instance_of?(Array)
+                        agg_result = []
+                        str_key_agg_result = []
+
+                        buckets.each do |bucket|
+                            if bucket.key?("key")
+                                # keyがある通常のbucket
+                                key = bucket["key"]
+                                str_key = key
+
+                                if bucket.key?("key_as_string")
+                                    str_key = bucket["key_as_string"]
+                                end
+
+                                doc_count = bucket["doc_count"]
+                                agg_result << [key, doc_count]
+                                str_key_agg_result << [str_key, doc_count]
+                            else
+                                # keyがないbucket
+                                doc_count = bucket["doc_count"]
+                                agg_result << doc_count
+                                str_key_agg_result << doc_count
+                            end
+                        end
+
+                        name_key = name.to_sym
+                        @aggs[name_key] = agg_result
+                        @str_key_aggs[name_key] = str_key_agg_result
+                        next
+                    end
+                end
             end
         end
     end

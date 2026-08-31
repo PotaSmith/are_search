@@ -1,7 +1,20 @@
 # frozen_string_literal: true
 
 module AreSearch
-    class SearchOptionValidator
+    class SearchOptionDefinition
+
+        def self.definitions
+            @definitions ||= build_definitions
+        end
+
+        # 静的な検索オプション定義へ、階層付きwhere定義を追加する。
+        def self.build_definitions
+            definitions = OPTION_DEFINITIONS.dup
+            definitions[:where] = where_definitions
+
+            definitions.freeze
+        end
+        private_class_method :build_definitions
 
         # 検索オプション定義。
         #
@@ -88,87 +101,6 @@ module AreSearch
             "searchable_instance",
             "index_target",
         ].freeze
-
-        # where系オプションの1フィールド分を検査するHash key_value定義。
-        CONDITION_FIELD_KEY_VALUES = [
-            {
-                key: {
-                    type: "any_non_text_without_text_field",
-                },
-                value: {
-                    hash: {
-                        item_count: 1,
-                        key_values: [
-                            {
-                                key: {
-                                    key_name: :term,
-                                },
-                                value: {
-                                    error_class: AreSearch::InvalidSearchOption,
-                                    scalar: {
-                                        type: "str_or_int_or_float_or_bool",
-                                    },
-                                },
-                            },
-                            {
-                                key: {
-                                    key_name: :terms,
-                                },
-                                value: {
-                                    error_class: AreSearch::InvalidSearchOption,
-                                    array: {
-                                        allow_empty: true,
-                                        children: {
-                                            scalar: {
-                                                type: "str_or_int_or_float_or_bool",
-                                            },
-                                        },
-                                    },
-                                },
-                            },
-                            {
-                                key: {
-                                    key_name: :range,
-                                },
-                                value: {
-                                    error_class: AreSearch::InvalidSearchOption,
-                                    hash: {
-                                        key_values: [
-                                            {
-                                                key: {
-                                                    type: "symbol_key",
-                                                },
-                                                value: {
-                                                    scalar: {
-                                                        type: "str_or_int_or_float_or_bool",
-                                                    },
-                                                },
-                                            },
-                                        ],
-                                    },
-                                },
-                            },
-                        ],
-                    },
-                },
-            },
-        ].freeze
-
-        # where系オプションのHash形式とArray形式を表すnode定義。
-        CONDITION_DEFINITIONS = {
-            hash: {
-                allow_empty: true,
-                key_values: CONDITION_FIELD_KEY_VALUES,
-            },
-            array: {
-                allow_empty: true,
-                children: {
-                    hash: {
-                        key_values: CONDITION_FIELD_KEY_VALUES,
-                    },
-                },
-            },
-        }.freeze
 
         # fieldsのArray形式とboost付きHash形式を表すnode定義。
         FIELDS_DEFINITIONS = {
@@ -458,41 +390,23 @@ module AreSearch
             },
 
             # where: {
-            #     status: {
-            #         term: "published",
-            #     },
-            #     user_id: {
-            #         terms: [1, 2, 3],
-            #     },
-            #     price: {
-            #         range: {
-            #             gte: 1_000,
-            #             lte: 5_000,
-            #         },
-            #     },
+            #     must: [
+            #         { status: { term: "published" }},
+            #         { user_id: { terms: [1, 2, 3] }},
+            #         { price: {
+            #                 range: {
+            #                     gte: 1_000,
+            #                     lte: 5_000,
+            #                 },
+            #         }},
+            #         { bool: {
+            #             filter: [
+            #                 { status: { ..... }},
+            #             ]
+            #         }},
+            #     ]
             # }
-            where: CONDITION_DEFINITIONS,
-
-            # where_not: {
-            #     status: {
-            #         terms: ["draft", "deleted"],
-            #     },
-            # }
-            where_not: CONDITION_DEFINITIONS,
-
-            # where_or: [
-            #     {
-            #         status: {
-            #             term: "featured",
-            #         },
-            #     },
-            #     {
-            #         user_id: {
-            #             terms: [1, 2, 3],
-            #         },
-            #     },
-            # ]
-            where_or: CONDITION_DEFINITIONS,
+            where: nil,
 
             # model_relations: {
             #     Article  => Article.visible.includes(:user, :tags),
@@ -601,6 +515,22 @@ module AreSearch
                                 hash: {
                                     item_count: 1,
                                     key_values: [
+                                        {
+                                            key: {
+                                                key_name: :filter,
+                                            },
+                                            value: {
+                                                type: "any",
+                                            },
+                                        },
+                                        {
+                                            key: {
+                                                key_name: :filters,
+                                            },
+                                            value: {
+                                                type: "any",
+                                            },
+                                        },
                                         {
                                             key: {
                                                 type: "symbol_key",
@@ -839,5 +769,152 @@ module AreSearch
                 },
             },
         }.freeze
+
+        # where は Elasticsearch bool の条件節と minimum_should_match を持つ。
+        # 空Hashは条件なしとして許可する。
+        def self.where_definitions
+            {
+                hash: {
+                    allow_empty: true,
+                    key_values: bool_key_values(0),
+                },
+            }
+        end
+        private_class_method :where_definitions
+
+        # must / filter / should / must_not の各節を同じ condition 配列として定義する。
+        def self.bool_key_values(depth)
+            key_values = []
+            condition_definitions = condition_array_definitions(depth)
+
+            [:must, :filter, :should, :must_not].each do |key_name|
+                key_values << {
+                    key: {
+                        key_name: key_name,
+                    },
+                    value: condition_definitions,
+                }
+            end
+
+            key_values << {
+                key: { key_name: :minimum_should_match },
+                value: { scalar: { type: "str_or_int" } },
+            }
+
+            key_values
+        end
+        private_class_method :bool_key_values
+
+        # bool の各節で使用する Array<condition> 定義を返す。
+        def self.condition_array_definitions(depth)
+            {
+                array: {
+                    allow_empty: true,
+                    children: condition_node_definitions(depth),
+                },
+            }
+        end
+        private_class_method :condition_array_definitions
+
+        # condition 1件を field 条件または bool 条件のどちらか1件として定義する。
+        def self.condition_node_definitions(depth)
+            key_values = CONDITION_FIELD_KEY_VALUES.dup
+
+            if depth < CONDITION_BOOL_MAX_DEPTH
+                key_values << {
+                    key: {
+                        key_name: :bool,
+                    },
+                    value: bool_condition_definitions(depth + 1),
+                }
+            end
+
+            {
+                hash: {
+                    item_count: 1,
+                    key_values: key_values,
+                },
+            }
+        end
+        private_class_method :condition_node_definitions
+
+        # bool 条件の下へ再び4節を定義する。最大深度では field 条件だけが残る。
+        def self.bool_condition_definitions(depth)
+            {
+                hash: {
+                    key_values: bool_key_values(depth),
+                },
+            }
+        end
+        private_class_method :bool_condition_definitions
+
+        # bool 条件として許可する最大ネスト数。where 自体はネスト数に含めない。
+        CONDITION_BOOL_MAX_DEPTH = 4
+
+        # where系オプションの1フィールド分を検査するHash key_value定義。
+        CONDITION_FIELD_KEY_VALUES = [
+            {
+                key: {
+                    type: "any_non_text_without_text_field",
+                },
+                value: {
+                    hash: {
+                        item_count: 1,
+                        key_values: [
+                            {
+                                key: {
+                                    key_name: :term,
+                                },
+                                value: {
+                                    error_class: AreSearch::InvalidSearchOption,
+                                    scalar: {
+                                        type: "str_or_int_or_float_or_bool",
+                                    },
+                                },
+                            },
+                            {
+                                key: {
+                                    key_name: :terms,
+                                },
+                                value: {
+                                    error_class: AreSearch::InvalidSearchOption,
+                                    array: {
+                                        allow_empty: true,
+                                        children: {
+                                            scalar: {
+                                                type: "str_or_int_or_float_or_bool",
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                            {
+                                key: {
+                                    key_name: :range,
+                                },
+                                value: {
+                                    error_class: AreSearch::InvalidSearchOption,
+                                    hash: {
+                                        key_values: [
+                                            {
+                                                key: {
+                                                    type: "symbol_key",
+                                                },
+                                                value: {
+                                                    scalar: {
+                                                        type: "str_or_int_or_float_or_bool",
+                                                    },
+                                                },
+                                            },
+                                        ],
+                                    },
+                                },
+                            },
+                        ],
+                    },
+                },
+            },
+        ].freeze
     end
 end
+

@@ -22,26 +22,10 @@ module AreSearch
 
             # SearchOptionValidatorで正規化済みの検索オプションからMLT queryを組み立てる。
             def build(index_targets, valid_options)
-                mlt_opts       = valid_options.delete(:mlt)
-                where_opts     = valid_options.delete(:where)
-                where_not_opts = valid_options.delete(:where_not)
-                where_or_opts  = valid_options.delete(:where_or)
+                mlt_opts = valid_options.delete(:mlt)
+                where_opts = valid_options.delete(:where)
 
-                where_conditions     = normalize_condition_options(where_opts)
-                where_not_conditions = normalize_condition_options(where_not_opts)
-                where_or_conditions  = normalize_condition_options(where_or_opts)
-
-                filter_clauses   = build_field_clauses(where_conditions)
-                must_not_clauses = build_field_clauses(where_not_conditions)
-                where_or_clauses = build_field_clauses(where_or_conditions)
-
-                bool_clause = build_bool_base(
-                    index_targets,
-                    filter_clauses,
-                    must_not_clauses,
-                    where_or_clauses,
-                )
-
+                bool_clause = build_bool_base(index_targets, where_opts)
                 bool_clause[:must] = {
                     more_like_this: build_mlt_clause(mlt_opts),
                 }
