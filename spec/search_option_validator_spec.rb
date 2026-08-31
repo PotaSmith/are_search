@@ -49,6 +49,68 @@ RSpec.describe AreSearch::SearchOptionValidator do
         }
     end
 
+    describe ".validate! のトップレベルオプション処理" do
+        it "nilは未指定として正規化結果から除外する" do
+            options = {}
+            AreSearch::SearchOptionValidator::OPTION_DEFINITIONS.each_key do |option_name|
+                options[option_name] = nil
+            end
+
+            result = described_class.validate!(
+                options,
+                AreSearch::SearchOptionValidator::OPTION_DEFINITIONS,
+                build_context,
+            )
+
+            expect(result).to eq({})
+        end
+
+        it "未知の検索オプションはnilでも拒否する" do
+            expect do
+                described_class.validate!(
+                    { unknown_option: nil },
+                    AreSearch::SearchOptionValidator::OPTION_DEFINITIONS,
+                    build_context,
+                )
+            end.to raise_error(ArgumentError, /未知の検索オプション/)
+        end
+
+        it "mlt以外のHashとArrayのトップレベル空値を許可する" do
+            options = {
+                raw_body: {},
+                runtime_mappings: {},
+                queries: [],
+                where: {},
+                where_not: [],
+                where_or: {},
+                model_relations: {},
+                sort: {},
+                aggs: [],
+                suggest: {},
+                highlight: {},
+                response: {},
+            }
+
+            result = described_class.validate!(
+                options,
+                AreSearch::SearchOptionValidator::OPTION_DEFINITIONS,
+                build_context,
+            )
+
+            expect(result).to eq(options)
+        end
+
+        it "mltの空Hashは拒否する" do
+            expect do
+                described_class.validate!(
+                    { mlt: {} },
+                    AreSearch::SearchOptionValidator::OPTION_DEFINITIONS,
+                    build_context,
+                )
+            end.to raise_error(ArgumentError, /1件以上指定してください/)
+        end
+    end
+
     describe ".validate! のArray処理" do
         it "各要素をchildren定義で検査する" do
             definition = {
@@ -88,6 +150,28 @@ RSpec.describe AreSearch::SearchOptionValidator do
             )
 
             expect(result).to eq([])
+        end
+    end
+
+    describe ".validate! のHash空値処理" do
+        it "allow_empty指定時はmust_keysを含む後続条件を検査しない" do
+            definition = {
+                hash: {
+                    allow_empty: true,
+                    must_keys: [:fields],
+                    item_count: 1,
+                    key_values: [
+                        {
+                            key: {
+                                key_name: :fields,
+                            },
+                            value: scalar_definition("string"),
+                        },
+                    ],
+                },
+            }
+
+            expect(validate_node({}, definition)).to eq({})
         end
     end
 

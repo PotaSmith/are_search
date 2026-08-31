@@ -238,6 +238,7 @@ search_target = Document.are_search_index_target_alias(:default)
     ],
 	highlight: {
 		fields: [:description],
+        max_analyzed_offset: 500_000,
 	}
 )
 

@@ -28,6 +28,7 @@ module AreSearch
                 per_page_opt           = valid_options.delete(:per_page)
                 sort_opts              = valid_options.delete(:sort)
                 highlight_opts         = valid_options.delete(:highlight)
+                suggest_opts           = valid_options.delete(:suggest)
                 response_opts          = valid_options.delete(:response)
 
                 # --- 変換 ---
@@ -49,12 +50,15 @@ module AreSearch
                     query:   query,
                     _source: response_source,
                 }
-                if aggs_opts.nil? == false
+                if aggs_opts.nil? == false && aggs_opts.empty? == false
                     body[:aggs] = build_aggs(aggs_opts)
                 end
 
                 body[:sort] = normalized_sort if normalized_sort.present?
                 body[:highlight] = normalized_highlight if normalized_highlight.nil? == false
+                if suggest_opts.nil? == false && suggest_opts.empty? == false
+                    body[:suggest] = suggest_opts
+                end
                 body[:fields] = response_fields if response_fields.nil? == false
                 if response_stored_fields.nil? == false
                     body[:stored_fields] = response_stored_fields
@@ -62,7 +66,7 @@ module AreSearch
                 if response_docvalue_fields.nil? == false
                     body[:docvalue_fields] = response_docvalue_fields
                 end
-                if runtime_mappings_opts.nil? == false
+                if runtime_mappings_opts.nil? == false && runtime_mappings_opts.empty? == false
                     body[:runtime_mappings] = runtime_mappings_opts
                 end
 
@@ -137,6 +141,7 @@ module AreSearch
             # highlight を fields が Hash の共通形式へ変換する
             def normalize_highlight_options(highlight_opts)
                 return nil if highlight_opts.nil?
+                return nil if highlight_opts.empty?
 
                 normalized_fields = {}
                 highlight_fields = highlight_opts[:fields]

@@ -243,8 +243,6 @@ module AreSearch
             SearchResult.new(
                 [],
                 [],
-                {},
-                {},
                 page:              page,
                 per_page:          per_page,
                 es_total_count:    0,
@@ -294,13 +292,9 @@ module AreSearch
                 end
             end
 
-            aggs_results = build_aggs_results(response)
-
             SearchResult.new(
                 records,
                 records_with_hit,
-                aggs_results[:aggs],
-                aggs_results[:str_key_aggs],
                 page:              page,
                 per_page:          per_page,
                 es_total_count:    es_total_count,
@@ -308,59 +302,6 @@ module AreSearch
                 max_result_window: max_result_window,
                 raw_response:      response,
             )
-        end
-
-        #########################################################################
-        # 簡易アクセスaggs生成
-        #########################################################################
-
-        # Array形式のbucketを、内部キー用と表示用の簡易結果へ変換する。
-        # keyがないbucketはdoc_countだけを結果へ追加する。
-        def build_aggs_results(response)
-            aggregations = response["aggregations"]
-
-            if aggregations.nil?
-                return { aggs: {}, str_key_aggs: {} }
-            end
-
-            aggs = {}
-            str_key_aggs = {}
-
-            aggregations.each do |name, agg|
-                buckets = agg["buckets"]
-                next if buckets.nil?
-                next if buckets.instance_of?(Array) == false
-
-                agg_result = []
-                str_key_agg_result = []
-
-                buckets.each do |bucket|
-                    if bucket.key?("key")
-                        # keyがある通常のbucket
-                        key = bucket["key"]
-                        str_key = key
-
-                        if bucket.key?("key_as_string")
-                            str_key = bucket["key_as_string"]
-                        end
-
-                        doc_count = bucket["doc_count"]
-                        agg_result << [key, doc_count]
-                        str_key_agg_result << [str_key, doc_count]
-                    else
-                        # keyがないbucket
-                        doc_count = bucket["doc_count"]
-                        agg_result << doc_count
-                        str_key_agg_result << doc_count
-                    end
-                end
-
-                name_key = name.to_sym
-                aggs[name_key] = agg_result
-                str_key_aggs[name_key] = str_key_agg_result
-            end
-
-            { aggs: aggs, str_key_aggs: str_key_aggs }
         end
 
         #########################################################################

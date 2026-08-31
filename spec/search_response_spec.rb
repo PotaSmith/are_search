@@ -585,7 +585,6 @@ RSpec.describe "search runtime mappings" do
 
         invalid_values = [
             [],
-            {},
             {
                 "runtime_score" => {
                     type: "double",

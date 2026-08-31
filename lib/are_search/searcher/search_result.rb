@@ -143,8 +143,6 @@ module AreSearch
         def initialize(
             records,
             records_with_hit,
-            aggs,
-            str_key_aggs,
             page:,
             per_page:,
             es_total_count:,
@@ -159,8 +157,6 @@ module AreSearch
 
             @status = status
             @records_with_hit = records_with_hit
-            @aggs = aggs
-            @str_key_aggs = str_key_aggs
             @raw_response = raw_response
 
             # これ以降が計算
@@ -185,6 +181,15 @@ module AreSearch
                 total_count:            @total_count,
                 pagination_total_count: @pagination_total_count,
             )
+
+            # aggs
+            @aggs = {}
+            @str_key_aggs = {}
+            build_aggs_results
+
+            @suggest = {}
+            @suggest_words = {}
+            build_suggest_results
         end
 
         # 集計名を指定した場合は表示用キーの簡易結果を返し、省略時は内部キーの全体を返す。
@@ -194,8 +199,93 @@ module AreSearch
             @str_key_aggs.fetch(name.to_sym, [])
         end
 
+        # suggest名を指定し、入力tokenごとの候補文字列を返す。
+        def suggest(name = nil)
+            return @suggest if name.nil?
+
+            @suggest_words.fetch(name.to_sym, [])
+        end
+
         def over_max_result_window?
             @es_total_count > @max_result_window && (@records.offset + @hits_count) >= @max_result_window
+        end
+
+        private
+
+        #########################################################################
+        # 簡易アクセスsuggest生成
+        #########################################################################
+
+        # optionのtextの中身だけを抽出する
+        def build_suggest_results
+            return if @raw_response.nil?
+            suggest = @raw_response["suggest"]
+
+            return if suggest.nil?
+
+            suggest.each do |suggest_name, suggest_results|
+                sub_results = {}
+                sub_result_words = {}
+                suggest_results.each do |suggest_result|
+                    sub_results[suggest_result["text"]] = suggest_result["options"]
+
+                    option_text = []
+                    suggest_result["options"].each do |option|
+                        option_text << option["text"]
+                    end
+                    sub_result_words[suggest_result["text"]] = option_text
+                end
+
+                @suggest[suggest_name.to_sym] = sub_results
+                @suggest_words[suggest_name.to_sym] = sub_result_words
+            end
+        end
+
+        #########################################################################
+        # 簡易アクセスaggs生成
+        #########################################################################
+
+        # Array形式のbucketを、内部キー用と表示用の簡易結果へ変換する。
+        # keyがないbucketはdoc_countだけを結果へ追加する。
+        def build_aggs_results
+            return if @raw_response.nil?
+            aggregations = @raw_response["aggregations"]
+
+            return if aggregations.nil?
+
+            aggregations.each do |name, agg|
+                buckets = agg["buckets"]
+                next if buckets.nil?
+                next if buckets.instance_of?(Array) == false
+
+                agg_result = []
+                str_key_agg_result = []
+
+                buckets.each do |bucket|
+                    if bucket.key?("key")
+                        # keyがある通常のbucket
+                        key = bucket["key"]
+                        str_key = key
+
+                        if bucket.key?("key_as_string")
+                            str_key = bucket["key_as_string"]
+                        end
+
+                        doc_count = bucket["doc_count"]
+                        agg_result << [key, doc_count]
+                        str_key_agg_result << [str_key, doc_count]
+                    else
+                        # keyがないbucket
+                        doc_count = bucket["doc_count"]
+                        agg_result << doc_count
+                        str_key_agg_result << doc_count
+                    end
+                end
+
+                name_key = name.to_sym
+                @aggs[name_key] = agg_result
+                @str_key_aggs[name_key] = str_key_agg_result
+            end
         end
     end
 end

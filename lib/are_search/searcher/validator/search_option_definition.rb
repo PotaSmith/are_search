@@ -223,6 +223,34 @@ module AreSearch
             },
         }.freeze
 
+        # suggestの各suggester bodyを検査する。
+        # fieldの存在だけを検査し、suggester固有のその他の指定はElasticsearchへそのまま渡す。
+        SUGGESTER_BODY_DEFINITIONS = {
+            hash: {
+                must_keys: [:field],
+                key_values: [
+                    {
+                        key: {
+                            key_name: :field,
+                        },
+                        value: {
+                            scalar: {
+                                type: "any_valid_field",
+                            },
+                        },
+                    },
+                    {
+                        key: {
+                            type: "symbol_key",
+                        },
+                        value: {
+                            type: "any",
+                        },
+                    },
+                ],
+            },
+        }.freeze
+
         OPTION_DEFINITIONS = {
             # raw_body: {
             #     query: {
@@ -255,6 +283,7 @@ module AreSearch
             # }
             runtime_mappings: {
                 hash: {
+                    allow_empty: true,
                     key_values: [
                         {
                             key: {
@@ -306,6 +335,7 @@ module AreSearch
             # ]
             queries: {
                 array: {
+                    allow_empty: true,
                     children: {
                         hash: {
                             must_keys: [
@@ -470,6 +500,7 @@ module AreSearch
             # }
             model_relations: {
                 hash: {
+                    allow_empty: true,
                     key_values: [
                         {
                             key: {
@@ -514,6 +545,7 @@ module AreSearch
                     type: "sort_field",
                 },
                 hash: {
+                    allow_empty: true,
                     key_values: [
                         {
                             key: {
@@ -551,6 +583,7 @@ module AreSearch
             # }
             aggs: {
                 array: {
+                    allow_empty: true,
                     children: {
                         scalar: {
                             type: "any_non_text_without_text_field",
@@ -558,6 +591,7 @@ module AreSearch
                     },
                 },
                 hash: {
+                    allow_empty: true,
                     key_values: [
                         {
                             key: {
@@ -572,6 +606,70 @@ module AreSearch
                                                 type: "symbol_key",
                                             },
                                             value: AGGREGATION_BODY_DEFINITIONS,
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    ],
+                },
+            },
+
+            # suggest: {
+            #     title_spell: {
+            #         text: "cofee",
+            #         term: {
+            #             field: :title,
+            #             size: 5,
+            #         },
+            #     },
+            # }
+            suggest: {
+                hash: {
+                    allow_empty: true,
+                    key_values: [
+                        {
+                            key: {
+                                type: "symbol_key",
+                            },
+                            value: {
+                                hash: {
+                                    key_values: [
+                                        {
+                                            key: {
+                                                key_name: :text,
+                                            },
+                                            value: {
+                                                scalar: {
+                                                    type: "string",
+                                                },
+                                            },
+                                        },
+                                        {
+                                            key: {
+                                                key_name: :term,
+                                            },
+                                            value: SUGGESTER_BODY_DEFINITIONS,
+                                        },
+                                        {
+                                            key: {
+                                                key_name: :phrase,
+                                            },
+                                            value: SUGGESTER_BODY_DEFINITIONS,
+                                        },
+                                        {
+                                            key: {
+                                                key_name: :completion,
+                                            },
+                                            value: SUGGESTER_BODY_DEFINITIONS,
+                                        },
+                                        {
+                                            key: {
+                                                type: "symbol_key",
+                                            },
+                                            value: {
+                                                type: "any",
+                                            },
                                         },
                                     ],
                                 },
@@ -600,6 +698,7 @@ module AreSearch
             # }
             highlight: {
                 hash: {
+                    allow_empty: true,
                     must_keys: [:fields],
                     key_values: [
                         {
@@ -657,6 +756,7 @@ module AreSearch
             # }
             response: {
                 hash: {
+                    allow_empty: true,
                     key_values: [
                         {
                             key: {

@@ -207,32 +207,73 @@ RSpec.describe AreSearch::ScriptDenySearchBodyPolicy do
 end
 
 RSpec.describe AreSearch::SearchParamPolicy do
-    describe ".check_value" do
-        it "基底policyは継承先でcheck_valueを実装するよう要求する" do
+    describe ".check_text" do
+        it "基底policyは継承先でcheck_textを実装するよう要求する" do
             expect do
-                described_class.check_value("query_string", "value")
+                described_class.check_text("query_string", "value")
             end.to raise_error(
                 NotImplementedError,
-                "AreSearch::SearchParamPolicy.check_value を実装してください",
+                "AreSearch::SearchParamPolicy.check_text を実装してください",
+            )
+        end
+    end
+
+    describe ".check_field_value" do
+        it "基底policyは継承先でcheck_field_valueを実装するよう要求する" do
+            expect do
+                described_class.check_field_value(:status, "where.term", "value")
+            end.to raise_error(
+                NotImplementedError,
+                "AreSearch::SearchParamPolicy.check_field_value を実装してください",
+            )
+        end
+    end
+
+    describe ".validate!" do
+        it "where系のfield名をSymbolのままcheck_field_valueへ渡す" do
+            policy_class = Class.new(described_class)
+            allow(policy_class).to receive(:check_field_value).and_return(nil)
+
+            policy_class.validate!(
+                where: {
+                    status: {
+                        term: "published",
+                    },
+                },
+            )
+
+            expect(policy_class).to have_received(:check_field_value).with(
+                :status,
+                "where.term",
+                "published",
             )
         end
     end
 end
 
 RSpec.describe AreSearch::SearchParamLengthPolicy do
-    describe ".check_value" do
+    describe ".check_text" do
         it "query_stringは2048文字までnilを返して2049文字でエラーメッセージを返す" do
-            expect(described_class.check_value("query_string", "a" * 2048)).to eq(nil)
-            expect(described_class.check_value("query_string", "a" * 2049)).to eq(
+            expect(described_class.check_text("query_string", "a" * 2048)).to eq(nil)
+            expect(described_class.check_text("query_string", "a" * 2049)).to eq(
                 "query_string は 2048 文字以内で指定してください",
             )
         end
 
+        it "suggest.textは128文字までnilを返して129文字でエラーメッセージを返す" do
+            expect(described_class.check_text("suggest.text", "a" * 128)).to eq(nil)
+            expect(described_class.check_text("suggest.text", "a" * 129)).to eq(
+                "suggest.text は 128 文字以内で指定してください",
+            )
+        end
+    end
+
+    describe ".check_field_value" do
         it "where系のterm値、terms全体、range全体の文字数境界を検査する" do
             [:where, :where_not, :where_or].each do |key|
                 term_name = "#{key}.term"
-                expect(described_class.check_value(term_name, "a" * 128)).to eq(nil)
-                expect(described_class.check_value(term_name, "a" * 129)).to eq(
+                expect(described_class.check_field_value(:status, term_name, "a" * 128)).to eq(nil)
+                expect(described_class.check_field_value(:status, term_name, "a" * 129)).to eq(
                     "#{term_name} は 128 文字以内で指定してください",
                 )
 
@@ -241,8 +282,8 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
                 invalid_terms = ["a" * (1025 - terms_base_length), "b"]
                 terms_name = "#{key}.terms"
 
-                expect(described_class.check_value(terms_name, valid_terms)).to eq(nil)
-                expect(described_class.check_value(terms_name, invalid_terms)).to eq(
+                expect(described_class.check_field_value(:status, terms_name, valid_terms)).to eq(nil)
+                expect(described_class.check_field_value(:status, terms_name, invalid_terms)).to eq(
                     "#{terms_name} は 1024 文字以内で指定してください",
                 )
 
@@ -251,8 +292,8 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
                 invalid_range = { gte: "a" * (257 - range_base_length), lte: "b" }
                 range_name = "#{key}.range"
 
-                expect(described_class.check_value(range_name, valid_range)).to eq(nil)
-                expect(described_class.check_value(range_name, invalid_range)).to eq(
+                expect(described_class.check_field_value(:status, range_name, valid_range)).to eq(nil)
+                expect(described_class.check_field_value(:status, range_name, invalid_range)).to eq(
                     "#{range_name} は 256 文字以内で指定してください",
                 )
             end
@@ -278,6 +319,28 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
                             query_string: "a" * 2049,
                         },
                     ],
+                )
+            end.to raise_error(AreSearch::InvalidSearchOption)
+        end
+
+        it "suggestの名前配下のtextは128文字まで許可して129文字を拒否する" do
+            expect do
+                described_class.validate!(
+                    suggest: {
+                        title_spell: {
+                            text: "a" * 128,
+                        },
+                    },
+                )
+            end.not_to raise_error
+
+            expect do
+                described_class.validate!(
+                    suggest: {
+                        title_spell: {
+                            text: "a" * 129,
+                        },
+                    },
                 )
             end.to raise_error(AreSearch::InvalidSearchOption)
         end
@@ -435,7 +498,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
     end
 
     describe ".validate! のオプション定義Map処理" do
-        it "Symbolのオプション名を扱い、nilをそのまま残す" do
+        it "Symbolのオプション名を扱い、nilは未指定として除外する" do
             definitions = {
                 query_string: {
                     type: "any",
@@ -450,9 +513,7 @@ RSpec.describe AreSearch::SearchOptionValidator do
                 nil,
             )
 
-            expect(result).to eq(
-                query_string: nil,
-            )
+            expect(result).to eq({})
         end
 
         it "typeというオプション名も定義Mapとして扱う" do
@@ -659,15 +720,30 @@ RSpec.describe AreSearch::SearchOptionValidator do
             expect(result["query"][0]).not_to equal(value["query"][0])
         end
 
-        it "anyはnilもそのまま許可する" do
+        it "anyはネストしたnilもそのまま許可する" do
             result = validate_node(
-                nil,
                 {
-                    type: "any",
+                    value: nil,
+                },
+                {
+                    hash: {
+                        key_values: [
+                            {
+                                key: {
+                                    key_name: :value,
+                                },
+                                value: {
+                                    type: "any",
+                                },
+                            },
+                        ],
+                    },
                 },
             )
 
-            expect(result).to eq(nil)
+            expect(result).to eq(
+                value: nil,
+            )
         end
 
         it "not_nilは型を限定せずnilだけを拒否する" do
@@ -686,7 +762,23 @@ RSpec.describe AreSearch::SearchOptionValidator do
             expect(validate_node(false, definition)).to eq(false)
 
             expect do
-                validate_node(nil, definition)
+                validate_node(
+                    {
+                        value: nil,
+                    },
+                    {
+                        hash: {
+                            key_values: [
+                                {
+                                    key: {
+                                        key_name: :value,
+                                    },
+                                    value: definition,
+                                },
+                            ],
+                        },
+                    },
+                )
             end.to raise_error(ArgumentError)
         end
 

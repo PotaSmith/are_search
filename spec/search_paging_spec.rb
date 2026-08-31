@@ -573,6 +573,82 @@ RSpec.describe "search paging" do
         expect(result.raw_response).to equal(response)
     end
 
+
+    it "suggestを入力tokenごとの詳細候補と候補文字列へ変換する" do
+        client = double("client")
+        response = {
+            "hits" => {
+                "hits"  => [],
+                "total" => { "value" => 0 },
+            },
+            "suggest" => {
+                "title_spell" => [
+                    {
+                        "text" => "cofee",
+                        "offset" => 0,
+                        "length" => 5,
+                        "options" => [
+                            { "text" => "coffee", "score" => 0.8, "freq" => 100 },
+                            { "text" => "toffee", "score" => 0.7, "freq" => 20 },
+                        ],
+                    },
+                    {
+                        "text" => "markt",
+                        "offset" => 6,
+                        "length" => 5,
+                        "options" => [
+                            { "text" => "market", "score" => 0.9, "freq" => 200 },
+                        ],
+                    },
+                    {
+                        "text" => "known",
+                        "offset" => 12,
+                        "length" => 5,
+                        "options" => [],
+                    },
+                ],
+            },
+        }
+
+        allow(AreSearch)
+            .to receive(:client)
+            .and_return(client)
+        expect(client)
+            .to receive(:search)
+            .and_return(response)
+
+        result = AreSearch::Searcher.search(
+            [article_index_target],
+            raw_body: {
+                query: {
+                    match_all: {},
+                },
+            },
+            page:     1,
+            per_page: 20,
+        )
+
+        expect(result.suggest).to eq(
+            title_spell: {
+                "cofee" => [
+                    { "text" => "coffee", "score" => 0.8, "freq" => 100 },
+                    { "text" => "toffee", "score" => 0.7, "freq" => 20 },
+                ],
+                "markt" => [
+                    { "text" => "market", "score" => 0.9, "freq" => 200 },
+                ],
+                "known" => [],
+            },
+        )
+        expect(result.suggest(:title_spell)).to eq(
+            "cofee" => ["coffee", "toffee"],
+            "markt" => ["market"],
+            "known" => [],
+        )
+        expect(result.suggest(:missing)).to eq([])
+        expect(result.raw_response).to equal(response)
+    end
+
     it "raw_body検索は track_total_hits を自動指定せず明示値を保持する" do
         client = double("client")
         received_bodies = []

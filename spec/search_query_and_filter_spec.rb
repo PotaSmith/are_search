@@ -36,6 +36,51 @@ RSpec.describe "query builder fields" do
         )
     end
 
+    it "queriesの空Arrayで標準検索を選択し全文検索句を作らない" do
+        body = AreSearch::Searcher.search(
+            [article_index_target],
+            queries: [],
+            dump_body: true,
+        )
+
+        expect(body.dig(:query, :bool)).not_to have_key(:must)
+    end
+
+    it "空の標準検索オプションをElasticsearch bodyへ追加しない" do
+        body = AreSearch::Searcher.search(
+            [article_index_target],
+            queries: [],
+            runtime_mappings: {},
+            where: {},
+            where_not: [],
+            where_or: {},
+            model_relations: {},
+            sort: {},
+            aggs: [],
+            suggest: {},
+            highlight: {},
+            response: {},
+            dump_body: true,
+        )
+
+        [:runtime_mappings, :sort, :aggs, :suggest, :highlight, :fields, :stored_fields, :docvalue_fields].each do |key|
+            expect(body).not_to have_key(key)
+        end
+    end
+
+    it "空のraw_bodyはRaw検索としてページングだけを追加する" do
+        body = AreSearch::Searcher.search(
+            [article_index_target],
+            raw_body: {},
+            dump_body: true,
+        )
+
+        expect(body).to eq(
+            from: 0,
+            size: 25,
+        )
+    end
+
     it "1件の標準検索のArray形式をcombined_fieldsへ変換する" do
         source_fields = [:title, :body]
 
@@ -270,6 +315,62 @@ RSpec.describe "query builder fields" do
             body:  1,
         )
     end
+
+    it "suggestをElasticsearch形式のままbodyへ渡す" do
+        source_suggest = {
+            title_spell: {
+                text: "cofee markt",
+                term: {
+                    field:        :title,
+                    size:         5,
+                    suggest_mode: :always,
+                },
+            },
+        }
+
+        body = AreSearch::Searcher.search(
+            [article_index_target],
+            queries: [
+                {
+                    query_string: "",
+                    fields:       [:title],
+                },
+            ],
+            suggest:   source_suggest,
+            dump_body: true,
+        )
+
+        expect(body[:suggest]).to eq(source_suggest)
+        expect(source_suggest.dig(:title_spell, :term, :field)).to eq(:title)
+    end
+
+    it "suggestのterm・phrase・completionは存在しないfieldを拒否する" do
+        allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
+
+        [:term, :phrase, :completion].each do |suggester_type|
+            expect do
+                AreSearch::Searcher.search(
+                    [article_index_target],
+                    queries: [
+                        {
+                            query_string: "",
+                            fields:       [:title],
+                        },
+                    ],
+                    suggest: {
+                        test_suggest: {
+                            text: "cofee",
+                            suggester_type => {
+                                field: :unknown,
+                            },
+                        },
+                    },
+                    dump_body: true,
+                )
+            end.to raise_error(ArgumentError, /unknown/)
+        end
+    end
+
 end
 
 RSpec.describe "search highlight" do

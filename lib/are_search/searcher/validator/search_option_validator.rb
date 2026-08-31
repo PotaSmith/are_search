@@ -20,6 +20,7 @@ module AreSearch
                     end
                     # 上を通過した時点で sym 確定
                     sym_option_name = raw_option_name
+                    next if raw_value.nil?
 
                     normalized_options[sym_option_name] = parse_node(
                         raw_value,
@@ -104,7 +105,9 @@ module AreSearch
 
             # Arrayの各要素を共通の子node定義と組み合わせて再帰検査する。
             def parse_array(array_node, definition, path, context)
-                if array_node.empty? && definition[:allow_empty] != true
+                if array_node.empty?
+                    return [] if definition[:allow_empty] == true
+
                     raise ArgumentError, "#{path} は1件以上指定してください"
                 end
 
@@ -124,7 +127,9 @@ module AreSearch
 
             # Hash固有条件を確認し、keyでentryを選択してvalueを再帰検査する。
             def parse_hash(hash_node, definition, path, context)
-                if hash_node.empty? && definition[:allow_empty] != true
+                if hash_node.empty?
+                    return {} if definition[:allow_empty] == true
+
                     raise ArgumentError, "#{path} は1件以上指定してください"
                 end
 

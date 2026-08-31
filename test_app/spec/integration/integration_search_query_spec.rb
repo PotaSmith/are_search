@@ -592,6 +592,61 @@ RSpec.describe "AreSearch search features integration", type: :model do
         ])
     end
 
+
+    it "term suggestを実Elasticsearchで実行して入力tokenごとの候補を返す" do
+        3.times do |index|
+            DocumentSecond.create!(
+                title:   "coffee market sample #{index}",
+                body:    "suggest integration body",
+                status:  "published",
+                user_id: 1300 + index,
+            )
+        end
+
+        refresh_index
+
+        result = AreSearch::Searcher.search(
+            [index_target],
+            queries: [
+                {
+                    query_string: "",
+                    fields:       [:title],
+                },
+            ],
+            suggest: {
+                title_spell: {
+                    text: "cofee markt",
+                    term: {
+                        field:        :title,
+                        size:         5,
+                        suggest_mode: :always,
+                    },
+                },
+            },
+        )
+
+        expect(result.status).to eq(AreSearch::SearchResult::STATUS_OK)
+
+        raw_suggest = result.raw_response.dig("suggest", "title_spell")
+        expect(raw_suggest).to be_a(Array)
+        expect(raw_suggest.map { |item| item["text"] }).to eq(["cofee", "markt"])
+
+        raw_suggest.each do |item|
+            expect(item).to include("text", "offset", "length", "options")
+            expect(item["options"]).to be_a(Array)
+        end
+
+        coffee_option = raw_suggest[0]["options"].find { |option| option["text"] == "coffee" }
+        market_option = raw_suggest[1]["options"].find { |option| option["text"] == "market" }
+
+        expect(coffee_option).to include("score", "freq")
+        expect(market_option).to include("score", "freq")
+        expect(result.suggest(:title_spell)["cofee"]).to include("coffee")
+        expect(result.suggest(:title_spell)["markt"]).to include("market")
+        expect(result.suggest[:title_spell]["cofee"]).to eq(raw_suggest[0]["options"])
+        expect(result.suggest[:title_spell]["markt"]).to eq(raw_suggest[1]["options"])
+    end
+
     it "ドキュメント記載のhighlight形式でstoreありtextの一致部分を返す" do
         document = create_document(
             title:   "highlight document",

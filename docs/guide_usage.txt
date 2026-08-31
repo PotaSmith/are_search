@@ -36,6 +36,37 @@ AreSearch 使い方ガイド
 単一targetのショートハンドでは relation を指定できる。
 
 
+## 1-1. 検索オプションの未指定と空値
+----------------------------------------------------------------
+
+トップレベルの検索オプションに nil を指定した場合は、そのオプション自体が未指定として扱われる。
+
+Hash / Array の検索オプションは、空でも指定されたオプションとして扱われる。
+ただし、検索方式を選択する以下のオプションは個別の扱いになる。
+
+    mlt: {}
+        不正な指定として扱う。
+
+    raw_body: {}
+        Raw検索として扱う。
+
+    queries: []
+        標準検索として扱う。全文検索条件は追加しない。
+
+それ以外の Hash / Array の検索オプションは、空の場合も指定として扱うが、
+対応する条件は Elasticsearch へ送信する検索bodyへ追加しない。
+
+そのため、条件によって値を設定する場合も nil をそのまま渡せる。
+
+    result = AreSearch::Searcher.search(
+        [article_index],
+        queries: queries,
+        where: where.presence,
+        sort: sort.presence,
+        aggs: aggs.presence,
+    )
+
+
 # 2. 標準検索
 ================================================================
 
@@ -394,11 +425,12 @@ raw_body検索では response を使用せず、_source、fields、stored_fields
 
 外部入力として指定できる値。
 
-    queries の query_string
+    queries の query_string / suggest の名前配下の text
     where / where_not / where_or の条件値
     page
 
-標準の search_param_policy では、queries.query_string は2048文字まで、
+標準の search_param_policy では、queries.query_string は 2048 文字まで、
+suggest の名前配下の text は 128 文字まで、
 where系の term / terms / range は文字列化した長さが、それぞれの指定文字数までの場合に許可する。
 制限は AreSearch.search_param_policy で差し替えできる。
 
@@ -411,7 +443,7 @@ where系の term / terms / range は文字列化した長さが、それぞれ�
         [article_index],
         queries: [
             {
-                query_string: params[:q],
+                query_string: params[:q].to_s,
                 fields:       [:title, :body],
             },
         ],
@@ -423,11 +455,11 @@ where系の term / terms / range は文字列化した長さが、それぞれ�
         [article_index],
         queries: [
             {
-                query_string: params[:title_q],
+                query_string: params[:title_q].to_s,
                 fields:       [:title],
             },
             {
-                query_string: params[:body_q],
+                query_string: params[:body_q].to_s,
                 fields:       [:body],
             },
         ],
@@ -439,13 +471,13 @@ where系の term / terms / range は文字列化した長さが、それぞれ�
         [article_index],
         queries: [
             {
-                query_string: params[:q],
+                query_string: params[:q].to_s,
                 fields:       [:title, :body],
             },
         ],
         where: {
             status: {
-                term: params[:filter_value],
+                term: params[:filter_value].to_s,
             },
         },
     )
@@ -456,7 +488,7 @@ where系の term / terms / range は文字列化した長さが、それぞれ�
         [article_index],
         queries: [
             {
-                query_string: params[:q],
+                query_string: params[:q].to_s,
                 fields:       [:title, :body],
             },
         ],
@@ -694,6 +726,7 @@ fields は必須で、text または keyword 型フィールドを指定する�
 
     highlight: {
         fields: [:title, :body, :status],
+        max_analyzed_offset: 500_000,
     }
 
 フィールド別オプションを指定する場合。
@@ -710,6 +743,7 @@ fields は必須で、text または keyword 型フィールドを指定する�
         },
         type:                "unified",
         require_field_match: false,
+        max_analyzed_offset: 500_000,
     }
 
 fields に指定するフィールドは、検索元となるデータの設定で store: true を指定するか _source に含める。
@@ -722,7 +756,35 @@ fields に指定するフィールドは、検索元となるデータの設定�
 fields 以外は Elasticsearch の highlighting オプションとして指定する。
 
 
-# 15. dump_body
+# 15. suggest
+================================================================
+
+suggest は検索語に対する候補を返す。
+Elasticsearch 形式の Hash を使用する。
+
+    suggest: {
+        title_spell: {
+            text: "cofee",
+            term: {
+                field: :title,
+                size: 5,
+            },
+        },
+    }
+
+title_spell の部分は suggest の結果を識別する任意の名前。
+
+term、phrase、completion の field は必須で、検索対象に存在するフィールドを指定する。
+field 以外は Elasticsearch の suggest オプションとして指定する。
+
+名前を指定して取得する。
+
+    result.suggest(:title_spell).each do |word, suggest_words|
+        puts "もしかして #{suggest_words.join(' ')}"
+    end
+
+
+# 16. dump_body
 ================================================================
 
 検索を実行せず、AreSearch が組み立てた body を確認する。
@@ -748,11 +810,11 @@ fields 以外は Elasticsearch の highlighting オプションとして指定�
 raw_body検索では page、per_page、build_model_bool を反映した body を返す。
 
 
-# 16. SearchResult
+# 17. SearchResult
 ================================================================
 
 
-## 16-1. status
+## 17-1. status
 ----------------------------------------------------------------
 
 検索の終了状態を確認する。
@@ -786,7 +848,7 @@ raw_body検索では page、per_page、build_model_bool を反映した body を
         原因が特定できない検索の失敗
 
 
-## 16-2. records
+## 17-2. records
 ----------------------------------------------------------------
 
 ActiveRecord のレコードを検索順で返す。
@@ -794,7 +856,7 @@ ActiveRecord のレコードを検索順で返す。
     result.records
 
 
-## 16-3. records_with_hit
+## 17-3. records_with_hit
 ----------------------------------------------------------------
 
 ActiveRecord のレコードと対応する Elasticsearch hit を検索順で取得する。
@@ -838,7 +900,7 @@ hit の主なキー。
 Elasticsearch のレスポンスは raw_response に残る。
 
 
-## 16-4. raw_response
+## 17-4. raw_response
 ----------------------------------------------------------------
 
 Elasticsearch の生レスポンスを返す。
