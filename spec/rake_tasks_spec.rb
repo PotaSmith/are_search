@@ -210,13 +210,37 @@ RSpec.describe "are_search rake tasks" do
         end
     end
 
-    describe "are_search:reindex_all_for_es_version_up" do
+    describe "are_search:reindex_all" do
         let(:indices) { double("indices") }
         let(:client) { double("client", indices: indices) }
 
         before do
             allow(AreSearch).to receive(:client).and_return(client)
             allow(AreSearch).to receive(:index_prefix).and_return("test")
+        end
+
+        it "stage_positionを指定しない場合は拒否する" do
+            expect(article_index_target).not_to receive(:are_search_reindex)
+            expect(document_index_target).not_to receive(:are_search_reindex)
+
+            expect do
+                Rake::Task["are_search:reindex_all"].invoke
+            end.to raise_error(
+                ArgumentError,
+                "stage_position は first または last を指定してください",
+            )
+        end
+
+        it "stage_positionがfirstまたはlast以外の場合は拒否する" do
+            expect(article_index_target).not_to receive(:are_search_reindex)
+            expect(document_index_target).not_to receive(:are_search_reindex)
+
+            expect do
+                Rake::Task["are_search:reindex_all"].invoke("middle")
+            end.to raise_error(
+                ArgumentError,
+                "stage_position は first または last を指定してください",
+            )
         end
 
         it "確認で y 以外が入力された場合は reindex しない" do
@@ -246,7 +270,7 @@ RSpec.describe "are_search rake tasks" do
             expect(document_index_target).not_to receive(:are_search_reindex)
 
             expect do
-                Rake::Task["are_search:reindex_all_for_es_version_up"].invoke
+                Rake::Task["are_search:reindex_all"].invoke("last")
             end.to output(
                 "以下の index を reindex します。\n" \
                 "\n" \
@@ -282,7 +306,7 @@ RSpec.describe "are_search rake tasks" do
 
             expect(article_index_target)
                 .to receive(:are_search_reindex)
-                .with(stage_position: :last)
+                .with(stage_position: :first)
                 .and_return(
                     result:      :not_success,
                     message:     "bulk 投入に失敗した ID があるため alias を切り替えませんでした",
@@ -295,7 +319,7 @@ RSpec.describe "are_search rake tasks" do
                 .not_to receive(:are_search_reindex)
 
             expect do
-                Rake::Task["are_search:reindex_all_for_es_version_up"].invoke
+                Rake::Task["are_search:reindex_all"].invoke("first")
             end.to raise_error(
                 AreSearch::Error,
                 /reindex に失敗したデータがあります: test__articles__default.*failed_ids.*123/,
@@ -341,7 +365,7 @@ RSpec.describe "are_search rake tasks" do
                 .not_to receive(:are_search_reindex)
 
             expect do
-                Rake::Task["are_search:reindex_all_for_es_version_up"].invoke
+                Rake::Task["are_search:reindex_all"].invoke("last")
             end.to raise_error(
                 AreSearch::Error,
                 "[AreSearch] reindex を実行できませんでした: " \

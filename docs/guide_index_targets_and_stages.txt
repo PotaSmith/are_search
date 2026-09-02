@@ -347,11 +347,8 @@ AreSearch.index_operation_enabled = true が必要。
 # 10. reindex で使用するstageを選ぶ
 ================================================================
 
-reindex は1つの IndexTarget に対して1つのstageを使用する。
+reindex、are_search:reindex_all は1つの IndexTarget に対して1つのstageを使用する。
 stage_position: :first は stages の先頭、:last は末尾stageを使用する。
-
-are_search:reindex_all_for_es_version_up は各IndexTargetの末尾stageを使用するため、
-最終状態を作るstageを stages の末尾に置く。
 
 reindex の実行方法は guide_operations.txt を参照する。
 

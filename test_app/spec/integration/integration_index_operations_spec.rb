@@ -1007,7 +1007,7 @@ RSpec.describe "AreSearch rake index operations integration", type: :model do
         names.first
     end
 
-    it "reindex_all_for_es_version_upで全root modelを実Elasticsearchへreindexする" do
+    it "reindex_allで全root modelを実Elasticsearchへreindexする" do
         first = DocumentFirst.create!(
             title:   "rakeversionuptoken first",
             body:    "first model",
@@ -1031,7 +1031,7 @@ RSpec.describe "AreSearch rake index operations integration", type: :model do
 
         load_index_rake_tasks
         $stdin = StringIO.new("y\n")
-        Rake::Task["are_search:reindex_all_for_es_version_up"].invoke
+        Rake::Task["are_search:reindex_all"].invoke("last")
 
         after_names = [
             current_physical_index_name(first_target),

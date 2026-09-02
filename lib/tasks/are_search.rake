@@ -7,7 +7,7 @@ require "fileutils"
 # bundle exec rake are_search:clean_up_all
 # bundle exec rake are_search:check_index_status
 # bundle exec rake are_search:check_sync_request_status
-# bundle exec rake are_search:reindex_all_for_es_version_up
+# bundle exec rake are_search:reindex_all
 # bundle exec rake are_search:check_all_models
 
 namespace :are_search do
@@ -298,9 +298,15 @@ namespace :are_search do
     end
 
 
-    desc "Elasticsearch のバージョンアップ前に全 Searchable index(STI重複なし) を最終stageでreindexする"
-    task reindex_all_for_es_version_up: :environment do
-        reindex_utils = AreSearch::RakeUtils::ReindexAllForEsVersionUp
+    desc "全 Searchable index(STI重複なし) を指定stageでreindexする"
+    task :reindex_all, [:stage_position] => :environment do |_task, args|
+        stage_position = args[:stage_position]&.to_sym
+
+        unless [:first, :last].include?(stage_position)
+            raise ArgumentError, "stage_position は first または last を指定してください"
+        end
+
+        reindex_utils = AreSearch::RakeUtils::ReindexAll
 
         reindex_utils.validate_no_sync_requests!
 
@@ -325,10 +331,10 @@ namespace :are_search do
             next
         end
 
-        # index target を順番に最終stageでreindexする。
+        # index target を順番に指定stageでreindexする。
         index_targets.each do |index_target|
             result = index_target.are_search_reindex(
-                stage_position: :last,
+                stage_position: stage_position,
             )
 
             if result[:failed_ids].any?

@@ -27,13 +27,13 @@ sync lock は判定対象にしない。
 # 2. reindex
 ================================================================
 
-先頭stageでreindexする。
+先頭 stage で reindex する。
 
     result = Article
         .are_search_index_target(:default)
         .are_search_reindex(stage_position: :first)
 
-末尾stageでreindexする。
+末尾 stage で reindex する。
 
     result = Article
         .are_search_index_target(:default)
@@ -51,10 +51,16 @@ mappings、analyzer、settings の変更を反映するには reindex が必要�
 AreSearch.batch_size の詳細は guide_reference.txt を参照する。
 
 
-## 2-1. Elasticsearch バージョンアップ前の全 reindex
+## 2-1. 全 index target の reindex
 ----------------------------------------------------------------
 
-    bundle exec rake are_search:reindex_all_for_es_version_up
+先頭 stage で reindex する。
+
+    bundle exec rake are_search:reindex_all[first]
+
+末尾 stage で reindex する。
+
+    bundle exec rake are_search:reindex_all[last]
 
 以下に問題がある場合は開始しない。
 
@@ -62,7 +68,6 @@ AreSearch.batch_size の詳細は guide_reference.txt を参照する。
     AreSearch.index_prefix 配下に alias 未接続の index がある
 
 対象 index を確認し、y または Y を入力した場合だけ順番に reindex する。
-各IndexTargetの末尾stageを使用する。
 
 alias 未接続の index がある場合、clean upで削除してから実行する。
 

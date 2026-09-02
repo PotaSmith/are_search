@@ -292,9 +292,40 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
                 "suggest.text は 128 文字以内で指定してください",
             )
         end
+
+        it "通常の文字・記号・空白を許可し制御文字や書式制御文字を拒否する" do
+            valid_text = "abc 日本語 123 !?()[]{}+-*/=_~@#\u00a5\u20ac\u{1F642}"
+            invalid_texts = [
+                "abc\ndef",
+                "abc\tdef",
+                "abc\u200Bdef",
+                "abc\uFEFFdef",
+                "abc\u2028def",
+            ]
+
+            expect(described_class.check_text("query_string", valid_text)).to eq(nil)
+
+            invalid_texts.each do |invalid_text|
+                expect(described_class.check_text("query_string", invalid_text)).to eq(
+                    "query_string は 不正な文字が含まれています。",
+                )
+            end
+        end
     end
 
     describe ".check_field_value" do
+        it "whereのArrayとHash内部にある不正文字を拒否する" do
+            expect(described_class.check_field_value(:status, "where.term", "published\u200B")).to eq(
+                "where.term は 不正な文字が含まれています。",
+            )
+            expect(described_class.check_field_value(:status, "where.terms", ["published", "draft\n"])).to eq(
+                "where.terms は 不正な文字が含まれています。",
+            )
+            expect(described_class.check_field_value(:status, "where.range", { gte: "a", lte: "z\t" })).to eq(
+                "where.range は 不正な文字が含まれています。",
+            )
+        end
+
         it "whereのterm値、terms全体、range全体の文字数境界を検査する" do
             expect(described_class.check_field_value(:status, "where.term", "a" * 128)).to eq(nil)
             expect(described_class.check_field_value(:status, "where.term", "a" * 129)).to eq(
@@ -321,7 +352,84 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
         end
     end
 
+    describe ".valid_value?" do
+        it "検索値として使用する型を許可する" do
+            valid_values = [
+                nil,
+                "abc 日本語 !?",
+                1,
+                1.5,
+                true,
+                false,
+                ["published", 1, 1.5, true, false, nil],
+                { gte: 1, lte: 10, status: "published" },
+            ]
+
+            valid_values.each do |value|
+                expect(described_class.valid_value?(value)).to eq(true)
+            end
+        end
+
+        it "検索値として使用しない型を拒否する" do
+            invalid_values = [
+                :published,
+                Object.new,
+                Class.new,
+                [:published],
+                { status: Object.new },
+            ]
+
+            invalid_values.each do |value|
+                expect(described_class.valid_value?(value)).to eq(false)
+            end
+        end
+
+        it "ArrayとHashを再帰して不正文字と不正型を拒否する" do
+            expect(described_class.valid_value?(["published", ["draft\n"]])).to eq(false)
+            expect(described_class.valid_value?({ range: { gte: "a", lte: "z\t" } })).to eq(false)
+            expect(described_class.valid_value?({ range: { gte: Object.new } })).to eq(false)
+        end
+
+        it "Hashのkeyは文字列化して不正文字を検査する" do
+            expect(described_class.valid_value?({ status: "published" })).to eq(true)
+            expect(described_class.valid_value?({ "status\n" => "published" })).to eq(false)
+            expect(described_class.valid_value?({ :"status\t" => "published" })).to eq(false)
+        end
+    end
+
     describe ".validate!" do
+        it "query_string、suggest.text、whereの不正文字を拒否する" do
+            invalid_options = [
+                {
+                    queries: [
+                        {
+                            query_string: "abc\u200Bdef",
+                        },
+                    ],
+                },
+                {
+                    suggest: {
+                        title_spell: {
+                            text: "abc\ndef",
+                        },
+                    },
+                },
+                {
+                    where: {
+                        filter: [
+                            { status: { terms: ["published", "draft\t"] } },
+                        ],
+                    },
+                },
+            ]
+
+            invalid_options.each do |options|
+                expect do
+                    described_class.validate!(**options)
+                end.to raise_error(AreSearch::InvalidSearchOption, /不正な文字/)
+            end
+        end
+
         it "query_stringは2048文字まで許可して2049文字を拒否する" do
             expect do
                 described_class.validate!(

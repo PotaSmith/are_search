@@ -2,7 +2,7 @@
 
 module AreSearch
     module RakeUtils
-        module ReindexAllForEsVersionUp
+        module ReindexAll
             extend self
 
             # 未処理の sync request が残っていないことを確認する。

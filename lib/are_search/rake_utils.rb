@@ -59,5 +59,5 @@ module AreSearch
 end
 
 require_relative "rake_utils/check_sync_request_status"
-require_relative "rake_utils/reindex_all_for_es_version_up"
+require_relative "rake_utils/reindex_all"
 require_relative "rake_utils/check_all_models"

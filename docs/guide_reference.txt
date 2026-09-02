@@ -226,7 +226,13 @@ valid? は検索body全体、invalid_key? は mapping のフィールド名を�
 外部入力として扱う検索パラメータの値を検査する policy。
 デフォルトは AreSearch::SearchParamLengthPolicy。
 
-標準policyの上限。
+デフォルトpolicyの文字種の制限
+
+    String に使用できる文字を Unicode の L / M / N / P / S / Zs に限定。
+    Array / Hash は内部を再帰的に検査する。
+    制御文字、改行、TAB、ゼロ幅文字等は拒否する。
+
+デフォルトpolicyの文字数の上限。
 
     check_text で検査する
 
@@ -275,6 +281,12 @@ valid? は検索body全体、invalid_key? は mapping のフィールド名を�
 
 check_text と check_field_value は、問題がある場合はエラーメッセージ、
 問題がない場合は nil を返す。
+
+通常の search_param_policy の検査対象外の値へ文字種検査だけを行う場合。
+
+    AreSearch::SearchParamLengthPolicy.valid_value?(params[:other_param])
+
+nil / String / Integer / Float / true / false / Array / Hash 以外は無条件に false になります。
 
 
 ## 1-15. logger

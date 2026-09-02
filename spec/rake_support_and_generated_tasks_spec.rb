@@ -10,7 +10,7 @@ require "action_mailer"
 require "rails/generators"
 require "generators/are_search/sample_generator"
 
-RSpec.describe AreSearch::RakeUtils::ReindexAllForEsVersionUp do
+RSpec.describe AreSearch::RakeUtils::ReindexAll do
     describe ".searchable_index_targets_for_reindex" do
         let(:application) { double("application", eager_load!: true) }
         let(:upper_target) do

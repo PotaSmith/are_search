@@ -556,24 +556,24 @@ RSpec.describe "AreSearch rake status operations integration", type: :model do
         expect(output).not_to include("error 20")
     end
 
-    it "reindex_all_for_es_version_upはsync requestが残っている場合に開始しない" do
+    it "reindex_allはsync requestが残っている場合に開始しない" do
         create_sync_request(1)
         $stdin = StringIO.new("y\n")
 
         expect do
-            Rake::Task["are_search:reindex_all_for_es_version_up"].invoke
+            Rake::Task["are_search:reindex_all"].invoke("last")
         end.to raise_error(
             AreSearch::Error,
             /are_search_sync_requests に 1 件残っているため reindex できません/,
         )
     end
 
-    it "reindex_all_for_es_version_upはaliasへ未接続の物理indexがあれば開始しない" do
+    it "reindex_allはaliasへ未接続の物理indexがあれば開始しない" do
         AreSearch.client.indices.create(index: orphan_physical_index_name)
         $stdin = StringIO.new("y\n")
 
         expect do
-            Rake::Task["are_search:reindex_all_for_es_version_up"].invoke
+            Rake::Task["are_search:reindex_all"].invoke("last")
         end.to raise_error(
             AreSearch::Error,
             /#{Regexp.escape(orphan_physical_index_name)}/,

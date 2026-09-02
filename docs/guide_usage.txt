@@ -432,6 +432,8 @@ suggest の名前配下の text は 128 文字まで、
 where系の term / terms / range は文字列化した長さが、それぞれの指定文字数までの場合に許可する。
 制限は AreSearch.search_param_policy で差し替えできる。
 
+また、通常の文字・数字・記号・空白以外の文字も拒否する。
+
 値が制約に合わない場合、search_failure_mode が :empty_result なら STATUS_PARAMS_INVALID の空結果を返し、
 :raise なら AreSearch::InvalidSearchOption を送出する。
 
