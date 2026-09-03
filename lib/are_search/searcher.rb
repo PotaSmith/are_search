@@ -72,15 +72,6 @@ module AreSearch
                 )
             end
 
-            index_targets_for_exists_check = collect_index_targets_for_exists_check(index_targets, valid_options)
-            if index_ready?(index_targets_for_exists_check) == false
-                return search_failure_result(
-                    status: SearchResult::STATUS_INDEX_NOT_FOUND,
-                    error_class: AreSearch::SearchIndexNotFound,
-                    error_message: "検索に必要な index が確認できません",
-                )
-            end
-
             query_options = valid_options.dup
             body_options = valid_options.dup
             query = AreSearch::QueryBuilderSelector.select(valid_options).build(index_targets, query_options)
@@ -143,7 +134,7 @@ module AreSearch
                 per_page,
                 max_result_window,
             )
-        rescue AreSearch::SearchIndexNotFound, AreSearch::InvalidSearchOption, AreSearch::InvalidSearchBody
+        rescue AreSearch::InvalidSearchOption, AreSearch::InvalidSearchBody
             raise
         rescue StandardError => error
             raise if AreSearch.search_failure_mode == :raise
@@ -175,19 +166,6 @@ module AreSearch
             }
 
             values.min
-        end
-
-        # 検索で参照する全aliasの存在確認対象を、検索対象とオプションから集める。
-        def collect_index_targets_for_exists_check(index_targets, options)
-            additional_index_targets = []
-
-            mlt_options = options[:mlt]
-            if mlt_options.nil? == false
-                additional_index_targets << mlt_options[:like][:index_target]
-            end
-
-            index_targets_for_exists_check = index_targets + additional_index_targets
-            index_targets_for_exists_check.uniq { |index_target| index_target.are_search_index_alias_name }
         end
 
         # index_targets から重複しないモデル一覧を作る

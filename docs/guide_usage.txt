@@ -852,13 +852,9 @@ raw_body検索では page、per_page、build_model_bool を反映した body を
         値は :params_invalid。
         検索パラメータまたは検索bodyが許可されず、空結果を返した。
 
-    AreSearch::SearchResult::STATUS_INDEX_NOT_FOUND
-        値は :index_not_found。
-        検索対象 index または MLT の基準indexが存在しない、
-        または状態確認に失敗し、空結果を返した。
-
     AreSearch::SearchResult::STATUS_SEARCH_FAIL
         値は :search_fail
+        検索対象 index または MLT の基準indexが存在しない、または
         原因が特定できない検索の失敗
 
 

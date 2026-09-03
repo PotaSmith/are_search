@@ -4,6 +4,7 @@
 
 ## [Unreleased]
 
+- `STATUS_INDEX_NOT_FOUND` の廃止。
 - `SearchParamLengthPolicy` で検索値を、文字・数字・記号・空白以外を拒否するよう変更。
 - `reindex_all_for_es_version_up` を汎用の `reindex_all` に変更
 - `where_not` / `where_or` を廃止。`where` を `must` / `filter` / `should` / `must_not` + 再帰 `bool` 形式へ変更

@@ -1092,9 +1092,7 @@ RSpec.describe "search option flow" do
             .to receive(:search_failure_mode)
             .and_return(:raise)
 
-        allow(AreSearch::Searcher)
-            .to receive(:index_ready?)
-            .and_return(true)
+        expect(AreSearch::Searcher).not_to receive(:index_ready?)
 
         body = AreSearch::Searcher.search(
             [article_index_target],

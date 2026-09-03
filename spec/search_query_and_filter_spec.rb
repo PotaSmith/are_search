@@ -1241,9 +1241,7 @@ RSpec.describe AreSearch::Searcher do
             )
             .and_return(valid_options)
 
-        allow(described_class)
-            .to receive(:index_ready?)
-            .and_return(true)
+        expect(described_class).not_to receive(:index_ready?)
 
         query_builder = double("query_builder")
         body_builder = double("body_builder")

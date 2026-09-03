@@ -53,8 +53,6 @@ AreSearch.search_failure_mode = :raise
 	case @search_result.status
 	when AreSearch::SearchResult::STATUS_PARAMS_INVALID
 		return render 'search_invalid'
-	when AreSearch::SearchResult::STATUS_INDEX_NOT_FOUND
-		return render 'search_maintenance'
 	when AreSearch::SearchResult::STATUS_SEARCH_FAIL
 		return render 'search_maintenance' # 検索失敗時にどうするかは運用次第
 	end
@@ -117,8 +115,6 @@ per_page 25
 	case @search_result.status
 	when AreSearch::SearchResult::STATUS_PARAMS_INVALID
 		return render 'search_invalid'
-	when AreSearch::SearchResult::STATUS_INDEX_NOT_FOUND
-		return render 'search_maintenance'
 	when AreSearch::SearchResult::STATUS_SEARCH_FAIL
 		return render 'search_maintenance' # 検索失敗時にどうするかは運用次第
 	end

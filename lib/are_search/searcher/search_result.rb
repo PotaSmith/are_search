@@ -115,17 +115,15 @@ module AreSearch
         #
         # status
         #   検索の終了状態を返す。
-        #   :ok は検索実行済み、:params_invalid と :index_not_found と :search_fail は検索未実行。
+        #   :ok は検索実行済み、:params_invalid と :search_fail は検索未実行。
 
         STATUS_OK              = :ok
         STATUS_PARAMS_INVALID  = :params_invalid
-        STATUS_INDEX_NOT_FOUND = :index_not_found
         STATUS_SEARCH_FAIL     = :search_fail
 
         STATUSES = [
             STATUS_OK,
             STATUS_PARAMS_INVALID,
-            STATUS_INDEX_NOT_FOUND,
             STATUS_SEARCH_FAIL,
         ].freeze
 

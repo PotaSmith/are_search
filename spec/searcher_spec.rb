@@ -232,10 +232,7 @@ RSpec.describe AreSearch::Searcher do
                 .to receive(:valid?)
                 .and_return(false)
 
-            expect(described_class)
-                .to receive(:index_ready?)
-                .with([article_index_target])
-                .and_return(true)
+            expect(described_class).not_to receive(:index_ready?)
             expect(AreSearch).not_to receive(:client)
 
             result = described_class.search(
@@ -279,10 +276,7 @@ RSpec.describe AreSearch::Searcher do
                 .to receive(:valid?)
                 .and_return(false)
 
-            expect(described_class)
-                .to receive(:index_ready?)
-                .with([article_index_target])
-                .and_return(true)
+            expect(described_class).not_to receive(:index_ready?)
             expect(AreSearch).not_to receive(:client)
 
             expect do
@@ -293,8 +287,16 @@ RSpec.describe AreSearch::Searcher do
             end.to raise_error(AreSearch::InvalidSearchBody, /search_body_policy/)
         end
 
-        it "対象 index の alias が無ければ index_not_found の空結果を返す" do
-            valid_options = {}
+        it "検索実行でindex不存在例外が出た場合はsearch_fail空結果を返す" do
+            queries = [
+                {
+                    query_string: "Rails",
+                    fields: [:title],
+                },
+            ]
+            valid_options = {
+                queries: queries,
+            }
 
             allow(article_model)
                 .to receive(:include?)
@@ -303,22 +305,30 @@ RSpec.describe AreSearch::Searcher do
 
             expect(AreSearch::SearchParamValidator)
                 .to receive(:validate!)
-                .with([article_index_target], [article_model], 2_000)
+                .with(
+                    [article_index_target],
+                    [article_model],
+                    2_000,
+                    queries: queries,
+                )
                 .and_return(valid_options)
 
-            expect(described_class)
-                .to receive(:index_ready?)
-                .with([article_index_target])
-                .and_return(false)
+            expect(described_class).not_to receive(:index_ready?)
+            expect(AreSearch::EsAdapter)
+                .to receive(:no_validation_search)
+                .with(
+                    index: "test__articles__default",
+                    body: kind_of(Hash),
+                )
+                .and_raise(Elastic::Transport::Transport::Errors::NotFound)
+            allow(AreSearch.logger).to receive(:error)
 
-            expect(AreSearch::QueryBuilderSelector).not_to receive(:select)
-            expect(AreSearch::BodyBuilderSelector).not_to receive(:select)
-            expect(AreSearch.search_body_policy).not_to receive(:valid?)
-            expect(AreSearch).not_to receive(:client)
+            result = described_class.search(
+                [article_index_target],
+                queries: queries,
+            )
 
-            result = described_class.search([article_index_target])
-
-            expect(result.status).to eq(AreSearch::SearchResult::STATUS_INDEX_NOT_FOUND)
+            expect(result.status).to eq(AreSearch::SearchResult::STATUS_SEARCH_FAIL)
             expect(result.records).to eq([])
             expect(result.records.page).to eq(1)
             expect(result.records.per_page).to eq(25)
@@ -327,7 +337,7 @@ RSpec.describe AreSearch::Searcher do
             expect(result.records_with_hit).to eq([])
         end
 
-        it "search_failure_modeがraiseならindex不存在を例外にする" do
+        it "search_failure_modeがraiseならindex不存在の元例外を送出する" do
             AreSearch.search_failure_mode = :raise
 
             queries = [
@@ -355,29 +365,24 @@ RSpec.describe AreSearch::Searcher do
                 )
                 .and_return(valid_options)
 
-            expect(described_class)
-                .to receive(:index_ready?)
-                .with([article_index_target])
-                .and_return(false)
-
-            expect(AreSearch::QueryBuilderSelector).not_to receive(:select)
-            expect(AreSearch::BodyBuilderSelector).not_to receive(:select)
-            expect(AreSearch.search_body_policy).not_to receive(:valid?)
-            expect(AreSearch).not_to receive(:client)
+            expect(described_class).not_to receive(:index_ready?)
+            expect(AreSearch::EsAdapter)
+                .to receive(:no_validation_search)
+                .and_raise(Elastic::Transport::Transport::Errors::NotFound)
 
             expect do
                 described_class.search(
                     [article_index_target],
                     queries: queries,
                 )
-            end.to raise_error(AreSearch::SearchIndexNotFound, /index/)
+            end.to raise_error(Elastic::Transport::Transport::Errors::NotFound)
         end
 
-        it "MLT基準 index の alias が無ければ index_not_found の空結果を返す" do
+        it "MLT基準 index 不存在も実検索の失敗としてsearch_fail空結果を返す" do
             mlt_options = {
                 fields: [:name],
                 like: {
-                    instance:     double("document"),
+                    instance:     double("document", id: 1),
                     index_target: document_index_target,
                 },
             }
@@ -400,19 +405,19 @@ RSpec.describe AreSearch::Searcher do
                 )
                 .and_return(valid_options)
 
-            expect(described_class)
-                .to receive(:index_ready?)
-                .with([article_index_target, document_index_target])
-                .and_return(false)
-
-            expect(AreSearch::QueryBuilderSelector).not_to receive(:select)
-            expect(AreSearch::BodyBuilderSelector).not_to receive(:select)
-            expect(AreSearch.search_body_policy).not_to receive(:valid?)
-            expect(AreSearch).not_to receive(:client)
+            expect(described_class).not_to receive(:index_ready?)
+            expect(AreSearch::EsAdapter)
+                .to receive(:no_validation_search)
+                .with(
+                    index: "test__articles__default",
+                    body: kind_of(Hash),
+                )
+                .and_raise(Elastic::Transport::Transport::Errors::NotFound)
+            allow(AreSearch.logger).to receive(:error)
 
             result = described_class.search([article_index_target], mlt: mlt_options)
 
-            expect(result.status).to eq(AreSearch::SearchResult::STATUS_INDEX_NOT_FOUND)
+            expect(result.status).to eq(AreSearch::SearchResult::STATUS_SEARCH_FAIL)
             expect(result.records).to eq([])
             expect(result.records.page).to eq(1)
             expect(result.records.per_page).to eq(25)

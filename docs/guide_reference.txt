@@ -180,9 +180,6 @@ analyzer_settings は :analysis を持つ Hash で指定する。
     検索body policyによる拒否
         AreSearch::InvalidSearchBody
 
-    alias が存在しない、または状態確認に失敗した場合
-        AreSearch::SearchIndexNotFound
-
     それ以外
         発生元の例外そのまま
 
