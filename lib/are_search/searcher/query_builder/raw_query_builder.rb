@@ -19,6 +19,7 @@ module AreSearch
                     :queries,
                     :where,
                     :aggs,
+                    :suggest,
                     :sort,
                     :highlight,
                     :response,
