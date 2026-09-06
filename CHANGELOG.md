@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+- SyncRequest の通常同期上限を3回に変更し、上限到達後も新しい要求世代は1回再試行可能に変更。
+- `check_sync_request_status` に通常・force同期の上限到達件数を追加し、対象を取得する `sync_try_limit_reached` / `force_try_limit_reached` を追加。
 - `STATUS_INDEX_NOT_FOUND` の廃止。
 - `SearchParamLengthPolicy` で検索値を、文字・数字・記号・空白以外を拒否するよう変更。
 - `reindex_all_for_es_version_up` を汎用の `reindex_all` に変更

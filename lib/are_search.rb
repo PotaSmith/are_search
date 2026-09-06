@@ -22,6 +22,7 @@ require_relative "are_search/database_specific"
 require_relative "are_search/postgresql_database_specific"
 require_relative "are_search/searchable"
 require_relative "are_search/sync_request"
+require_relative "are_search/sync_request/sync"
 require_relative "are_search/sync_request_boundary_target"
 require_relative "are_search/sync_request_runner"
 require_relative "are_search/sync_job"
@@ -103,7 +104,7 @@ module AreSearch
     @client_block = nil
     @index_prefix = nil
     @sync_request_delay = 120
-    @max_sync_try_count = 100
+    @max_sync_try_count = 3
     @lock_dir = nil
     @logger = nil
     @after_commit_mode = :direct

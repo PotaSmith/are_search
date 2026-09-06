@@ -508,17 +508,19 @@ RSpec.describe AreSearch::SyncRequest do
         describe "#are_search_try_sync" do
             it "processing取得中の例外は試行回数を増やさずエラーを更新する" do
                 sync_request = create_sync_request(sync_try_count: 2)
+                sync = AreSearch::SyncRequest::Sync.new(sync_request)
 
-                allow(sync_request)
+                allow(sync)
                     .to receive(:acquire_sync_request_processing_with_sequence)
                     .with(processing_token)
                     .and_raise(RuntimeError, "processing acquire failed")
 
                 expect(model).not_to receive(:find_by)
 
-                result = sync_request.are_search_try_sync(
+                result = sync.try_sync(
                     processing_token,
                     on_rake: true,
+                    reraise: false,
                 )
 
                 reloaded = AreSearch::SyncRequest.find(sync_request.id)

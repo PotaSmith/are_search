@@ -15,7 +15,7 @@ Elasticsearch client と index_prefix は AreSearch.setup で指定する。
 その他の設定は AreSearch.setup の前後に関係なく指定できる。
 
     AreSearch.sync_request_delay             = 120
-    AreSearch.max_sync_try_count             = 100
+    AreSearch.max_sync_try_count             = 3
     AreSearch.sync_request_process_hang_wait = 1800
     AreSearch.max_force_try_count            = 5
     AreSearch.lock_dir                       = Rails.root.join("tmp", "are_search", "locks").to_s
@@ -56,7 +56,10 @@ run_sync_requests が通常の再同期対象にするまでの待機秒数。
 ----------------------------------------------------------------
 
 run_sync_requests が通常同期を試す上限。
-デフォルトは100回。
+デフォルトは3回。
+
+上限到達後も、その後に新しい同期要求へ更新された場合は、
+その新しい要求を1回だけ同期対象にする。
 
 
 ## 1-4. sync_request_process_hang_wait
@@ -851,6 +854,14 @@ rakeで同期要求を回収するときは、are_search_sync_requests の状態
     last_error / last_error_at
         最後に記録されたエラー内容と、その記録時刻を確認する。
         同期要求の処理完了時に記録をクリアする。
+
+同期上限に達しているSyncRequestをRelationで取得する。
+
+    AreSearch::SyncRequest.sync_try_limit_reached
+    AreSearch::SyncRequest.force_try_limit_reached
+
+返り値は ActiveRecord::Relation。
+確認後、利用側で where、delete_all、update_all などを組み合わせて操作できる。
 
 
 # 9. 補助操作

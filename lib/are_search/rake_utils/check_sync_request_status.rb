@@ -63,7 +63,8 @@ module AreSearch
             end
 
 
-            # sync request をモデル・IndexTarget・stage単位で集計し、総数・処理中数・エラー数を返す。
+            # sync request をモデル・IndexTarget・stage単位で集計する。
+            # 処理状態と上限到達件数を返す。
             def sync_request_status_rows
                 total_counts = AreSearch::SyncRequest
                     .group(:ar_model_class_name, :index_target_name, :sync_stage_name)
@@ -71,6 +72,16 @@ module AreSearch
 
                 processing_counts = AreSearch::SyncRequest
                     .where.not(processing_token: nil)
+                    .group(:ar_model_class_name, :index_target_name, :sync_stage_name)
+                    .count
+
+                normal_limit_counts = AreSearch::SyncRequest
+                    .sync_try_limit_reached
+                    .group(:ar_model_class_name, :index_target_name, :sync_stage_name)
+                    .count
+
+                force_limit_counts = AreSearch::SyncRequest
+                    .force_try_limit_reached
                     .group(:ar_model_class_name, :index_target_name, :sync_stage_name)
                     .count
 
@@ -88,6 +99,8 @@ module AreSearch
                         group_values[2].to_s,
                         data_count.to_s,
                         processing_counts.fetch(group_values, 0).to_s,
+                        normal_limit_counts.fetch(group_values, 0).to_s,
+                        force_limit_counts.fetch(group_values, 0).to_s,
                         error_counts.fetch(group_values, 0).to_s,
                     ]
                 end

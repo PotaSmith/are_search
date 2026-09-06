@@ -21,7 +21,7 @@ module AreSearchSyncLimitAlertTask
     ALERT_MAX_RESULTS = 10
 
     # sync_try_count がこの値に到達した行を通知対象にする
-    ALERT_SYNC_TRY_THRESHOLD = 100
+    ALERT_SYNC_TRY_THRESHOLD = 3
     # force_try_count がこの値に到達した行を通知対象にする
     ALERT_FORCE_TRY_THRESHOLD = 5
     # last_error があるままこの秒数以上残っている行を通知対象にする

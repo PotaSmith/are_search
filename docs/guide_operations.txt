@@ -207,8 +207,9 @@ SyncRequest の状態項目は guide_reference.txt の「SyncRequest の状態�
 主な表示内容。
 
     現在存在する sync lock
-    モデル・IndexTarget・stage単位の sync request 件数、処理中件数、エラー件数
-    モデル・IndexTarget・stage単位のエラー内容 上位20件
+    モデル・IndexTarget・stage単位の sync request 件数、処理中件数
+    モデル・IndexTarget・stage単位の通常同期上限到達件数、force同期上限到達件数
+    モデル・IndexTarget・stage単位のエラー件数、エラー内容 上位20件
 
 通知用タスク。
 

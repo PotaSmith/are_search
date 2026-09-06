@@ -420,7 +420,11 @@ RSpec.describe "AreSearch rake status operations integration", type: :model do
         model_class: DocumentFirst,
         instance_key: nil,
         last_error: nil,
-        processing: false
+        processing: false,
+        request_sequence_at: nil,
+        sync_try_count: 0,
+        last_sync_try_at: nil,
+        force_try_count: 0
     )
         index_target = model_class.are_search_index_target(:default)
         now = Time.zone.now
@@ -432,9 +436,12 @@ RSpec.describe "AreSearch rake status operations integration", type: :model do
             sync_stage_name:     "default",
             index_target_name:   "default",
             request_sequence:    sequence,
-            request_sequence_at: now,
+            request_sequence_at: request_sequence_at || now,
             processing_token:    processing ? "status test" : nil,
             processing_at:       processing ? now : nil,
+            sync_try_count:      sync_try_count,
+            last_sync_try_at:    last_sync_try_at,
+            force_try_count:     force_try_count,
             last_error:          last_error,
             last_error_at:       last_error.nil? ? nil : now,
         )
@@ -508,10 +515,29 @@ RSpec.describe "AreSearch rake status operations integration", type: :model do
             message:          "maintenance",
         )
 
+        now = Time.zone.now
+
         create_sync_request(1, last_error: "sync locked", processing: true)
         create_sync_request(2, last_error: "sync locked")
-        create_sync_request(3)
+        create_sync_request(
+            3,
+            request_sequence_at: now - 1.second,
+            sync_try_count: AreSearch.max_sync_try_count,
+            last_sync_try_at: now,
+        )
         create_sync_request(4, model_class: DocumentSecond, last_error: "timeout")
+        create_sync_request(
+            5,
+            request_sequence_at: now,
+            sync_try_count: AreSearch.max_sync_try_count,
+            last_sync_try_at: now - 1.second,
+        )
+        create_sync_request(
+            6,
+            processing: true,
+            force_try_count: AreSearch.max_force_try_count,
+        )
+        create_sync_request(7, force_try_count: AreSearch.max_force_try_count)
 
         output = capture_stdout do
             Rake::Task["are_search:check_sync_request_status"].invoke
@@ -520,8 +546,8 @@ RSpec.describe "AreSearch rake status operations integration", type: :model do
         expect(output).to include("[AreSearch] sync request status")
         expect(output).to include(article_alias_name)
         expect(output).to include(AreSearch::SyncLock.index_target_lock_name)
-        expect(output).to match(/DocumentFirst\s+default\s+default\s+3\s+1\s+2/)
-        expect(output).to match(/DocumentSecond\s+default\s+default\s+1\s+0\s+1/)
+        expect(output).to match(/DocumentFirst\s+default\s+default\s+6\s+2\s+1\s+1\s+2/)
+        expect(output).to match(/DocumentSecond\s+default\s+default\s+1\s+0\s+0\s+0\s+1/)
         expect(output).to match(/DocumentFirst\s+default\s+default\s+sync locked\s+2/)
         expect(output).to match(/DocumentSecond\s+default\s+default\s+timeout\s+1/)
         expect(output).to include("maintenance")

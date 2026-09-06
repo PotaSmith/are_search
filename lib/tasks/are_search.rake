@@ -265,6 +265,8 @@ namespace :are_search do
                 "同期stage",
                 "リクエスト数",
                 "処理中",
+                "通常同期上限",
+                "force同期上限",
                 "エラー",
             ]
 
