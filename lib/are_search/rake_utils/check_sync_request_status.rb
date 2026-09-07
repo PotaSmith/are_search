@@ -33,6 +33,44 @@ module AreSearch
                     raise ArgumentError, "定義されていない sync_stage_name があります: #{undefined_sync_stage_names.inspect}"
                 end
             end
+
+            # rake を主経路にする IndexTarget・stage の組み合わせを返す。
+            # STI子クラスで同じaliasを参照する組み合わせは1件へまとめる。
+            def load_primary_index_target_sync_stage_pairs(models)
+                pairs = []
+
+                models.each do |model|
+                    model.are_search_index_targets.each do |index_target|
+                        fallback_sync_stage_names = index_target.are_search_sync_stage_names_on_after_commit
+
+                        index_target.are_search_sync_stage_names.each do |sync_stage_name|
+                            next if fallback_sync_stage_names.include?(sync_stage_name)
+
+                            pair = [index_target.are_search_index_alias_name, sync_stage_name]
+                            pairs << pair if pairs.include?(pair) == false
+                        end
+                    end
+                end
+
+                pairs
+            end
+
+            # after_commit の取りこぼしを回収する IndexTarget・stage の組み合わせを返す。
+            # STI子クラスで同じaliasを参照する組み合わせは1件へまとめる。
+            def load_fallback_index_target_sync_stage_pairs(models)
+                pairs = []
+
+                models.each do |model|
+                    model.are_search_index_targets.each do |index_target|
+                        index_target.are_search_sync_stage_names_on_after_commit.each do |sync_stage_name|
+                            pair = [index_target.are_search_index_alias_name, sync_stage_name]
+                            pairs << pair if pairs.include?(pair) == false
+                        end
+                    end
+                end
+
+                pairs
+            end
         end
 
         module CheckSyncRequestStatus

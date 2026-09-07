@@ -165,11 +165,24 @@ SampleGenerator で生成した rake task のサンプルを利用側アプリ�
 
 コピーした rake ファイルは運用に合わせて内容を確認・編集する。
 
-are_search_run_sync_requests.rake では、通常同期とforce同期の対象scopeを利用側の運用に合わせて変更できる。
+are_search_run_sync_requests.rake には primary と fallback の2つの回収経路がある。
+
+run_sync_requests_primary
+    after_commit: false の IndexTarget・stage を対象にする。
+    rake を主な同期経路として使用し、sync_request_delay は適用しない。
+
+run_sync_requests_fallback
+    after_commit: true の IndexTarget・stage を対象にする。
+    after_commit同期で残った要求を sync_request_delay 経過後に回収する。
+
+どちらも指定したstage名で対象を限定する。
+同じstage名を複数の IndexTarget で使用している場合は、その経路に該当する IndexTarget・stage の組み合わせを回収する。
+
+通常同期とforce同期の対象scopeは、利用側の運用に合わせて変更できる。
 標準の対象条件をそのまま使用する場合は変更不要。
 
 force同期は、processing のまま停止した SyncRequest を補助的に Elasticsearch へ再反映する処理。
-同期後callbackは実行せず、処理後は通常の run_sync_requests で回収する。
+同期後callbackは実行せず、処理後は通常の run_sync_requests_XXXX で回収する。
 対象条件と試行上限は guide_reference.txt を参照する。
 残った processing_token を手動解除する必要がある場合は「processing_token を手動解除する」を参照する。
 
@@ -187,13 +200,18 @@ are_search_sync_limit_alert.rake は実行前に、通知先・送信元と通�
 タスクを実行する環境では AreSearch.rake_operation_enabled を有効にする。
 設定の詳細は guide_reference.txt を参照する。
 
-単一stageを回収する。
+primary 単一stageを回収する。
 
-    bundle exec rake 'are_search:run_sync_requests[default]'
+    bundle exec rake 'are_search:run_sync_requests_primary[default]'
+
+fallback で単一stageを回収する。
+
+    bundle exec rake 'are_search:run_sync_requests_fallback[default]'
 
 複数stageを回収する。
 
-    bundle exec rake 'are_search:run_sync_requests[default,with_external_file]'
+    bundle exec rake 'are_search:run_sync_requests_primary[default,with_external_file]'
+    bundle exec rake 'are_search:run_sync_requests_fallback[default,with_external_file]'
 
 回収条件、試行上限、rake_operation_enabled の詳細は guide_reference.txt を参照する。
 SyncRequest の状態項目は guide_reference.txt の「SyncRequest の状態項目」を参照する。
@@ -331,7 +349,7 @@ update_columns、update_all、delete_all、insert_all、upsert_all、SQL直接�
     1. bundle exec rake are_search:check_sync_request_status を実行する
     2. 対象モデル・IndexTarget・stageのリクエスト数、処理中、エラーを確認する
     3. after_commit_mode = :job の場合は Job worker を確認する
-    4. 対象stageを指定して run_sync_requests を実行する
+    4. 対象stageの after_commit 設定に応じて run_sync_requests_primary または run_sync_requests_fallback を実行する
 
 
 ## 10-2. reindex または sync が動かない
@@ -418,7 +436,7 @@ AreSearch.index_operation_enabled = true のプロセスでのみ実行する。
 # 13. processing_token を手動解除する
 ================================================================
 
-run_sync_requests の強制同期後も processing_token が残り続ける場合の最終手段。
+run_sync_requests_XXXX の強制同期後も processing_token が残り続ける場合の最終手段。
 Job が再開しないことを確認してから行う。
 
 対象を確認する。
@@ -448,6 +466,10 @@ Job が再開しないことを確認してから行う。
 
 updated_count が1なら通常同期へ戻す。
 
-    bundle exec rake 'are_search:run_sync_requests[default]'
+    bundle exec rake 'are_search:run_sync_requests_primary[default]'
+
+または
+
+    bundle exec rake 'are_search:run_sync_requests_fallback[default]'
 
 対象の sync_stage_name に合わせて引数を変更する。

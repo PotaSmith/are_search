@@ -331,10 +331,10 @@ module AreSearch
         @lock_dir = value
     end
 
-    # run_sync_requests rake タスクの多重起動を防ぐためのロックファイルパス。
-    # lock_dir/sync_runner/sync_runner.lock
-    def self.sync_runner_lock_file_path
-        File.join(lock_dir, "sync_runner", "sync_runner.lock")
+    # sync request を処理する rake タスクのロックファイルを置くディレクトリ。
+    # lock_dir/sync_runner
+    def self.sync_runner_lock_dir_path
+        File.join(lock_dir, "sync_runner")
     end
 
     # index作成中、reindex、clean_up の多重起動防止用 flock ファイルパス（IndexTarget単位）。

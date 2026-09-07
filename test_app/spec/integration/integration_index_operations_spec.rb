@@ -611,7 +611,7 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
         load_run_sync_requests_task
 
         expect do
-            Rake::Task["are_search:run_sync_requests"].invoke(
+            Rake::Task["are_search:run_sync_requests_fallback"].invoke(
                 "default",
             )
         end.to output(
@@ -784,7 +784,7 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
         load_run_sync_requests_task
 
         expect do
-            Rake::Task["are_search:run_sync_requests"].invoke(
+            Rake::Task["are_search:run_sync_requests_primary"].invoke(
                 "default",
                 "huge_data",
             )

@@ -4,6 +4,7 @@
 
 ## [Unreleased]
 
+- SyncRequest の rake 回収を primary / fallback の2経路に分離。
 - SyncRequest の通常同期上限を3回に変更し、上限到達後も新しい要求世代は1回再試行可能に変更。
 - `check_sync_request_status` に通常・force同期の上限到達件数を追加し、対象を取得する `sync_try_limit_reached` / `force_try_limit_reached` を追加。
 - `STATUS_INDEX_NOT_FOUND` の廃止。

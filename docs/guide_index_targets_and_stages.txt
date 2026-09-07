@@ -290,7 +290,7 @@ gem は unscoped でレコードを取得するため、除外が必要であれ
         true
     end
 
-false の間はその要求の同期を開始しない。後続の run_sync_requests で再判定される。
+false の間はその要求の同期を開始しない。後続の run_sync_requests_XXXX で再判定される。
 
 同期完了後に利用側処理を行う場合は after_sync_callback を指定する。
 
@@ -309,7 +309,7 @@ false の間はその要求の同期を開始しない。後続の run_sync_requ
         )
     end
 
-are_search_upsert_sync_request で作成したstageは are_search:run_sync_requests などで回収する。
+are_search_upsert_sync_request で作成したstageは are_search:run_sync_requests_XXXX のrakeで回収する。
 force同期は異常中断時の補助処理として使用し、stage連鎖を進める用途には使用しない。
 
 
@@ -356,8 +356,13 @@ reindex の実行方法は guide_operations.txt を参照する。
 # 11. rake でstageを分けて回収する
 ================================================================
 
-are_search:run_sync_requests は指定したstage名で要求を回収する。
-同じstage名を複数モデル・targetで使用している場合、それらは同じ実行で回収される。
+SyncRequest の rake 回収は primary と fallback の2経路に分かれる。
+
+primary は after_commit: false の IndexTarget・stage を対象にし、rake を主な同期経路として使用する。
+fallback は after_commit: true の IndexTarget・stage を対象にし、after_commit同期で残った要求を回収する。
+
+どちらも指定したstage名で対象を限定する。
+同じstage名を複数の IndexTarget で使用している場合、その経路の対象となる IndexTarget・stage の組み合わせを同じ実行で回収する。
 
 stageごとの回収実行方法は guide_operations.txt を参照する。
 

@@ -358,13 +358,13 @@ RSpec.describe AreSearch, "configuration" do
         end.not_to raise_error
     end
 
-    it "sync runner lock は lock_dir の sync_runner 配下を使用する" do
+    it "sync runner lock ディレクトリは lock_dir の sync_runner 配下を使用する" do
         described_class.lock_dir = "/tmp/are_search_spec"
 
         expect(
-            described_class.sync_runner_lock_file_path,
+            described_class.sync_runner_lock_dir_path,
         ).to eq(
-            "/tmp/are_search_spec/sync_runner/sync_runner.lock",
+            "/tmp/are_search_spec/sync_runner",
         )
     end
 

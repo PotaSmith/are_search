@@ -17,7 +17,7 @@ module AreSearch
         # reraise: true の場合、失敗時に last_error を更新した上で
         # 例外を呼び出し元へ再送出する。SyncJob から retry_on を効かせるために使う。
         # reraise: false（デフォルト）の場合は例外を握りつぶす。rake タスクの
-        # run_sync_requests は1件の失敗で全体を止めないため、こちらを使う。
+        # run_sync_requests_XXXX は1件の失敗で全体を止めないため、こちらを使う。
         #
         def are_search_sync(ar_instance_key, sync_stage_name, reraise: false)
             validate_defined_sync_stage_name!(sync_stage_name)
@@ -58,7 +58,7 @@ module AreSearch
 
         self.table_name = "are_search_sync_requests"
 
-        # run_sync_requests が通常同期で使用する固定 token。
+        # run_sync_requests_XXXX が通常同期で使用する固定 token。
         # Job / direct が使用する UUID と区別し、rake 異常中断後は次回 rake が再開する。
         RAKE_PROCESSING_TOKEN = "rake task"
 

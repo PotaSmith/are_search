@@ -7,7 +7,7 @@ module AreSearch
 
         # データ起因の永続的失敗（are_search_index_data の不整合等）はここにマッチせず、
         # 1回の失敗で are_search_sync_requests に記録され、rake タスク
-        # （run_sync_requests）のフォールバックに委ねる。
+        # run_sync_requests_fallback のフォールバックに委ねる。
         # attempts: 3 は初回実行を含む総試行回数（= リトライ2回）。
         retry_on(
             Elastic::Transport::Transport::Errors::RequestTimeout,

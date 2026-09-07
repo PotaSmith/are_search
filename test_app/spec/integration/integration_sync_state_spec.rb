@@ -41,9 +41,9 @@ RSpec.describe "AreSearch sync state integration", type: :model do
         load are_search_template_path("are_search_run_sync_requests.rake")
     end
 
-    # default stage のSyncRequestをrakeから1回回収する。
+    # default stage のSyncRequestをfallback rakeから1回回収する。
     def run_default_sync_requests
-        task = Rake::Task["are_search:run_sync_requests"]
+        task = Rake::Task["are_search:run_sync_requests_fallback"]
         task.reenable
         task.invoke("default")
     end

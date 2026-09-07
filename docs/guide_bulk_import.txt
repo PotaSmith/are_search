@@ -113,7 +113,7 @@ BulkIndexer の準備、実行、再開、recover、結果確認。
 
 通常運用の違いは、通常の rake 回収には bulk を含めない。
 
-    bundle exec rake 'are_search:run_sync_requests[default]'
+    bundle exec rake 'are_search:run_sync_requests_fallback[default]'
 
 この方法の場合、同期要求が最大で対象データ数と同数まで溜まるため注意。
 
@@ -243,7 +243,7 @@ BulkIndexer の準備、実行、再開、recover、結果確認。
     }
 
 同期経路専用の bulk を用意しておき、通常
-    bundle exec rake 'are_search:run_sync_requests[default]'
+    bundle exec rake 'are_search:run_sync_requests_primary[extarnal_file]'
 の同期経路からは外す。
 1-2. メイン同期が停止不可能 と同じ要領で extarnal_file_bulk に対して処理を行う
 

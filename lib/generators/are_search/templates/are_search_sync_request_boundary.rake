@@ -111,7 +111,7 @@ module AreSearchSyncRequestBoundaryChangeYourTaskNameTask
 
         boundary_target.update_columns(last_sync_started_at: Time.zone.now)
 
-        lock_file_path = AreSearch.sync_runner_lock_file_path
+        lock_file_path = File.join(AreSearch.sync_runner_lock_dir_path, "#{TASK_NAME_PREFIX}.lock")
         result = AreSearch::SyncRequestRunner.run(
             models:           models,
             normal_scope:     target_scope,

@@ -400,10 +400,19 @@ RSpec.describe AreSearch::Generators::SampleGenerator do
             ruby_sample = File.read(ruby_sample_path)
 
             expect(run_sync_sample).to include(
-                "task :run_sync_requests",
+                "task :run_sync_requests_primary, [:sync_stage_names] => :environment",
+            )
+            expect(run_sync_sample).to include(
+                "task :run_sync_requests_fallback, [:sync_stage_names] => :environment",
             )
             expect(run_sync_sample).to include(
                 "AreSearch::RakeUtils::ArgCheck.check_sync_stage_names(models, sync_stage_names)",
+            )
+            expect(run_sync_sample).to include(
+                "AreSearch::RakeUtils::ArgCheck.load_primary_index_target_sync_stage_pairs(models)",
+            )
+            expect(run_sync_sample).to include(
+                "AreSearch::RakeUtils::ArgCheck.load_fallback_index_target_sync_stage_pairs(models)",
             )
             expect(sync_limit_alert_sample).to include(
                 "task :sync_limit_alert, [:sync_stage_names] => :environment",
@@ -720,7 +729,9 @@ RSpec.describe "are_search sync request boundary task" do
                     expect(normal_scope.exists?(after_boundary.id)).to eq(false)
                     expect(force_scope.count).to eq(0)
                     expect(processing_token).to eq(AreSearch::SyncRequest::RAKE_PROCESSING_TOKEN)
-                    expect(lock_file_path).to eq(AreSearch.sync_runner_lock_file_path)
+                    expect(lock_file_path).to eq(
+                        File.join(AreSearch.sync_runner_lock_dir_path, "my_boundary_task.lock"),
+                    )
 
                     {
                         normal_count: 1,
@@ -815,11 +826,19 @@ RSpec.describe "are_search run sync requests task" do
     let(:application) { double("application", eager_load!: true) }
 
     let(:article_index_target) do
-        double("article_index_target", index_target_name: :default)
+        double(
+            "article_index_target",
+            index_target_name: :default,
+            are_search_index_alias_name: "test__articles__default",
+        )
     end
 
     let(:document_index_target) do
-        double("document_index_target", index_target_name: :default)
+        double(
+            "document_index_target",
+            index_target_name: :default,
+            are_search_index_alias_name: "test__documents__default",
+        )
     end
 
     around do |example|
@@ -864,6 +883,9 @@ RSpec.describe "are_search run sync requests task" do
         allow(article_index_target)
             .to receive(:are_search_sync_stage_names)
             .and_return(["default", "with_external_file"])
+        allow(article_index_target)
+            .to receive(:are_search_sync_stage_names_on_after_commit)
+            .and_return(["default"])
 
         allow(document_model)
             .to receive(:are_search_index_targets)
@@ -871,6 +893,9 @@ RSpec.describe "are_search run sync requests task" do
         allow(document_index_target)
             .to receive(:are_search_sync_stage_names)
             .and_return(["default"])
+        allow(document_index_target)
+            .to receive(:are_search_sync_stage_names_on_after_commit)
+            .and_return([])
 
         allow(AreSearch)
             .to receive(:sync_request_delay)
@@ -899,11 +924,11 @@ RSpec.describe "are_search run sync requests task" do
             ar_model_class_name: "Article",
             index_target_name:   "default",
             ar_instance_key:     "1",
-            index_alias_name:       "test__articles__default",
-            sync_stage_name:          "default",
+            index_alias_name:    "test__articles__default",
+            sync_stage_name:     "default",
             request_sequence:    10,
             request_sequence_at: Time.zone.now,
-            sync_try_count:   0,
+            sync_try_count:      0,
             callback_try_count:  0,
             last_error:          nil,
         }
@@ -921,7 +946,7 @@ RSpec.describe "are_search run sync requests task" do
             .not_to receive(:run)
 
         expect do
-            Rake::Task["are_search:run_sync_requests"].invoke("default")
+            Rake::Task["are_search:run_sync_requests_primary"].invoke("default")
         end.to raise_error(
             AreSearch::RakeOperationViolation,
             /rake_operation_enabled が false/,
@@ -936,7 +961,7 @@ RSpec.describe "are_search run sync requests task" do
             .not_to receive(:run)
 
         expect do
-            Rake::Task["are_search:run_sync_requests"].invoke
+            Rake::Task["are_search:run_sync_requests_primary"].invoke
         end.to raise_error(
             ArgumentError,
             "sync_stage_names を1件以上指定してください",
@@ -948,85 +973,123 @@ RSpec.describe "are_search run sync requests task" do
             .not_to receive(:run)
 
         expect do
-            Rake::Task["are_search:run_sync_requests"].invoke("missing_stage")
+            Rake::Task["are_search:run_sync_requests_primary"].invoke("missing_stage")
         end.to raise_error(
             ArgumentError,
             '定義されていない sync_stage_name があります: ["missing_stage"]',
         )
     end
 
-    it "指定stageと運用条件で作成したscopeをRunnerへ渡す" do
+    it "primaryはafter_commit対象外のIndexTargetとstageの組み合わせだけをRunnerへ渡す" do
+        now = Time.zone.now
+        old_time = now - 3600
+        new_time = now - 60
+
+        create_sync_request(
+            ar_instance_key:     "1",
+            sync_stage_name:     "default",
+            request_sequence_at: old_time,
+        )
+        normal_external = create_sync_request(
+            ar_instance_key:     "2",
+            sync_stage_name:     "with_external_file",
+            request_sequence_at: old_time,
+        )
+        recent_external = create_sync_request(
+            ar_instance_key:     "3",
+            sync_stage_name:     "with_external_file",
+            request_sequence_at: new_time,
+        )
+        normal_document = create_sync_request(
+            ar_model_class_name: "Document",
+            ar_instance_key:     "4",
+            index_alias_name:    "test__documents__default",
+            sync_stage_name:     "default",
+            request_sequence_at: old_time,
+        )
+        force_external = create_sync_request(
+            ar_instance_key:     "5",
+            sync_stage_name:     "with_external_file",
+            request_sequence_at: old_time,
+            processing_token:    "job-token-1",
+            processing_at:       old_time,
+            force_try_count:     0,
+        )
+        create_sync_request(
+            ar_instance_key:     "6",
+            sync_stage_name:     "with_external_file",
+            request_sequence_at: old_time,
+            sync_try_count:      3,
+            last_sync_try_at:    old_time + 10,
+        )
+
+        expect(AreSearch::SyncRequestRunner)
+            .to receive(:run) do |models:, normal_scope:, force_scope:, processing_token:, lock_file_path:|
+                expect(models).to eq([article_model, document_model])
+                expect(normal_scope.order(:id).pluck(:id)).to eq([
+                    normal_external.id,
+                    recent_external.id,
+                    normal_document.id,
+                    force_external.id,
+                ])
+                expect(force_scope.order(:id).pluck(:id)).to eq([
+                    force_external.id,
+                ])
+                expect(processing_token).to eq("rake task")
+                expect(lock_file_path).to eq(
+                    File.join(AreSearch.sync_runner_lock_dir_path, "primary.lock"),
+                )
+
+                {
+                    normal_count: 4,
+                    force_count:  1,
+                }
+            end
+
+        expect do
+            Rake::Task["are_search:run_sync_requests_primary"].invoke(
+                "default",
+                "with_external_file",
+            )
+        end.to output(
+            /run_sync_requests_primary.*sync_stage_names=\["default", "with_external_file"\].*通常同期 4 件 強制同期 1 件/m,
+        ).to_stdout
+    end
+
+    it "fallbackはafter_commit対象の組み合わせをdelay経過後だけRunnerへ渡す" do
         now = Time.zone.now
         old_time = now - 3600
         new_time = now - 60
 
         normal_default = create_sync_request(
             ar_instance_key:     "1",
-            sync_stage_name:          "default",
-            request_sequence_at: old_time,
-        )
-        normal_external = create_sync_request(
-            ar_instance_key:     "2",
-            sync_stage_name:          "with_external_file",
+            sync_stage_name:     "default",
             request_sequence_at: old_time,
         )
         create_sync_request(
+            ar_instance_key:     "2",
+            sync_stage_name:     "default",
+            request_sequence_at: new_time,
+        )
+        create_sync_request(
+            ar_model_class_name: "Document",
             ar_instance_key:     "3",
-            sync_stage_name:          "other",
+            index_alias_name:    "test__documents__default",
+            sync_stage_name:     "default",
             request_sequence_at: old_time,
         )
         create_sync_request(
             ar_instance_key:     "4",
-            sync_stage_name:          "default",
-            request_sequence_at: new_time,
-        )
-        create_sync_request(
-            ar_instance_key:     "5",
-            sync_stage_name:          "default",
+            sync_stage_name:     "with_external_file",
             request_sequence_at: old_time,
-            sync_try_count:   3,
-            last_sync_try_at: old_time + 10,
         )
-
         force_default = create_sync_request(
-            ar_instance_key:     "6",
-            sync_stage_name:          "default",
+            ar_instance_key:     "5",
+            sync_stage_name:     "default",
             request_sequence_at: old_time,
             processing_token:    "job-token-1",
             processing_at:       old_time,
-            force_try_count: 0,
-        )
-        force_external = create_sync_request(
-            ar_instance_key:     "7",
-            sync_stage_name:          "with_external_file",
-            request_sequence_at: old_time,
-            processing_token:    "job-token-2",
-            processing_at:       old_time,
-            force_try_count: 1,
-        )
-        create_sync_request(
-            ar_instance_key:     "8",
-            sync_stage_name:          "other",
-            request_sequence_at: old_time,
-            processing_token:    "job-token-3",
-            processing_at:       old_time,
-            force_try_count: 0,
-        )
-        processing_recent = create_sync_request(
-            ar_instance_key:     "9",
-            sync_stage_name:          "default",
-            request_sequence_at: old_time,
-            processing_token:    "job-token-4",
-            processing_at:       new_time,
-            force_try_count: 0,
-        )
-        force_try_limit_reached = create_sync_request(
-            ar_instance_key:     "10",
-            sync_stage_name:          "default",
-            request_sequence_at: old_time,
-            processing_token:    "job-token-5",
-            processing_at:       old_time,
-            force_try_count: 2,
+            force_try_count:     0,
         )
 
         expect(AreSearch::SyncRequestRunner)
@@ -1034,18 +1097,15 @@ RSpec.describe "are_search run sync requests task" do
                 expect(models).to eq([article_model, document_model])
                 expect(normal_scope.order(:id).pluck(:id)).to eq([
                     normal_default.id,
-                    normal_external.id,
                     force_default.id,
-                    force_external.id,
-                    processing_recent.id,
-                    force_try_limit_reached.id,
                 ])
                 expect(force_scope.order(:id).pluck(:id)).to eq([
                     force_default.id,
-                    force_external.id,
                 ])
                 expect(processing_token).to eq("rake task")
-                expect(lock_file_path).to eq(AreSearch.sync_runner_lock_file_path)
+                expect(lock_file_path).to eq(
+                    File.join(AreSearch.sync_runner_lock_dir_path, "fallback.lock"),
+                )
 
                 {
                     normal_count: 2,
@@ -1054,12 +1114,20 @@ RSpec.describe "are_search run sync requests task" do
             end
 
         expect do
-            Rake::Task["are_search:run_sync_requests"].invoke(
-                "default",
-                "with_external_file",
-            )
+            Rake::Task["are_search:run_sync_requests_fallback"].invoke("default")
         end.to output(
-            /sync_stage_names=\["default", "with_external_file"\].*通常同期 2 件 強制同期 1 件/m,
+            /run_sync_requests_fallback.*sync_stage_names=\["default"\].*通常同期 2 件 強制同期 1 件/m,
+        ).to_stdout
+    end
+
+    it "指定stageに対象経路の組み合わせがなければRunnerを呼ばず終了する" do
+        expect(AreSearch::SyncRequestRunner)
+            .not_to receive(:run)
+
+        expect do
+            Rake::Task["are_search:run_sync_requests_fallback"].invoke("with_external_file")
+        end.to output(
+            /run_sync_requests_fallback は指定stageに同期対象がないため終了します/,
         ).to_stdout
     end
 
@@ -1069,9 +1137,9 @@ RSpec.describe "are_search run sync requests task" do
             .and_return(nil)
 
         expect do
-            Rake::Task["are_search:run_sync_requests"].invoke("default")
+            Rake::Task["are_search:run_sync_requests_primary"].invoke("with_external_file")
         end.to output(
-            /run_sync_requests は別の処理が実行中のためスキップしました/,
+            /run_sync_requests_primary は別の処理が実行中のためスキップしました/,
         ).to_stdout
     end
 end

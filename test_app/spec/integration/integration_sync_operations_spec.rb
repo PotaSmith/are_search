@@ -212,7 +212,7 @@ RSpec.describe "AreSearch sync integration", type: :model do
         expect(before_result.records).to eq([])
 
         load_run_sync_requests_task
-        Rake::Task["are_search:run_sync_requests"].invoke("default")
+        Rake::Task["are_search:run_sync_requests_fallback"].invoke("default")
 
         expect(
             AreSearch::SyncRequest.find_by(
@@ -412,7 +412,7 @@ RSpec.describe "AreSearch force sync integration", type: :model do
         load_run_sync_requests_task
 
         expect do
-            Rake::Task["are_search:run_sync_requests"].invoke("default")
+            Rake::Task["are_search:run_sync_requests_fallback"].invoke("default")
         end.to output(
             /通常同期 0 件 強制同期 1 件/,
         ).to_stdout
@@ -616,9 +616,9 @@ RSpec.describe "AreSearch callback chain integration", type: :model do
         load are_search_template_path("are_search_run_sync_requests.rake")
     end
 
-    # 指定stageだけをrun_sync_requestsで回収する。
-    def run_sync_stage(sync_stage_name)
-        task = Rake::Task["are_search:run_sync_requests"]
+    # 指定経路のrun_sync_requestsでstageを回収する。
+    def run_sync_stage(sync_route_name, sync_stage_name)
+        task = Rake::Task["are_search:run_sync_requests_#{sync_route_name}"]
         task.reenable
         task.invoke(sync_stage_name)
     end
@@ -653,7 +653,7 @@ RSpec.describe "AreSearch callback chain integration", type: :model do
         load_run_sync_requests_task
 
         # 前stageが残っているため、後stageは要求を残したまま同期しない。
-        run_sync_stage("with_external_file")
+        run_sync_stage("primary", "with_external_file")
 
         blocked_external_request = sync_request_for(
             document,
@@ -676,7 +676,7 @@ RSpec.describe "AreSearch callback chain integration", type: :model do
         expect(blocked_external_result.records).to eq([])
 
         # defaultを同期するとESへ第一段階を書き、callbackで後stage要求をupsertする。
-        run_sync_stage("default")
+        run_sync_stage("fallback", "default")
 
         expect(sync_request_for(document, "default")).to eq(nil)
 
@@ -698,7 +698,7 @@ RSpec.describe "AreSearch callback chain integration", type: :model do
         expect(external_before_result.records).to eq([])
 
         # default要求が消えた後はbefore_sync_checkを通過し、後stageの完成データへ置き換える。
-        run_sync_stage("with_external_file")
+        run_sync_stage("primary", "with_external_file")
 
         expect(sync_request_for(document, "with_external_file")).to eq(nil)
         expect(AreSearch::SyncRequest.count).to eq(0)
@@ -1040,7 +1040,7 @@ RSpec.describe "AreSearch sync hooks integration", type: :model do
         expect(document_first_index_target.are_search_index_target_syncable?).to eq(false)
 
         load_run_sync_requests_task
-        Rake::Task["are_search:run_sync_requests"].invoke("default")
+        Rake::Task["are_search:run_sync_requests_fallback"].invoke("default")
 
         refresh_document_first_index
         locked_result = search_document_first("synclocktoken")
@@ -1051,7 +1051,7 @@ RSpec.describe "AreSearch sync hooks integration", type: :model do
         expect(deleted_count).to eq(1)
         expect(document_first_index_target.are_search_index_target_syncable?).to eq(true)
 
-        task = Rake::Task["are_search:run_sync_requests"]
+        task = Rake::Task["are_search:run_sync_requests_fallback"]
         task.reenable
         task.invoke("default")
 
