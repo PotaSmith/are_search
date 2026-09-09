@@ -669,6 +669,22 @@ RSpec.describe AreSearch::SearchParamValidator do
                     ],
                     page: "2",
                 },
+                {
+                    queries: [
+                        {
+                            query_string: "",
+                            fields: [:title],
+                        },
+                    ],
+                    suggest: {
+                        title_spell: {
+                            text: [],
+                            term: {
+                                field: :title,
+                            },
+                        },
+                    },
+                },
             ]
 
             invalid_options.each do |options|

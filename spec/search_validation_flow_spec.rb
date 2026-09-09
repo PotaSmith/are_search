@@ -621,6 +621,31 @@ RSpec.describe "search option flow" do
         end
     end
 
+    it "suggest.textが制約に合わない場合はparams_invalidの空結果を返す" do
+        result = AreSearch::Searcher.search(
+            [article_index_target],
+            queries: [
+                {
+                    query_string: "",
+                    fields:       [:title],
+                },
+            ],
+            suggest: {
+                title_spell: {
+                    text: [],
+                    term: {
+                        field: :title,
+                    },
+                },
+            },
+        )
+
+        expect(result.status).to eq(AreSearch::SearchResult::STATUS_PARAMS_INVALID)
+        expect(result.records).to eq([])
+        expect(result.records.page).to eq(1)
+        expect(result.records.per_page).to eq(25)
+    end
+
     it "未知のオプションを拒否する" do
         allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
 

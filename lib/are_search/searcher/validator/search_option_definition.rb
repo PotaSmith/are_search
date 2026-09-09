@@ -570,6 +570,7 @@ module AreSearch
                                                 key_name: :text,
                                             },
                                             value: {
+                                                error_class: AreSearch::InvalidSearchOption,
                                                 scalar: {
                                                     type: "string",
                                                 },
