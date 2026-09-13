@@ -78,8 +78,8 @@ RSpec.describe AreSearch::Searchable do
                 }
             end
 
-            def default_indexable?
-                true
+            def default_exclude_index?
+                false
             end
 
             def default_search_data
@@ -97,7 +97,7 @@ RSpec.describe AreSearch::Searchable do
             },
             mappings: {},
             properties_method: :default_properties,
-            indexable_method: :default_indexable?,
+            exclude_index_method: :default_exclude_index?,
             stages: {
                 "default" => {
                     data_method: :default_search_data,
@@ -271,12 +271,12 @@ RSpec.describe AreSearch::Searchable do
             end.to raise_error(ArgumentError, /:settings がありません/)
         end
 
-        it "target の mappings と indexable_method は省略できる" do
+        it "target の mappings と exclude_index_method は省略できる" do
             model_class = build_searchable_class
             model_class.include(described_class)
             target_setting = default_target_setting
             target_setting.delete(:mappings)
-            target_setting.delete(:indexable_method)
+            target_setting.delete(:exclude_index_method)
             set_searchable_setting(model_class, default: target_setting)
 
             expect(validate_searchable_setting!).to eq(true)
@@ -294,16 +294,16 @@ RSpec.describe AreSearch::Searchable do
             end.to raise_error(ArgumentError, /\[:mappings\] は Hash/)
         end
 
-        it "indexable_method に nil を指定した場合はエラーにする" do
+        it "exclude_index_method に nil を指定した場合はエラーにする" do
             model_class = build_searchable_class
             model_class.include(described_class)
             target_setting = default_target_setting
-            target_setting[:indexable_method] = nil
+            target_setting[:exclude_index_method] = nil
             set_searchable_setting(model_class, default: target_setting)
 
             expect do
                 validate_searchable_setting!
-            end.to raise_error(ArgumentError, /\[:indexable_method\] は Symbol/)
+            end.to raise_error(ArgumentError, /\[:exclude_index_method\] は Symbol/)
         end
 
         it "target に properties_method が無ければエラーにする" do
@@ -719,8 +719,8 @@ RSpec.describe AreSearch::Searchable do
                 }
             end
 
-            def default_indexable?
-                true
+            def default_exclude_index?
+                false
             end
 
             def default_search_data
@@ -744,7 +744,7 @@ RSpec.describe AreSearch::Searchable do
                     },
                     mappings: {},
                     properties_method: :default_properties,
-                    indexable_method: :default_indexable?,
+                    exclude_index_method: :default_exclude_index?,
                     stages: {
                         "default" => {
                             data_method: :default_search_data,

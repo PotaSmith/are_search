@@ -931,7 +931,7 @@ RSpec.describe "AreSearch sync hooks integration", type: :model do
         original_sync_request_delay = AreSearch.sync_request_delay
         original_rake_application = Rake.application
 
-        save_document_first_indexable_definition
+        save_document_first_exclude_index_definition
 
         AreSearch.after_commit_mode = :direct
         AreSearch.index_operation_enabled = true
@@ -942,7 +942,7 @@ RSpec.describe "AreSearch sync hooks integration", type: :model do
         rebuild_empty_document_first_index
         example.run
     ensure
-        restore_document_first_indexable_definition
+        restore_document_first_exclude_index_definition
         clear_are_search_integration_records
 
         AreSearch.after_commit_mode = original_after_commit_mode
@@ -952,43 +952,43 @@ RSpec.describe "AreSearch sync hooks integration", type: :model do
         Rake.application = original_rake_application
     end
 
-    # DocumentFirstのdefault_indexable?差し替え前状態を退避する。
-    def save_document_first_indexable_definition
-        @document_first_indexable_direct = DocumentFirst.instance_methods(false).include?(:default_indexable?)
+    # DocumentFirstのdefault_exclude_index?差し替え前状態を退避する。
+    def save_document_first_exclude_index_definition
+        @document_first_exclude_index_direct = DocumentFirst.instance_methods(false).include?(:default_exclude_index?)
 
-        if @document_first_indexable_direct
+        if @document_first_exclude_index_direct
             DocumentFirst.send(
                 :alias_method,
-                :are_search_sync_hooks_original_indexable,
-                :default_indexable?,
+                :are_search_sync_hooks_original_exclude_index,
+                :default_exclude_index?,
             )
         end
     end
 
-    # DocumentFirstのdefault_indexable?を元の定義へ戻す。
-    def restore_document_first_indexable_definition
-        if @document_first_indexable_direct
+    # DocumentFirstのdefault_exclude_index?を元の定義へ戻す。
+    def restore_document_first_exclude_index_definition
+        if @document_first_exclude_index_direct
             DocumentFirst.send(
                 :alias_method,
-                :default_indexable?,
-                :are_search_sync_hooks_original_indexable,
+                :default_exclude_index?,
+                :are_search_sync_hooks_original_exclude_index,
             )
-            DocumentFirst.send(:remove_method, :are_search_sync_hooks_original_indexable)
+            DocumentFirst.send(:remove_method, :are_search_sync_hooks_original_exclude_index)
             return
         end
 
-        if DocumentFirst.instance_methods(false).include?(:default_indexable?)
-            DocumentFirst.send(:remove_method, :default_indexable?)
+        if DocumentFirst.instance_methods(false).include?(:default_exclude_index?)
+            DocumentFirst.send(:remove_method, :default_exclude_index?)
         end
     end
 
     # statusがhiddenのレコードをindex対象外とする利用側hookを適用する。
-    def apply_hidden_document_indexable_definition
+    def apply_hidden_document_exclude_index_definition
         DocumentFirst.send(
             :define_method,
-            :default_indexable?,
+            :default_exclude_index?,
         ) do
-            status != "hidden"
+            status == "hidden"
         end
     end
 
@@ -1000,8 +1000,8 @@ RSpec.describe "AreSearch sync hooks integration", type: :model do
         load are_search_template_path("are_search_run_sync_requests.rake")
     end
 
-    it "indexable_methodがfalseへ変わると通常同期でElasticsearchから削除する" do
-        apply_hidden_document_indexable_definition
+    it "exclude_index_methodがtrueへ変わると通常同期でElasticsearchから削除する" do
+        apply_hidden_document_exclude_index_definition
 
         document = DocumentFirst.create!(
             title:   "syncindexabletoken",

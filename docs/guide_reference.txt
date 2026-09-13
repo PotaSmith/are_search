@@ -347,7 +347,7 @@ config/are_search_searchable.rb に定義する。
                     },
                 },
                 properties_method: :default_properties,
-                indexable_method: :default_indexable?,
+                exclude_index_method: :default_exclude_index?,
                 stages: {
                     "default" => {
                         data_method: :default_search_data,
@@ -452,21 +452,20 @@ STI 子クラスでは properties_method をオーバーライドできない。
 を指定できる。
 
 
-## 2-5. indexable_method
+## 2-5. exclude_index_method
 ----------------------------------------------------------------
 
-その IndexTarget へレコードを index するか返す、引数なしのインスタンスメソッド名を指定する。
-省略可能。省略した場合はすべてのレコードをindex対象にする。
+その IndexTarget からレコードを除外するか返す、引数なしのインスタンスメソッド名を指定する。
+省略可能。省略した場合はすべてのレコードを index 対象にする。
 
-    indexable_method: :default_indexable?
+    exclude_index_method: :default_exclude_index?
 
-    def default_indexable?
+    def default_exclude_index?
         published?
     end
 
-false の場合は IndexTarget からdeleteする。
-indexable_method を省略した場合は、すべてのレコードを index 対象にする。
-indexable_method は IndexTarget 単位であり、stageごとには分かれない。
+true の場合は IndexTarget からdeleteする。
+exclude_index_method は IndexTarget 単位であり、stageごとには分かれない。
 
 gem は unscoped でレコードを取得するため、除外が必要であればここに条件を指定する。
 

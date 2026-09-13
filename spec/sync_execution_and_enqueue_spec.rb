@@ -290,7 +290,7 @@ RSpec.describe AreSearch::Searchable do
                     },
                     mappings: {},
                     properties_method: :default_properties,
-                    indexable_method: :default_indexable?,
+                    exclude_index_method: :default_exclude_index?,
                     stages: {
                         "default" => {
                             data_method: :default_search_data,
@@ -376,8 +376,8 @@ RSpec.describe AreSearch::Searchable do
                 }
             end
 
-            def default_indexable?
-                true
+            def default_exclude_index?
+                false
             end
 
             def default_search_data
@@ -458,16 +458,16 @@ RSpec.describe AreSearch::Searchable do
             record.are_search_index_data_validate
         end
 
-        it "indexable ではない target は検証しない" do
+        it "index除外対象のtargetは検証しない" do
             model_class = build_searchable_class
             model_class.include(described_class)
             record = model_class.new
 
             index_target = model_class.are_search_index_target(:default)
             allow(index_target)
-                .to receive(:are_search_indexable?)
+                .to receive(:are_search_exclude_index?)
                 .with(record)
-                .and_return(false)
+                .and_return(true)
 
             expect(index_target)
                 .not_to receive(:are_search_index_data)
@@ -540,7 +540,7 @@ RSpec.describe AreSearch::Searchable do
                         settings: { max_result_window: 2_000 },
                         mappings: {},
                         properties_method: :default_properties,
-                        indexable_method: :default_indexable?,
+                        exclude_index_method: :default_exclude_index?,
                         stages: {
                             "default" => {
                                 data_method: :default_search_data,
@@ -553,7 +553,7 @@ RSpec.describe AreSearch::Searchable do
                         settings: { max_result_window: 2_000 },
                         mappings: {},
                         properties_method: :default_properties,
-                        indexable_method: :default_indexable?,
+                        exclude_index_method: :default_exclude_index?,
                         stages: {
                             "default" => {
                                 data_method: :default_search_data,
@@ -777,7 +777,7 @@ RSpec.describe AreSearch::Searchable do
                         settings: { max_result_window: 2_000 },
                         mappings: {},
                         properties_method: :default_properties,
-                        indexable_method: :default_indexable?,
+                        exclude_index_method: :default_exclude_index?,
                         stages: {
                             "first" => {
                                 data_method: :default_search_data,

@@ -12,8 +12,8 @@ class DocumentSecond < ApplicationRecord
         }
     end
 
-    def default_indexable?
-        true
+    def default_exclude_index?
+        false
     end
 
     # 標準IndexTargetへ保存する完成ドキュメントを返す。

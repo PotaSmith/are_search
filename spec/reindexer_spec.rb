@@ -121,8 +121,8 @@ RSpec.describe AreSearch::Reindexer do
             .and_return(model)
 
         allow(index_target)
-            .to receive(:are_search_indexable?)
-            .and_return(true)
+            .to receive(:are_search_exclude_index?)
+            .and_return(false)
 
         logger = instance_double("Logger", error: nil)
         allow(Rails).to receive(:logger).and_return(logger)
@@ -370,7 +370,7 @@ RSpec.describe AreSearch::Reindexer do
             end
         end
 
-        context "when some records are not indexable" do
+        context "when some records are excluded from index" do
             let(:record_count) do
                 2
             end
@@ -387,9 +387,9 @@ RSpec.describe AreSearch::Reindexer do
                 )
 
                 allow(index_target)
-                    .to receive(:are_search_indexable?)
+                    .to receive(:are_search_exclude_index?)
                     .with(second_record)
-                    .and_return(false)
+                    .and_return(true)
 
                 allow(model).to receive(:find_in_batches) do |batch_size:, &block|
                     expect(batch_size).to eq(500)

@@ -2,6 +2,10 @@
 
 - ドット付き等の特殊フィールドの許容オプションを追加
 
+## [Unreleased]
+
+- `indexable_method` を `exclude_index_method` に変更
+
 ## [0.9.3] - 2026-09-11
 
 - SyncRequest の rake 回収を primary / fallback の2経路に分離。

@@ -15,7 +15,7 @@ AreSearch.searchable_class_setting = {
                 },
             },
             properties_method: :default_properties,
-            indexable_method: :default_indexable?,
+            exclude_index_method: :default_exclude_index?,
             stages: {
                 "default" => {
                     data_method: :default_search_data,
@@ -41,7 +41,7 @@ AreSearch.searchable_class_setting = {
                 },
             },
             properties_method: :default_properties,
-            indexable_method: :default_indexable?,
+            exclude_index_method: :default_exclude_index?,
             stages: {
                 "default" => {
                     data_method: :default_search_data,

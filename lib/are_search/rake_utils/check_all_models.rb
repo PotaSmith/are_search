@@ -68,9 +68,9 @@ module AreSearch
 
                     validate_sti_instance_method(
                         klass,
-                        target_setting[:indexable_method],
+                        target_setting[:exclude_index_method],
                         0,
-                        "#{index_target_name.inspect}[:indexable_method]",
+                        "#{index_target_name.inspect}[:exclude_index_method]",
                         errors,
                     )
 

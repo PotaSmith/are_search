@@ -88,14 +88,6 @@ index_target_name は Symbol で指定する。
         }
     end
 
-    def default_indexable?
-        true
-    end
-
-    def autocomplete_indexable?
-        true
-    end
-
 IndexTarget を取得する。
 
     default_index = Article.are_search_index_target(:default)
@@ -252,17 +244,17 @@ enqueue と after_commit はstageごとに指定する。
 # 7. target ごとに index 対象を制御する
 ================================================================
 
-indexable_method には引数なしのインスタンスメソッドを指定する。
+exclude_index_method には引数なしのインスタンスメソッドを指定する。
 省略可能。省略した場合はすべてのレコードをindex対象にする。
-false の時は target からdeleteする。
+true の時は target からdeleteする。
 
-    indexable_method: :default_indexable?
+    exclude_index_method: :default_exclude_index?
 
-    def default_indexable?
+    def default_exclude_index?
         published?
     end
 
-indexable_method は IndexTarget 単位の設定であり、stageごとには分かれない。
+exclude_index_method は IndexTarget 単位の設定であり、stageごとには分かれない。
 
 gem は unscoped でレコードを取得するため、除外が必要であればここに条件を指定する。
 
@@ -374,5 +366,5 @@ AreSearch.searchable_class_setting は Searchable を include した継承系統
 STI 子クラスは上位モデルの設定を使用する。
 
 properties_method は子クラスでオーバーライドできない。
-indexable_method、data_method、before_sync_check、after_sync_callback は、子クラスでオーバーライドされる可能性がある。
+exclude_index_method、data_method、before_sync_check、after_sync_callback は、子クラスでオーバーライドされる可能性がある。
 are_search:check_all_models は STI 子クラスを含め設定を確認する。

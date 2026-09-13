@@ -13,8 +13,8 @@ module AreSearch
         #     status:      { type: 'keyword' },
         # }
         #
-        # def default_indexable?
-        #     true
+        # def default_exclude_index?
+        #     false
         # end
         #
         # def default_search_data
@@ -103,7 +103,7 @@ module AreSearch
         end
 
         # このレコードの現在の状態を Elasticsearch へ直接反映する。
-        # destroyed? または IndexTarget の index 対象外なら delete、それ以外の場合は index を実行する。
+        # destroyed? または IndexTarget の index 除外対象なら delete、それ以外の場合は index を実行する。
         #
         # sync_request・非同期同期（SyncJob）とは独立した低レベルコマンド。
         # sync lock と alias の存在は確認しない。
@@ -113,7 +113,7 @@ module AreSearch
         #
         # @return [Object, nil] index時はElasticsearchクライアントの戻り値、delete時は nil。
         def are_search_index_or_delete!(index_target, sync_stage_name)
-            if destroyed? || index_target.are_search_indexable?(self) == false
+            if destroyed? || index_target.are_search_exclude_index?(self) == true
                 index_target.are_search_delete!(id)
             else
                 AreSearch::EsAdapter.index(
@@ -132,7 +132,7 @@ module AreSearch
         # typo 等で例外が出るかどうかを確認するのが目的
         def are_search_index_data_validate
             self.class.are_search_index_targets.each do |index_target|
-                next if index_target.are_search_indexable?(self) == false
+                next if index_target.are_search_exclude_index?(self) == true
 
                 index_target.are_search_sync_stage_names.each do |sync_stage_name|
                     mappings = index_target.are_search_index_mappings

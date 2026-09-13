@@ -157,12 +157,12 @@ module AreSearch
             sync_stage_names
         end
 
-        # このIndexTargetでレコードをindex対象にするか返す。
-        # indexable_method省略時は全レコードを対象にする。
-        def are_search_indexable?(record)
-            return true unless @target_setting.key?(:indexable_method)
+        # このIndexTargetでレコードをindex対象から除外するか返す。
+        # exclude_index_method省略時は除外しない。
+        def are_search_exclude_index?(record)
+            return false if @target_setting.key?(:exclude_index_method) == false
 
-            record.public_send(@target_setting[:indexable_method])
+            record.public_send(@target_setting[:exclude_index_method]) == true
         end
 
         # 指定stageのindex data生成を設定されたモデルメソッドへ委譲する。

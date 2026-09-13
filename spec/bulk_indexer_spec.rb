@@ -66,8 +66,8 @@ RSpec.describe AreSearch::BulkIndexer do
             .to receive(:are_search_sync_stage_names)
             .and_return([sync_stage_name])
         allow(index_target)
-            .to receive(:are_search_indexable?)
-            .and_return(true)
+            .to receive(:are_search_exclude_index?)
+            .and_return(false)
     end
 
     # 指定したレコードをrelationのfind_eachから順番に返す。
@@ -132,9 +132,9 @@ RSpec.describe AreSearch::BulkIndexer do
                 .and_return(id: 2, title: "failure")
 
             allow(index_target)
-                .to receive(:are_search_indexable?)
+                .to receive(:are_search_exclude_index?)
                 .with(delete_record)
-                .and_return(false)
+                .and_return(true)
             expect(delete_record)
                 .not_to receive(:are_search_index_data_for_index!)
 
@@ -319,7 +319,7 @@ RSpec.describe AreSearch::BulkIndexer do
             ).to eq(false)
         end
 
-        it "are_search_indexable?の例外はdata_failとして記録して処理を継続する" do
+        it "are_search_exclude_index?の例外はdata_failとして記録して処理を継続する" do
             relation = double("relation")
             failed_record = double("failed_record", id: 1)
             success_record = double("success_record", id: 2)
@@ -330,9 +330,9 @@ RSpec.describe AreSearch::BulkIndexer do
             allow_find_each(relation, [failed_record, success_record])
 
             allow(index_target)
-                .to receive(:are_search_indexable?)
+                .to receive(:are_search_exclude_index?)
                 .with(failed_record)
-                .and_raise(RuntimeError, "indexable failed")
+                .and_raise(RuntimeError, "exclude index failed")
 
             allow(success_record)
                 .to receive(:are_search_index_data_for_index!)

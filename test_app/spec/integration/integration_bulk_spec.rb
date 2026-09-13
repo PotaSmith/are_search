@@ -316,7 +316,7 @@ RSpec.describe "AreSearch BulkIndexer recover integration", type: :model do
     end
 end
 
-RSpec.describe "AreSearch BulkIndexer indexable integration", type: :model do
+RSpec.describe "AreSearch BulkIndexer exclude index integration", type: :model do
     include AreSearchIntegrationSupport
 
     self.use_transactional_tests = false
@@ -325,7 +325,7 @@ RSpec.describe "AreSearch BulkIndexer indexable integration", type: :model do
         original_after_commit_mode = AreSearch.after_commit_mode
         original_index_operation_enabled = AreSearch.index_operation_enabled
 
-        save_document_first_indexable_definition
+        save_document_first_exclude_index_definition
 
         AreSearch.after_commit_mode = :none
         AreSearch.index_operation_enabled = true
@@ -333,55 +333,55 @@ RSpec.describe "AreSearch BulkIndexer indexable integration", type: :model do
         clear_are_search_integration_records
         example.run
     ensure
-        restore_document_first_indexable_definition
+        restore_document_first_exclude_index_definition
         clear_are_search_integration_records
 
         AreSearch.after_commit_mode = original_after_commit_mode
         AreSearch.index_operation_enabled = original_index_operation_enabled
     end
 
-    # DocumentFirstのdefault_indexable?差し替え前状態を退避する。
-    def save_document_first_indexable_definition
-        @document_first_indexable_direct = DocumentFirst.instance_methods(false).include?(:default_indexable?)
+    # DocumentFirstのdefault_exclude_index?差し替え前状態を退避する。
+    def save_document_first_exclude_index_definition
+        @document_first_exclude_index_direct = DocumentFirst.instance_methods(false).include?(:default_exclude_index?)
 
-        if @document_first_indexable_direct
+        if @document_first_exclude_index_direct
             DocumentFirst.send(
                 :alias_method,
-                :are_search_bulk_original_indexable,
-                :default_indexable?,
+                :are_search_bulk_original_exclude_index,
+                :default_exclude_index?,
             )
         end
     end
 
-    # DocumentFirstのdefault_indexable?を元の定義へ戻す。
-    def restore_document_first_indexable_definition
-        if @document_first_indexable_direct
+    # DocumentFirstのdefault_exclude_index?を元の定義へ戻す。
+    def restore_document_first_exclude_index_definition
+        if @document_first_exclude_index_direct
             DocumentFirst.send(
                 :alias_method,
-                :default_indexable?,
-                :are_search_bulk_original_indexable,
+                :default_exclude_index?,
+                :are_search_bulk_original_exclude_index,
             )
-            DocumentFirst.send(:remove_method, :are_search_bulk_original_indexable)
+            DocumentFirst.send(:remove_method, :are_search_bulk_original_exclude_index)
             return
         end
 
-        if DocumentFirst.instance_methods(false).include?(:default_indexable?)
-            DocumentFirst.send(:remove_method, :default_indexable?)
+        if DocumentFirst.instance_methods(false).include?(:default_exclude_index?)
+            DocumentFirst.send(:remove_method, :default_exclude_index?)
         end
     end
 
     # statusがhiddenのレコードをBulkIndexerのindex対象外にする。
-    def apply_hidden_document_indexable_definition
+    def apply_hidden_document_exclude_index_definition
         DocumentFirst.send(
             :define_method,
-            :default_indexable?,
+            :default_exclude_index?,
         ) do
-            status != "hidden"
+            status == "hidden"
         end
     end
 
-    it "indexable_methodがfalseのレコードをbulk deleteとして正常処理する" do
-        apply_hidden_document_indexable_definition
+    it "exclude_index_methodがtrueのレコードをbulk deleteとして正常処理する" do
+        apply_hidden_document_exclude_index_definition
 
         reindex_result = rebuild_empty_document_first_index
         expect(reindex_result[:result]).to eq(:success)
@@ -418,8 +418,8 @@ RSpec.describe "AreSearch BulkIndexer indexable integration", type: :model do
         end
     end
 
-    it "既存ドキュメントがindexable_methodの対象外になった場合はbulkで削除する" do
-        apply_hidden_document_indexable_definition
+    it "既存ドキュメントがexclude_index_methodの除外対象になった場合はbulkで削除する" do
+        apply_hidden_document_exclude_index_definition
 
         reindex_result = rebuild_empty_document_first_index
         expect(reindex_result[:result]).to eq(:success)

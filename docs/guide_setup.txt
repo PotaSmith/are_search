@@ -114,10 +114,6 @@ Elasticsearch::Client.new の設定:
             }
         end
 
-        def default_indexable?
-            true
-        end
-
         def default_search_data
             {
                 id:         id,
@@ -141,7 +137,6 @@ config/are_search_searchable.rb で、モデルごとの IndexTarget と sync st
                 },
                 mappings: {},
                 properties_method: :default_properties,
-                indexable_method: :default_indexable?,
                 stages: {
                     "default" => {
                         data_method: :default_search_data,
@@ -153,7 +148,7 @@ config/are_search_searchable.rb で、モデルごとの IndexTarget と sync st
         },
     }
 
-properties_method はクラスメソッド、indexable_method と data_method は引数なしのインスタンスメソッドを指定する。
+properties_method はクラスメソッド、data_method は引数なしのインスタンスメソッドを指定する。
 stages の enqueue は保存時に SyncRequest を作るか、after_commit は commit 後に同期を開始するかを指定する。
 
 設定の詳細は guide_reference.txt、IndexTarget と sync stage の使い分けは

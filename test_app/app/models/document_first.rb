@@ -12,8 +12,8 @@ class DocumentFirst < ApplicationRecord
         }
     end
 
-    def default_indexable?
-        true
+    def default_exclude_index?
+        false
     end
 
     def default_search_data

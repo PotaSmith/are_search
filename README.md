@@ -106,10 +106,6 @@ class Article < ApplicationRecord
         }
     end
 
-    def default_indexable?
-        true
-    end
-
     def default_search_data
         {
             id:     id,
@@ -132,7 +128,6 @@ AreSearch.searchable_class_setting = {
             },
             mappings: {},
             properties_method: :default_properties,
-            indexable_method: :default_indexable?,
             stages: {
                 "default" => {
                     data_method: :default_search_data,

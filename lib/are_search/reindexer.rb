@@ -130,7 +130,7 @@ module AreSearch
             ids = []
 
             batch.each do |record|
-                next if index_target.are_search_indexable?(record) == false
+                next if index_target.are_search_exclude_index?(record) == true
 
                 body << { index: { _index: physical_index_name, _id: record.id.to_s } }
                 body << record.are_search_index_data_for_index!(index_target, sync_stage_name)

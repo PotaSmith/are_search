@@ -14,7 +14,7 @@ module AreSearch
             :settings,
             :mappings,
             :properties_method,
-            :indexable_method,
+            :exclude_index_method,
             :stages,
         ].freeze
 
@@ -195,7 +195,7 @@ module AreSearch
             validate_settings(target_setting, path, errors)
             validate_mappings(target_setting, path, errors)
             validate_properties_method(model_class, target_setting, path, errors)
-            validate_indexable_method(model_class, target_setting, path, errors)
+            validate_exclude_index_method(model_class, target_setting, path, errors)
             validate_stages(model_class, target_setting, path, errors)
 
             true
@@ -344,12 +344,12 @@ module AreSearch
             true
         end
 
-        # IndexTarget単位のindex対象判定メソッドを検査する。
-        def validate_indexable_method(model_class, target_setting, path, errors)
-            return true if target_setting.key?(:indexable_method) == false
+        # IndexTarget単位のindex除外判定メソッドを検査する。
+        def validate_exclude_index_method(model_class, target_setting, path, errors)
+            return true if target_setting.key?(:exclude_index_method) == false
 
-            method_name = target_setting[:indexable_method]
-            validate_instance_method(model_class, method_name, 0, "#{path}[:indexable_method]", errors)
+            method_name = target_setting[:exclude_index_method]
+            validate_instance_method(model_class, method_name, 0, "#{path}[:exclude_index_method]", errors)
         end
 
         # stage定義とdata生成メソッドを検査する。

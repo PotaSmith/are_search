@@ -21,7 +21,7 @@ RSpec.describe AreSearch::IndexTarget do
                 dynamic: "strict",
             },
             properties_method: :default_properties,
-            indexable_method: :default_indexable?,
+            exclude_index_method: :default_exclude_index?,
             stages: {
                 "default" => {
                     data_method: :default_search_data,
@@ -251,7 +251,7 @@ RSpec.describe AreSearch::IndexTarget do
                         },
                     },
                     properties_method: :default_properties,
-                    indexable_method: :default_indexable?,
+                    exclude_index_method: :default_exclude_index?,
                     stages: {
                         "default" => {
                             data_method: :default_search_data,
@@ -311,25 +311,36 @@ RSpec.describe AreSearch::IndexTarget do
 
     end
 
-    describe "#are_search_indexable?" do
-        it "indexable_method省略時はtrueを返す" do
-            target_setting.delete(:indexable_method)
+    describe "#are_search_exclude_index?" do
+        it "exclude_index_method省略時はfalseを返す" do
+            target_setting.delete(:exclude_index_method)
             record = double("record")
 
             expect(record).not_to receive(:public_send)
 
-            expect(index_target.are_search_indexable?(record)).to eq(true)
+            expect(index_target.are_search_exclude_index?(record)).to eq(false)
         end
 
-        it "indexable_method指定時はモデルメソッドの結果を返す" do
+        it "exclude_index_methodがtrueを返した場合だけtrueを返す" do
             record = double("record")
 
             expect(record)
                 .to receive(:public_send)
-                .with(:default_indexable?)
-                .and_return(false)
+                .with(:default_exclude_index?)
+                .and_return(true)
 
-            expect(index_target.are_search_indexable?(record)).to eq(false)
+            expect(index_target.are_search_exclude_index?(record)).to eq(true)
+        end
+
+        it "exclude_index_methodがnilを返した場合はfalseを返す" do
+            record = double("record")
+
+            expect(record)
+                .to receive(:public_send)
+                .with(:default_exclude_index?)
+                .and_return(nil)
+
+            expect(index_target.are_search_exclude_index?(record)).to eq(false)
         end
     end
 
@@ -1000,7 +1011,7 @@ RSpec.describe AreSearch::IndexTarget do
                     dynamic: "strict",
                 },
                 properties_method: :default_properties,
-                indexable_method: :default_indexable?,
+                exclude_index_method: :default_exclude_index?,
                 stages: {
                     "default" => {
                         data_method: :default_search_data,

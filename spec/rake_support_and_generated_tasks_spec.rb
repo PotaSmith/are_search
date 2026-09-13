@@ -255,7 +255,7 @@ RSpec.describe AreSearch::RakeUtils::CheckAllModels do
                         settings: { max_result_window: 2_000 },
                         mappings: {},
                         properties_method: :default_properties,
-                        indexable_method: :default_indexable?,
+                        exclude_index_method: :default_exclude_index?,
                         stages: {
                             "default" => {
                                 data_method: :default_search_data,
@@ -284,8 +284,8 @@ RSpec.describe AreSearch::RakeUtils::CheckAllModels do
                     }
                 end
 
-                def default_indexable?
-                    true
+                def default_exclude_index?
+                    false
                 end
 
                 def default_search_data

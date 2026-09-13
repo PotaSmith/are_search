@@ -260,7 +260,7 @@ module AreSearch
         def append_buffer(record)
             key = record.id.to_s
 
-            if @index_target.are_search_indexable?(record) != false
+            if @index_target.are_search_exclude_index?(record) == false
                 action = {
                     index: {
                         _index: @index_target.are_search_index_alias_name,
