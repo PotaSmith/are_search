@@ -461,7 +461,7 @@ STI 子クラスでは properties_method をオーバーライドできない。
     exclude_index_method: :default_exclude_index?
 
     def default_exclude_index?
-        published?
+        published? != true
     end
 
 true の場合は IndexTarget からdeleteする。

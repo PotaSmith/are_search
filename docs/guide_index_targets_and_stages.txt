@@ -251,7 +251,7 @@ true の時は target からdeleteする。
     exclude_index_method: :default_exclude_index?
 
     def default_exclude_index?
-        published?
+        published? != true
     end
 
 exclude_index_method は IndexTarget 単位の設定であり、stageごとには分かれない。
