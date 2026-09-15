@@ -399,7 +399,7 @@ end
 
 RSpec.describe AreSearch::SearcherUtils do
     describe ".build_model_filter_clause" do
-        it "index targetのモデル名を重複させずterms条件を返す" do
+        it "aliasごとにモデル名を重複させずindex条件とモデル条件を組み合わせる" do
             article_model = Class.new do
                 def self.name
                     "Article"
@@ -411,19 +411,74 @@ RSpec.describe AreSearch::SearcherUtils do
                 end
             end
             index_targets = [
-                double("article_default", model_class: article_model),
-                double("article_archive", model_class: article_model),
-                double("document_default", model_class: document_model),
+                double(
+                    "article_default",
+                    model_class: article_model,
+                    are_search_index_alias_name: "test__articles__default",
+                ),
+                double(
+                    "article_default_duplicate",
+                    model_class: article_model,
+                    are_search_index_alias_name: "test__articles__default",
+                ),
+                double(
+                    "article_archive",
+                    model_class: article_model,
+                    are_search_index_alias_name: "test__articles__archive",
+                ),
+                double(
+                    "document_default",
+                    model_class: document_model,
+                    are_search_index_alias_name: "test__documents__default",
+                ),
             ]
 
             result = described_class.build_model_filter_clause(index_targets)
 
             expect(result).to eq(
-                terms: {
-                    AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME => [
-                        "Article",
-                        "Document",
+                bool: {
+                    should: [
+                        {
+                            bool: {
+                                filter: [
+                                    { term: { _index: "test__articles__default" } },
+                                    {
+                                        terms: {
+                                            AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME =>
+                                                ["Article"],
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                        {
+                            bool: {
+                                filter: [
+                                    { term: { _index: "test__articles__archive" } },
+                                    {
+                                        terms: {
+                                            AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME =>
+                                                ["Article"],
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                        {
+                            bool: {
+                                filter: [
+                                    { term: { _index: "test__documents__default" } },
+                                    {
+                                        terms: {
+                                            AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME =>
+                                                ["Document"],
+                                        },
+                                    },
+                                ],
+                            },
+                        },
                     ],
+                    minimum_should_match: 1,
                 },
             )
         end

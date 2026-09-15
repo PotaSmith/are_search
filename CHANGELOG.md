@@ -4,6 +4,7 @@
 
 ## [Unreleased]
 
+- 検索時に index target 毎にモデルの条件を生成するように変更
 - `indexable_method` を `exclude_index_method` に変更
 - `index_data_validation_enabled` を 追加。`are_search_index_data_validate` を validate メソッドとして登録
 

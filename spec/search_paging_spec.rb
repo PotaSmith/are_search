@@ -826,9 +826,23 @@ RSpec.describe "search paging" do
             .to receive(:search) do |args|
                 expect(args[:body].dig(:query, :bool, :filter)).to eq([
                     {
-                        terms: {
-                            AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME =>
-                                ["Article"],
+                        bool: {
+                            should: [
+                                {
+                                    bool: {
+                                        filter: [
+                                            { term: { _index: "test__articles__default" } },
+                                            {
+                                                terms: {
+                                                    AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME =>
+                                                        ["Article"],
+                                                },
+                                            },
+                                        ],
+                                    },
+                                },
+                            ],
+                            minimum_should_match: 1,
                         },
                     },
                 ])
@@ -888,9 +902,36 @@ RSpec.describe "search paging" do
                         },
                     },
                     {
-                        terms: {
-                            AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME =>
-                                ["Article", "Document"],
+                        bool: {
+                            should: [
+                                {
+                                    bool: {
+                                        filter: [
+                                            { term: { _index: "test__articles__default" } },
+                                            {
+                                                terms: {
+                                                    AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME =>
+                                                        ["Article"],
+                                                },
+                                            },
+                                        ],
+                                    },
+                                },
+                                {
+                                    bool: {
+                                        filter: [
+                                            { term: { _index: "test__documents__default" } },
+                                            {
+                                                terms: {
+                                                    AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME =>
+                                                        ["Document"],
+                                                },
+                                            },
+                                        ],
+                                    },
+                                },
+                            ],
+                            minimum_should_match: 1,
                         },
                     },
                 ])
@@ -939,9 +980,23 @@ RSpec.describe "search paging" do
                         },
                     },
                     {
-                        terms: {
-                            AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME =>
-                                ["Article"],
+                        bool: {
+                            should: [
+                                {
+                                    bool: {
+                                        filter: [
+                                            { term: { _index: "test__articles__default" } },
+                                            {
+                                                terms: {
+                                                    AreSearch::IndexDefinition::RESERVED_AR_MODEL_CLASS_NAME_FIELD_NAME =>
+                                                        ["Article"],
+                                                },
+                                            },
+                                        ],
+                                    },
+                                },
+                            ],
+                            minimum_should_match: 1,
                         },
                     },
                 ])

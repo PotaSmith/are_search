@@ -885,3 +885,134 @@ RSpec.describe "AreSearch STI integration", type: :model do
         expect(child1_result.records.first).to be_a(DocumentFirstChild1)
     end
 end
+
+RSpec.describe "AreSearch STI multi target aggregation integration", type: :model do
+    include AreSearchIntegrationSupport
+
+    self.use_transactional_tests = false
+
+    around do |example|
+        original_after_commit_mode = AreSearch.after_commit_mode
+        original_index_operation_enabled = AreSearch.index_operation_enabled
+        @original_searchable_class_setting = AreSearch.searchable_class_setting
+
+        AreSearch.after_commit_mode = :direct
+        AreSearch.index_operation_enabled = true
+
+        apply_sti_multi_target_definition
+        clear_are_search_integration_records
+        delete_document_first_target_index(:public)
+
+        example.run
+    ensure
+        clear_are_search_integration_records
+
+        if @original_searchable_class_setting
+            AreSearch.searchable_class_setting = @original_searchable_class_setting
+            reset_document_first_index_targets
+            delete_document_first_target_index(:public)
+            rebuild_empty_document_first_index
+            reset_document_first_index_targets
+        end
+
+        AreSearch.after_commit_mode = original_after_commit_mode
+        AreSearch.index_operation_enabled = original_index_operation_enabled
+    end
+
+    # DocumentFirstへdefaultとpublicの2つのIndexTargetを一時的に定義する。
+    def apply_sti_multi_target_definition
+        setting = @original_searchable_class_setting.deep_dup
+        default_setting = setting.fetch("DocumentFirst").fetch(:default).deep_dup
+
+        setting["DocumentFirst"] = {
+            default: default_setting.deep_dup,
+            public:  default_setting.deep_dup,
+        }
+
+        AreSearch.searchable_class_setting = setting
+        reset_document_first_index_targets
+    end
+
+    # DocumentFirstとSTI子クラスのIndexTargetキャッシュを現在の定義へ揃える。
+    def reset_document_first_index_targets
+        DocumentFirst.are_search_reset_index_targets!
+
+        DocumentFirst.descendants.each do |model_class|
+            model_class.are_search_reset_index_targets!
+        end
+    end
+
+    # 指定targetのalias名をモデル定義に依存せず組み立てる。
+    def document_first_index_alias_name(index_target_name)
+        AreSearch.join_index_name(
+            AreSearch.index_prefix,
+            DocumentFirst.are_search_ar_table_name,
+            index_target_name,
+        )
+    end
+
+    # 指定targetから生成された物理indexを削除する。
+    def delete_document_first_target_index(index_target_name)
+        index_alias_name = document_first_index_alias_name(index_target_name)
+        physical_indices = AreSearch::EsAdapter.physical_indices_for_alias(
+            index_alias_name: index_alias_name,
+        )
+
+        physical_indices.keys.each do |physical_index_name|
+            AreSearch::EsAdapter.delete_physical_index(
+                physical_index_name: physical_index_name,
+            )
+        end
+    end
+
+    it "STI兄弟の異なるtargetを検索したaggsへ指定外targetのモデルを混ぜない" do
+        default_index_target = DocumentFirst.are_search_index_target(:default)
+        public_index_target = DocumentFirst.are_search_index_target(:public)
+        index_targets = [
+            default_index_target,
+            public_index_target,
+        ]
+
+        reindex_results = reindex_integration_indexes(index_targets)
+        expect(
+            reindex_results.map { |result| result[:result] },
+        ).to eq([
+            :success,
+            :success,
+        ])
+
+        child1 = DocumentFirstChild1.create!(
+            title:   "stitargetaggtoken child1",
+            body:    "child one",
+            status:  "child1",
+            user_id: 2201,
+        )
+        child2 = DocumentFirstChild2.create!(
+            title:   "stitargetaggtoken child2",
+            body:    "child two",
+            status:  "child2",
+            user_id: 2202,
+        )
+
+        refresh_integration_indexes(index_targets)
+
+        search_targets = [
+            DocumentFirstChild1.are_search_index_target(:default),
+            DocumentFirstChild2.are_search_index_target(:public),
+        ]
+        result = search_integration_indexes(
+            search_targets,
+            "stitargetaggtoken",
+            aggs: [:status],
+        )
+
+        expect(result.status).to eq(AreSearch::SearchResult::STATUS_OK)
+        expect(result.raw_response.dig("hits", "total", "value")).to eq(2)
+        expect(result.records.map(&:id).sort).to eq([child1.id, child2.id].sort)
+        expect(result.aggs(:status)).to match_array([
+            ["child1", 1],
+            ["child2", 1],
+        ])
+    end
+end
+
