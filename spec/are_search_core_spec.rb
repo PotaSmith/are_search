@@ -16,6 +16,7 @@ RSpec.describe AreSearch, "configuration" do
         original_max_force_try_count = described_class.max_force_try_count
         original_after_commit_mode = described_class.after_commit_mode
         original_search_failure_mode = described_class.search_failure_mode
+        original_index_data_validation_enabled = described_class.index_data_validation_enabled
         original_index_operation_enabled = described_class.index_operation_enabled
         original_rake_operation_enabled = described_class.rake_operation_enabled
         original_analyzer_settings = described_class.analyzer_settings
@@ -42,6 +43,7 @@ RSpec.describe AreSearch, "configuration" do
         described_class.max_force_try_count = original_max_force_try_count
         described_class.after_commit_mode = original_after_commit_mode
         described_class.search_failure_mode = original_search_failure_mode
+        described_class.index_data_validation_enabled = original_index_data_validation_enabled
         described_class.index_operation_enabled = original_index_operation_enabled
         described_class.rake_operation_enabled = original_rake_operation_enabled
         described_class.analyzer_settings = original_analyzer_settings
@@ -314,6 +316,7 @@ RSpec.describe AreSearch, "configuration" do
         described_class.sync_request_process_hang_wait = 600
         described_class.max_force_try_count = 7
         described_class.after_commit_mode = :job
+        described_class.index_data_validation_enabled = true
         described_class.index_operation_enabled = false
         described_class.rake_operation_enabled = true
         described_class.analyzer_settings = analyzer_settings
@@ -324,6 +327,7 @@ RSpec.describe AreSearch, "configuration" do
         expect(described_class.sync_request_process_hang_wait).to eq(600)
         expect(described_class.max_force_try_count).to eq(7)
         expect(described_class.after_commit_mode).to eq(:job)
+        expect(described_class.index_data_validation_enabled).to eq(true)
         expect(described_class.index_operation_enabled).to eq(false)
         expect(described_class.rake_operation_enabled).to eq(true)
         expect(described_class.analyzer_settings).to equal(analyzer_settings)

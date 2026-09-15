@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 - `indexable_method` を `exclude_index_method` に変更
+- `index_data_validation_enabled` を 追加。`are_search_index_data_validate` を validate メソッドとして登録
 
 ## [0.9.3] - 2026-09-11
 

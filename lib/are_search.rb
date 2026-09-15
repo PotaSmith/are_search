@@ -99,6 +99,7 @@ module AreSearch
     @search_body_policy = AreSearch::ScriptDenySearchBodyPolicy
     @search_param_policy = AreSearch::SearchParamLengthPolicy
     @search_failure_mode = :empty_result
+    @index_data_validation_enabled = false
     @database_specific = AreSearch::PostgreSQLDatabaseSpecific
     @searchable_class_setting = {}
     @client_block = nil
@@ -180,6 +181,15 @@ module AreSearch
         end
 
         @search_failure_mode = value
+    end
+
+    def self.index_data_validation_enabled
+        @index_data_validation_enabled
+    end
+
+    # 保存時に index data と mappings の整合性を検査するか設定する。
+    def self.index_data_validation_enabled=(value)
+        @index_data_validation_enabled = value
     end
 
     def self.database_specific

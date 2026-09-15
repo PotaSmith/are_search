@@ -334,7 +334,7 @@ RSpec.describe AreSearch::Searchable do
                 @commit_callbacks ||= []
             end
 
-            def self.validate(callback_name)
+            def self.validate(callback_name, **_options)
                 validations << callback_name
             end
 

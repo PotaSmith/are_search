@@ -9,6 +9,7 @@ RSpec.describe AreSearch::Searchable do
 
     before do
         @original_searchable_class_setting = AreSearch.searchable_class_setting
+        @original_index_data_validation_enabled = AreSearch.index_data_validation_enabled
 
         allow(logger).to receive(:debug)
         allow(Rails).to receive(:logger).and_return(logger)
@@ -16,6 +17,7 @@ RSpec.describe AreSearch::Searchable do
 
     after do
         AreSearch.searchable_class_setting = @original_searchable_class_setting
+        AreSearch.index_data_validation_enabled = @original_index_data_validation_enabled
     end
 
     def build_searchable_class
@@ -40,8 +42,8 @@ RSpec.describe AreSearch::Searchable do
                 @commit_callbacks ||= []
             end
 
-            def self.validate(callback_name)
-                validations << callback_name
+            def self.validate(callback_name, **options)
+                validations << [callback_name, options]
             end
 
             def self.after_save(callback_name)
@@ -130,12 +132,20 @@ RSpec.describe AreSearch::Searchable do
     end
 
     describe "include" do
-        it "sync 用 callback だけを登録する" do
+        it "index data validation と sync 用 callback を登録する" do
             model_class = build_searchable_class
 
             model_class.include(described_class)
 
-            expect(model_class.validations).to eq([])
+            validation = model_class.validations.first
+            expect(validation[0]).to eq(:are_search_index_data_validate)
+            expect(validation[1][:if]).to be_a(Proc)
+
+            AreSearch.index_data_validation_enabled = false
+            expect(validation[1][:if].call).to eq(false)
+            AreSearch.index_data_validation_enabled = true
+            expect(validation[1][:if].call).to eq(true)
+
             expect(model_class.save_callbacks).to eq([:are_search_enqueue_sync_request])
             expect(model_class.touch_callbacks).to eq([:are_search_enqueue_sync_request])
             expect(model_class.destroy_callbacks).to eq([:are_search_enqueue_sync_request])
@@ -681,8 +691,8 @@ RSpec.describe AreSearch::Searchable do
                 @commit_callbacks ||= []
             end
 
-            def self.validate(callback_name)
-                validations << callback_name
+            def self.validate(callback_name, **options)
+                validations << [callback_name, options]
             end
 
             def self.after_save(callback_name)

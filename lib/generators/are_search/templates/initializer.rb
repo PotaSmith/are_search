@@ -16,6 +16,7 @@ AreSearch.logger = logger
 # AreSearch.rake_operation_enabled = true
 
 AreSearch.search_failure_mode = Rails.env.development? ? :raise : :empty_result
+AreSearch.index_data_validation_enabled = Rails.env.development?
 
 AreSearch.setup(
     index_prefix: "#{ConfVars.get(:are_search, :index_prefix)}_#{Rails.env}"

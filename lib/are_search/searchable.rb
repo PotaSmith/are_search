@@ -54,6 +54,7 @@ module AreSearch
         # end
 
         included do
+            validate       :are_search_index_data_validate, if: -> { AreSearch.index_data_validation_enabled == true }
             after_save     :are_search_enqueue_sync_request
             after_touch    :are_search_enqueue_sync_request
             after_destroy  :are_search_enqueue_sync_request

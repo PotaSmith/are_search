@@ -123,7 +123,20 @@ SyncRequestを操作するrake処理の実行を許可する。
 共有されていない lock_dir を使用する複数環境からの同時実行は想定しない。
 
 
-## 1-9. after_commit_mode
+## 1-9. index_data_validation_enabled
+----------------------------------------------------------------
+
+Active Record の validation で、are_search_index_data と mappings の整合性を確認する。
+
+デフォルトは false。
+
+    AreSearch.index_data_validation_enabled = Rails.env.development?
+
+有効な場合、Searchable モデルの validation 時に are_search_index_data_validate を実行する。
+開発環境など、検索データの定義不整合を保存時に確認したい環境で有効にする。
+
+
+## 1-10. after_commit_mode
 ----------------------------------------------------------------
 
 DB commit 後の同期開始方法。
@@ -143,7 +156,7 @@ after_commit: true のstageで after_commit からの同期またはJobで同期
 run_sync_requests_fallback で再度同期対象として扱う。
 
 
-## 1-10. batch_size
+## 1-11. batch_size
 ----------------------------------------------------------------
 
 reindex 時に DB から一度に読み込む件数。
@@ -155,7 +168,7 @@ reindex 時に DB から一度に読み込む件数。
 この設定は reindex にだけ使われる。
 
 
-## 1-11. analyzer_settings
+## 1-12. analyzer_settings
 ----------------------------------------------------------------
 
 index 作成時に Elasticsearch の settings へ渡す analyzer 設定。
@@ -170,7 +183,7 @@ index 作成時に Elasticsearch の settings へ渡す analyzer 設定。
 analyzer_settings は :analysis を持つ Hash で指定する。
 
 
-## 1-12. search_failure_mode
+## 1-13. search_failure_mode
 ----------------------------------------------------------------
 
 検索パラメータ不正、検索body policyによる拒否、index不存在を検索時にどう扱うか指定できる。
@@ -199,7 +212,7 @@ analyzer_settings は :analysis を持つ Hash で指定する。
 生成される initializer は development 環境で :raise、それ以外で :empty_result を設定する。
 
 
-## 1-13. search_body_policy
+## 1-14. search_body_policy
 ----------------------------------------------------------------
 
 Elasticsearchへ送信する検索bodyと mapping のフィールド名を検査する policy。
@@ -226,7 +239,7 @@ Elasticsearchへ送信する検索bodyと mapping のフィールド名を検査
 valid? は検索body全体、invalid_key? は mapping のフィールド名を検査する。
 
 
-## 1-14. search_param_policy
+## 1-15. search_param_policy
 ----------------------------------------------------------------
 
 外部入力として扱う検索パラメータの値を検査する policy。
@@ -295,7 +308,7 @@ check_text と check_field_value は、問題がある場合はエラーメッ�
 nil / String / Integer / Float / true / false / Array / Hash 以外は無条件に false になります。
 
 
-## 1-15. logger
+## 1-16. logger
 ----------------------------------------------------------------
 
 AreSearch が使用する logger を指定する。
@@ -305,7 +318,7 @@ AreSearch が使用する logger を指定する。
 未指定の場合は Rails.logger を使用する。
 
 
-## 1-16. database_specific
+## 1-17. database_specific
 ----------------------------------------------------------------
 
 sync request の採番と登録で使用するDB固有処理を指定する。
@@ -765,6 +778,13 @@ AreSearch.index_operation_enabled = true が必要。
     article.are_search_index_data_validate
 
 確認結果は article.errors から参照する。
+
+AreSearch.index_data_validation_enabled が true の場合は、Active Record の validation 時にも自動で実行する。
+
+    AreSearch.index_data_validation_enabled = Rails.env.development?
+
+手動で are_search_index_data_validate を呼ぶ場合は、index_data_validation_enabled の設定に関係なく実行する。
+index除外対象の IndexTarget は確認しない。
 
 
 # 7. 利用側定義名
