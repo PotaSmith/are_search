@@ -242,6 +242,8 @@ valid? は検索body全体、invalid_key? は mapping のフィールド名を�
 ## 1-15. search_param_policy
 ----------------------------------------------------------------
 
+検索時のsearch_param_policyオプションのデフォルト policy を指定する。
+
 外部入力として扱う検索パラメータの値を検査する policy。
 デフォルトは AreSearch::SearchParamLengthPolicy。
 

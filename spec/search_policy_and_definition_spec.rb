@@ -968,6 +968,33 @@ RSpec.describe AreSearch::SearchOptionValidator do
             ).to eq(2)
         end
 
+        it "search_param_policyはSearchParamPolicyの継承クラスだけを許可する" do
+            policy_class = Class.new(AreSearch::SearchParamPolicy)
+
+            expect(
+                validate_node(
+                    policy_class,
+                    scalar_definition("search_param_policy"),
+                ),
+            ).to equal(policy_class)
+
+            [
+                AreSearch::SearchParamPolicy,
+                Class.new,
+                Object.new,
+            ].each do |invalid_value|
+                expect do
+                    validate_node(
+                        invalid_value,
+                        scalar_definition("search_param_policy"),
+                    )
+                end.to raise_error(
+                    ArgumentError,
+                    /AreSearch::SearchParamPolicy の継承クラス/,
+                )
+            end
+        end
+
         it "独自型が許可しない値を拒否する" do
             invalid_values = [
                 ["boolean", 1, /true または false/],

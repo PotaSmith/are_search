@@ -1299,6 +1299,43 @@ RSpec.describe AreSearch::Searcher do
         expect(result.records.total_count).to eq(0)
     end
 
+    it "search_param_policy指定時はその検索だけ指定policyを使用する" do
+        policy_class = Class.new(AreSearch::SearchParamPolicy)
+        queries = [
+            {
+                query_string: "test",
+                fields: [:title],
+            },
+        ]
+        valid_options = {
+            queries: queries,
+            search_param_policy: policy_class,
+        }
+
+        allow(AreSearch::SearchParamValidator)
+            .to receive(:validate!)
+            .and_return(valid_options)
+
+        expect(AreSearch).not_to receive(:search_param_policy)
+        expect(policy_class)
+            .to receive(:validate!)
+            .with(
+                {
+                    queries: queries,
+                },
+            )
+            .and_raise(AreSearch::InvalidSearchOption)
+
+        result = described_class.search(
+            [index_target],
+            queries: queries,
+            search_param_policy: policy_class,
+        )
+
+        expect(result.status).to eq(AreSearch::SearchResult::STATUS_PARAMS_INVALID)
+        expect(result.records).to eq([])
+    end
+
     it "検索param policyに拒否された場合は検索前にparams_invalid空結果を返す" do
         valid_options = {
             queries: [

@@ -96,6 +96,7 @@ module AreSearch
             "any_non_text_without_text_field",
             "all_valid_non_text_field",
             "model_class",
+            "search_param_policy",
             "valid_model",
             "active_record_relation",
             "searchable_instance",
@@ -746,6 +747,13 @@ module AreSearch
                             },
                         },
                     ],
+                },
+            },
+
+            # search_param_policy: ApplicationSearchParamPolicy
+            search_param_policy: {
+                scalar: {
+                    type: "search_param_policy",
                 },
             },
 

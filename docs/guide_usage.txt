@@ -798,7 +798,21 @@ field 以外は Elasticsearch の suggest オプションとして指定する�
     end
 
 
-# 16. dump_body
+# 16. search_param_policy
+================================================================
+
+検索パラメータの値を検査する policy を指定する。
+AreSearch::SearchParamPolicy の継承クラスを指定する。
+未指定時は AreSearch.search_param_policy を使用する。
+
+    result = AreSearch::Searcher.search(
+        [article_index],
+        queries: queries,
+        search_param_policy: ApplicationSearchParamPolicy,
+    )
+
+
+# 17. dump_body
 ================================================================
 
 検索を実行せず、AreSearch が組み立てた body を確認する。
@@ -824,11 +838,11 @@ field 以外は Elasticsearch の suggest オプションとして指定する�
 raw_body検索では page、per_page、build_model_bool を反映した body を返す。
 
 
-# 17. SearchResult
+# 18. SearchResult
 ================================================================
 
 
-## 17-1. status
+## 18-1. status
 ----------------------------------------------------------------
 
 検索の終了状態を確認する。
@@ -858,7 +872,7 @@ raw_body検索では page、per_page、build_model_bool を反映した body を
         原因が特定できない検索の失敗
 
 
-## 17-2. records
+## 18-2. records
 ----------------------------------------------------------------
 
 ActiveRecord のレコードを検索順で返す。
@@ -866,7 +880,7 @@ ActiveRecord のレコードを検索順で返す。
     result.records
 
 
-## 17-3. records_with_hit
+## 18-3. records_with_hit
 ----------------------------------------------------------------
 
 ActiveRecord のレコードと対応する Elasticsearch hit を検索順で取得する。
@@ -910,7 +924,7 @@ hit の主なキー。
 Elasticsearch のレスポンスは raw_response に残る。
 
 
-## 17-4. raw_response
+## 18-4. raw_response
 ----------------------------------------------------------------
 
 Elasticsearch の生レスポンスを返す。

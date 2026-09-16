@@ -63,7 +63,9 @@ module AreSearch
 
             begin
                 valid_options = SearchParamValidator.validate!(index_targets, models, max_result_window, **options)
-                AreSearch.search_param_policy.validate!(valid_options)
+                search_param_policy = valid_options.delete(:search_param_policy)
+                search_param_policy = AreSearch.search_param_policy if search_param_policy.nil?
+                search_param_policy.validate!(valid_options)
             rescue AreSearch::InvalidSearchOption => error
                 return search_failure_result(
                     status: SearchResult::STATUS_PARAMS_INVALID,
