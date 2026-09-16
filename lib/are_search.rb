@@ -29,16 +29,16 @@ require_relative "are_search/sync_job"
 
 require_relative "are_search/searcher/search_result"
 require_relative "are_search/searcher/searcher_utils"
-require_relative "are_search/searcher/search_body_policy"
-require_relative "are_search/searcher/script_deny_search_body_policy"
+
+require_relative "are_search/searcher/policy/search_body_policy"
+require_relative "are_search/searcher/policy/script_deny_search_body_policy"
+require_relative "are_search/searcher/policy/search_param_policy"
+require_relative "are_search/searcher/policy/search_param_length_policy"
 
 require_relative "are_search/searcher/validator/search_option_context"
 require_relative "are_search/searcher/validator/search_option_definition"
 require_relative "are_search/searcher/validator/search_option_validator"
 require_relative "are_search/searcher/validator/search_param_validator"
-
-require_relative "are_search/searcher/validator/search_param_policy"
-require_relative "are_search/searcher/validator/search_param_length_policy"
 
 require_relative "are_search/searcher/query_builder/query_builder_base"
 require_relative "are_search/searcher/query_builder/standard_query_builder"
@@ -96,8 +96,8 @@ module AreSearch
     private_constant :SEARCH_FAILURE_MODES
 
     @analyzer_settings = DEFAULT_ANALYZER_SETTINGS
-    @search_body_policy = AreSearch::ScriptDenySearchBodyPolicy
-    @search_param_policy = AreSearch::SearchParamLengthPolicy
+    @search_body_policy = AreSearch::ScriptDenySearchBodyPolicy.new
+    @search_param_policy = AreSearch::SearchParamLengthPolicy.new
     @search_failure_mode = :empty_result
     @index_data_validation_enabled = false
     @database_specific = AreSearch::PostgreSQLDatabaseSpecific
@@ -134,19 +134,14 @@ module AreSearch
     end
 
     # Elasticsearch へ送信するbodyと field 名を検査する policy を設定する。
-    # SearchBodyPolicy 自体ではなく、その継承クラスだけを受け付ける。
-    def self.search_body_policy=(policy_class)
-        valid_policy_class = policy_class.instance_of?(Class)
-
-        if valid_policy_class == true
-            valid_policy_class = policy_class < AreSearch::SearchBodyPolicy
+    # SearchBodyPolicy 自体ではなく、その継承クラスのインスタンスだけを受け付ける。
+    def self.search_body_policy=(policy)
+        if (policy.class < AreSearch::SearchBodyPolicy) != true
+            message = "search_body_policy は AreSearch::SearchBodyPolicy の継承クラスのインスタンスを指定してください"
+            raise ArgumentError, message
         end
 
-        if valid_policy_class != true
-            raise ArgumentError, "search_body_policy は AreSearch::SearchBodyPolicy の継承クラスを指定してください"
-        end
-
-        @search_body_policy = policy_class
+        @search_body_policy = policy
     end
 
     def self.search_param_policy
@@ -154,19 +149,14 @@ module AreSearch
     end
 
     # Elasticsearch へ送信する param の値を検査する policy を設定する。
-    # SearchParamPolicy 自体ではなく、その継承クラスだけを受け付ける。
-    def self.search_param_policy=(policy_class)
-        valid_policy_class = policy_class.instance_of?(Class)
-
-        if valid_policy_class == true
-            valid_policy_class = policy_class < AreSearch::SearchParamPolicy
+    # SearchParamPolicy 自体ではなく、その継承クラスのインスタンスだけを受け付ける。
+    def self.search_param_policy=(policy)
+        if (policy.class < AreSearch::SearchParamPolicy) != true
+            message = "search_param_policy は AreSearch::SearchParamPolicy の継承クラスのインスタンスを指定してください"
+            raise ArgumentError, message
         end
 
-        if valid_policy_class != true
-            raise ArgumentError, "search_param_policy は AreSearch::SearchParamPolicy の継承クラスを指定してください"
-        end
-
-        @search_param_policy = policy_class
+        @search_param_policy = policy
     end
 
     # 検索を実行できない場合に、空結果を返すか例外を送出するかを返す。

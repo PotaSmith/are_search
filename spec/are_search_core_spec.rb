@@ -121,17 +121,18 @@ RSpec.describe AreSearch, "configuration" do
         end.to raise_error(AreSearch::NotConfiguredError, "AreSearch.setup が呼ばれていません")
     end
 
-    it "search_body_policy は SearchBodyPolicy の継承クラスを受け付ける" do
-        policy_class = Class.new(AreSearch::SearchBodyPolicy)
+    it "search_body_policy は SearchBodyPolicy の継承クラスのインスタンスを受け付ける" do
+        policy = Class.new(AreSearch::SearchBodyPolicy).new
 
-        described_class.search_body_policy = policy_class
+        described_class.search_body_policy = policy
 
-        expect(described_class.search_body_policy).to equal(policy_class)
+        expect(described_class.search_body_policy).to equal(policy)
     end
 
     it "search_body_policy は基底クラスと無関係な値を拒否する" do
         invalid_values = [
             AreSearch::SearchBodyPolicy,
+            AreSearch::SearchBodyPolicy.new,
             Class.new,
             Object.new,
         ]
@@ -141,22 +142,23 @@ RSpec.describe AreSearch, "configuration" do
                 described_class.search_body_policy = invalid_value
             end.to raise_error(
                 ArgumentError,
-                "search_body_policy は AreSearch::SearchBodyPolicy の継承クラスを指定してください",
+                "search_body_policy は AreSearch::SearchBodyPolicy の継承クラスのインスタンスを指定してください",
             )
         end
     end
 
-    it "search_param_policy は SearchParamPolicy の継承クラスを受け付ける" do
-        policy_class = Class.new(AreSearch::SearchParamPolicy)
+    it "search_param_policy は SearchParamPolicy の継承クラスのインスタンスを受け付ける" do
+        policy = Class.new(AreSearch::SearchParamPolicy).new
 
-        described_class.search_param_policy = policy_class
+        described_class.search_param_policy = policy
 
-        expect(described_class.search_param_policy).to equal(policy_class)
+        expect(described_class.search_param_policy).to equal(policy)
     end
 
     it "search_param_policy は基底クラスと無関係な値を拒否する" do
         invalid_values = [
             AreSearch::SearchParamPolicy,
+            AreSearch::SearchParamPolicy.new,
             Class.new,
             Object.new,
         ]
@@ -166,7 +168,7 @@ RSpec.describe AreSearch, "configuration" do
                 described_class.search_param_policy = invalid_value
             end.to raise_error(
                 ArgumentError,
-                "search_param_policy は AreSearch::SearchParamPolicy の継承クラスを指定してください",
+                "search_param_policy は AreSearch::SearchParamPolicy の継承クラスのインスタンスを指定してください",
             )
         end
     end

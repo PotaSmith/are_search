@@ -96,11 +96,12 @@ module AreSearch
             "any_non_text_without_text_field",
             "all_valid_non_text_field",
             "model_class",
-            "search_param_policy",
             "valid_model",
             "active_record_relation",
             "searchable_instance",
             "index_target",
+            "search_param_policy",
+            "search_body_policy",
         ].freeze
 
         # fieldsのArray形式とboost付きHash形式を表すnode定義。
@@ -750,10 +751,17 @@ module AreSearch
                 },
             },
 
-            # search_param_policy: ApplicationSearchParamPolicy
+            # search_param_policy: ApplicationSearchParamPolicy.new
             search_param_policy: {
                 scalar: {
                     type: "search_param_policy",
+                },
+            },
+
+            # search_body_policy: ApplicationSearchBodyPolicy.new
+            search_body_policy: {
+                scalar: {
+                    type: "search_body_policy",
                 },
             },
 

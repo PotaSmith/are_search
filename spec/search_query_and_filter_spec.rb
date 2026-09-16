@@ -1300,7 +1300,7 @@ RSpec.describe AreSearch::Searcher do
     end
 
     it "search_param_policy指定時はその検索だけ指定policyを使用する" do
-        policy_class = Class.new(AreSearch::SearchParamPolicy)
+        policy = Class.new(AreSearch::SearchParamPolicy).new
         queries = [
             {
                 query_string: "test",
@@ -1309,7 +1309,7 @@ RSpec.describe AreSearch::Searcher do
         ]
         valid_options = {
             queries: queries,
-            search_param_policy: policy_class,
+            search_param_policy: policy,
         }
 
         allow(AreSearch::SearchParamValidator)
@@ -1317,7 +1317,7 @@ RSpec.describe AreSearch::Searcher do
             .and_return(valid_options)
 
         expect(AreSearch).not_to receive(:search_param_policy)
-        expect(policy_class)
+        expect(policy)
             .to receive(:validate!)
             .with(
                 {
@@ -1329,7 +1329,44 @@ RSpec.describe AreSearch::Searcher do
         result = described_class.search(
             [index_target],
             queries: queries,
-            search_param_policy: policy_class,
+            search_param_policy: policy,
+        )
+
+        expect(result.status).to eq(AreSearch::SearchResult::STATUS_PARAMS_INVALID)
+        expect(result.records).to eq([])
+    end
+
+    it "search_body_policy指定時はその検索だけ指定policyを使用する" do
+        policy = Class.new(AreSearch::SearchBodyPolicy) do
+            def valid?(_body)
+                false
+            end
+        end.new
+        queries = [
+            {
+                query_string: "test",
+                fields: [:title],
+            },
+        ]
+        valid_options = {
+            queries: queries,
+            search_body_policy: policy,
+        }
+
+        allow(AreSearch::SearchParamValidator)
+            .to receive(:validate!)
+            .and_return(valid_options)
+        allow(index_target)
+            .to receive(:are_search_index_alias_name)
+            .and_return("test__articles__default")
+
+        expect(AreSearch).not_to receive(:search_body_policy)
+        expect(AreSearch).not_to receive(:client)
+
+        result = described_class.search(
+            [index_target],
+            queries: queries,
+            search_body_policy: policy,
         )
 
         expect(result.status).to eq(AreSearch::SearchResult::STATUS_PARAMS_INVALID)
@@ -1375,7 +1412,7 @@ RSpec.describe AreSearch::Searcher do
             .to receive(:validate!)
             .and_raise(ArgumentError, "invalid option")
 
-        expect(AreSearch::SearchBodyPolicy).not_to receive(:valid?)
+        expect(AreSearch.search_body_policy).not_to receive(:valid?)
 
         expect do
             described_class.search(

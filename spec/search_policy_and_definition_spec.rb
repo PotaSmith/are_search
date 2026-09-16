@@ -3,12 +3,12 @@
 require "spec_helper"
 
 RSpec.describe AreSearch::SearchBodyPolicy do
-    describe ".valid?" do
+    describe "#valid?" do
         it "継承クラスが実装しなければ例外にする" do
-            policy_class = Class.new(described_class)
+            policy = Class.new(described_class).new
 
             expect do
-                policy_class.valid?({})
+                policy.valid?({})
             end.to raise_error(
                 NotImplementedError,
                 /valid\? を実装してください/,
@@ -16,12 +16,12 @@ RSpec.describe AreSearch::SearchBodyPolicy do
         end
     end
 
-    describe ".invalid_key?" do
+    describe "#invalid_key?" do
         it "継承クラスが実装しなければ例外にする" do
-            policy_class = Class.new(described_class)
+            policy = Class.new(described_class).new
 
             expect do
-                policy_class.invalid_key?(:script)
+                policy.invalid_key?(:script)
             end.to raise_error(
                 NotImplementedError,
                 /invalid_key\? を実装してください/,
@@ -31,29 +31,29 @@ RSpec.describe AreSearch::SearchBodyPolicy do
 end
 
 RSpec.describe AreSearch::ScriptDenySearchBodyPolicy do
-    describe ".invalid_key?" do
+    describe "#invalid_key?" do
         it "script に完全一致するキーを拒否する" do
-            expect(described_class.invalid_key?(:script)).to eq(true)
+            expect(described_class.new.invalid_key?(:script)).to eq(true)
         end
 
         it "script_ で始まるキーを拒否する" do
-            expect(described_class.invalid_key?(:script_score)).to eq(true)
-            expect(described_class.invalid_key?("script_fields")).to eq(true)
+            expect(described_class.new.invalid_key?(:script_score)).to eq(true)
+            expect(described_class.new.invalid_key?("script_fields")).to eq(true)
         end
 
         it "_script で終わるキーを拒否する" do
-            expect(described_class.invalid_key?(:_script)).to eq(true)
-            expect(described_class.invalid_key?("map_script")).to eq(true)
+            expect(described_class.new.invalid_key?(:_script)).to eq(true)
+            expect(described_class.new.invalid_key?("map_script")).to eq(true)
         end
 
         it "script を途中に含むだけのキーは拒否しない" do
-            expect(described_class.invalid_key?(:description)).to eq(false)
-            expect(described_class.invalid_key?(:transcript)).to eq(false)
-            expect(described_class.invalid_key?(:subscription)).to eq(false)
+            expect(described_class.new.invalid_key?(:description)).to eq(false)
+            expect(described_class.new.invalid_key?(:transcript)).to eq(false)
+            expect(described_class.new.invalid_key?(:subscription)).to eq(false)
         end
     end
 
-    describe ".valid?" do
+    describe "#valid?" do
         it "Elasticsearch serializerでJSON化した後のキーを検査する" do
             serializer = double("serializer")
             es_params = Object.new
@@ -67,7 +67,7 @@ RSpec.describe AreSearch::ScriptDenySearchBodyPolicy do
                 .with(es_params)
                 .and_return('{"query":{"script_score":{}}}')
 
-            expect(described_class.valid?(es_params)).to eq(false)
+            expect(described_class.new.valid?(es_params)).to eq(false)
         end
 
         it "serializerのJSON化に失敗した場合は例外を伝播する" do
@@ -84,7 +84,7 @@ RSpec.describe AreSearch::ScriptDenySearchBodyPolicy do
                 .and_raise(ArgumentError, "cannot serialize")
 
             expect do
-                described_class.valid?(es_params)
+                described_class.new.valid?(es_params)
             end.to raise_error(ArgumentError, "cannot serialize")
         end
 
@@ -102,7 +102,7 @@ RSpec.describe AreSearch::ScriptDenySearchBodyPolicy do
                 ],
             }
 
-            expect(described_class.valid?(es_params)).to eq(true)
+            expect(described_class.new.valid?(es_params)).to eq(true)
         end
 
         it "scriptキーがあればfalseを返す" do
@@ -118,7 +118,7 @@ RSpec.describe AreSearch::ScriptDenySearchBodyPolicy do
                 },
             }
 
-            expect(described_class.valid?(es_params)).to eq(false)
+            expect(described_class.new.valid?(es_params)).to eq(false)
         end
 
         it "_scriptキーがあればfalseを返す" do
@@ -133,7 +133,7 @@ RSpec.describe AreSearch::ScriptDenySearchBodyPolicy do
                 ],
             }
 
-            expect(described_class.valid?(es_params)).to eq(false)
+            expect(described_class.new.valid?(es_params)).to eq(false)
         end
 
         it "script_で始まるキーがあればfalseを返す" do
@@ -147,7 +147,7 @@ RSpec.describe AreSearch::ScriptDenySearchBodyPolicy do
                 },
             }
 
-            expect(described_class.valid?(es_params)).to eq(false)
+            expect(described_class.new.valid?(es_params)).to eq(false)
         end
 
         it "_scriptで終わるStringキーもfalseを返す" do
@@ -161,7 +161,7 @@ RSpec.describe AreSearch::ScriptDenySearchBodyPolicy do
                 },
             }
 
-            expect(described_class.valid?(es_params)).to eq(false)
+            expect(described_class.new.valid?(es_params)).to eq(false)
         end
 
         it "scriptという通常フィールド名もfalseを返す" do
@@ -173,7 +173,7 @@ RSpec.describe AreSearch::ScriptDenySearchBodyPolicy do
                 },
             }
 
-            expect(described_class.valid?(es_params)).to eq(false)
+            expect(described_class.new.valid?(es_params)).to eq(false)
         end
 
         it "scriptを途中に含む通常フィールド名ならtrueを返す" do
@@ -189,7 +189,7 @@ RSpec.describe AreSearch::ScriptDenySearchBodyPolicy do
                 },
             }
 
-            expect(described_class.valid?(es_params)).to eq(true)
+            expect(described_class.new.valid?(es_params)).to eq(true)
         end
 
         it "値にscriptが含まれるだけならtrueを返す" do
@@ -201,40 +201,40 @@ RSpec.describe AreSearch::ScriptDenySearchBodyPolicy do
                 },
             }
 
-            expect(described_class.valid?(es_params)).to eq(true)
+            expect(described_class.new.valid?(es_params)).to eq(true)
         end
     end
 end
 
 RSpec.describe AreSearch::SearchParamPolicy do
-    describe ".check_text" do
+    describe "#check_text" do
         it "基底policyは継承先でcheck_textを実装するよう要求する" do
             expect do
-                described_class.check_text("query_string", "value")
+                described_class.new.check_text("query_string", "value")
             end.to raise_error(
                 NotImplementedError,
-                "AreSearch::SearchParamPolicy.check_text を実装してください",
+                "AreSearch::SearchParamPolicy#check_text を実装してください",
             )
         end
     end
 
-    describe ".check_field_value" do
+    describe "#check_field_value" do
         it "基底policyは継承先でcheck_field_valueを実装するよう要求する" do
             expect do
-                described_class.check_field_value(:status, "where.term", "value")
+                described_class.new.check_field_value(:status, "where.term", "value")
             end.to raise_error(
                 NotImplementedError,
-                "AreSearch::SearchParamPolicy.check_field_value を実装してください",
+                "AreSearch::SearchParamPolicy#check_field_value を実装してください",
             )
         end
     end
 
-    describe ".validate!" do
+    describe "#validate!" do
         it "where内のfield名をSymbolのままcheck_field_valueへ渡す" do
-            policy_class = Class.new(described_class)
-            allow(policy_class).to receive(:check_field_value).and_return(nil)
+            policy = Class.new(described_class).new
+            allow(policy).to receive(:check_field_value).and_return(nil)
 
-            policy_class.validate!(
+            policy.validate!(
                 where: {
                     filter: [
                         { status: { term: "published" } },
@@ -242,7 +242,7 @@ RSpec.describe AreSearch::SearchParamPolicy do
                 },
             )
 
-            expect(policy_class).to have_received(:check_field_value).with(
+            expect(policy).to have_received(:check_field_value).with(
                 :status,
                 "where.term",
                 "published",
@@ -250,10 +250,10 @@ RSpec.describe AreSearch::SearchParamPolicy do
         end
 
         it "whereのネストbool内も再帰してfield値を検査する" do
-            policy_class = Class.new(described_class)
-            allow(policy_class).to receive(:check_field_value).and_return(nil)
+            policy = Class.new(described_class).new
+            allow(policy).to receive(:check_field_value).and_return(nil)
 
-            policy_class.validate!(
+            policy.validate!(
                 where: {
                     should: [
                         {
@@ -268,7 +268,7 @@ RSpec.describe AreSearch::SearchParamPolicy do
                 },
             )
 
-            expect(policy_class).to have_received(:check_field_value).once.with(
+            expect(policy).to have_received(:check_field_value).once.with(
                 :status,
                 "where.term",
                 "published",
@@ -278,18 +278,34 @@ RSpec.describe AreSearch::SearchParamPolicy do
 end
 
 RSpec.describe AreSearch::SearchParamLengthPolicy do
-    describe ".check_text" do
+    describe "#check_text" do
         it "query_stringは2048文字までnilを返して2049文字でエラーメッセージを返す" do
-            expect(described_class.check_text("query_string", "a" * 2048)).to eq(nil)
-            expect(described_class.check_text("query_string", "a" * 2049)).to eq(
+            expect(described_class.new.check_text("query_string", "a" * 2048)).to eq(nil)
+            expect(described_class.new.check_text("query_string", "a" * 2049)).to eq(
                 "query_string は 2048 文字以内で指定してください",
             )
         end
 
         it "suggest.textは128文字までnilを返して129文字でエラーメッセージを返す" do
-            expect(described_class.check_text("suggest.text", "a" * 128)).to eq(nil)
-            expect(described_class.check_text("suggest.text", "a" * 129)).to eq(
+            expect(described_class.new.check_text("suggest.text", "a" * 128)).to eq(nil)
+            expect(described_class.new.check_text("suggest.text", "a" * 129)).to eq(
                 "suggest.text は 128 文字以内で指定してください",
+            )
+        end
+
+        it "initializeでquery_stringとsuggest.textの文字数上限を変更できる" do
+            policy = described_class.new(
+                query_string_max_length: 10,
+                suggest_text_max_length: 5,
+            )
+
+            expect(policy.check_text("query_string", "a" * 10)).to eq(nil)
+            expect(policy.check_text("query_string", "a" * 11)).to eq(
+                "query_string は 10 文字以内で指定してください",
+            )
+            expect(policy.check_text("suggest.text", "a" * 5)).to eq(nil)
+            expect(policy.check_text("suggest.text", "a" * 6)).to eq(
+                "suggest.text は 5 文字以内で指定してください",
             )
         end
 
@@ -303,32 +319,50 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
                 "abc\u2028def",
             ]
 
-            expect(described_class.check_text("query_string", valid_text)).to eq(nil)
+            expect(described_class.new.check_text("query_string", valid_text)).to eq(nil)
 
             invalid_texts.each do |invalid_text|
-                expect(described_class.check_text("query_string", invalid_text)).to eq(
+                expect(described_class.new.check_text("query_string", invalid_text)).to eq(
                     "query_string は 不正な文字が含まれています。",
                 )
             end
         end
     end
 
-    describe ".check_field_value" do
+    describe "#check_field_value" do
+        it "initializeでwhereの文字数上限を変更できる" do
+            policy = described_class.new(
+                where_term_max_length: 10,
+                where_terms_max_length: 20,
+                where_range_max_length: 30,
+            )
+
+            expect(policy.check_field_value(:status, "where.term", "a" * 11)).to eq(
+                "where.term は 10 文字以内で指定してください",
+            )
+            expect(policy.check_field_value(:status, "where.terms", "a" * 21)).to eq(
+                "where.terms は 20 文字以内で指定してください",
+            )
+            expect(policy.check_field_value(:status, "where.range", "a" * 31)).to eq(
+                "where.range は 30 文字以内で指定してください",
+            )
+        end
+
         it "whereのArrayとHash内部にある不正文字を拒否する" do
-            expect(described_class.check_field_value(:status, "where.term", "published\u200B")).to eq(
+            expect(described_class.new.check_field_value(:status, "where.term", "published\u200B")).to eq(
                 "where.term は 不正な文字が含まれています。",
             )
-            expect(described_class.check_field_value(:status, "where.terms", ["published", "draft\n"])).to eq(
+            expect(described_class.new.check_field_value(:status, "where.terms", ["published", "draft\n"])).to eq(
                 "where.terms は 不正な文字が含まれています。",
             )
-            expect(described_class.check_field_value(:status, "where.range", { gte: "a", lte: "z\t" })).to eq(
+            expect(described_class.new.check_field_value(:status, "where.range", { gte: "a", lte: "z\t" })).to eq(
                 "where.range は 不正な文字が含まれています。",
             )
         end
 
         it "whereのterm値、terms全体、range全体の文字数境界を検査する" do
-            expect(described_class.check_field_value(:status, "where.term", "a" * 128)).to eq(nil)
-            expect(described_class.check_field_value(:status, "where.term", "a" * 129)).to eq(
+            expect(described_class.new.check_field_value(:status, "where.term", "a" * 128)).to eq(nil)
+            expect(described_class.new.check_field_value(:status, "where.term", "a" * 129)).to eq(
                 "where.term は 128 文字以内で指定してください",
             )
 
@@ -336,8 +370,8 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
             valid_terms = ["a" * (1024 - terms_base_length), "b"]
             invalid_terms = ["a" * (1025 - terms_base_length), "b"]
 
-            expect(described_class.check_field_value(:status, "where.terms", valid_terms)).to eq(nil)
-            expect(described_class.check_field_value(:status, "where.terms", invalid_terms)).to eq(
+            expect(described_class.new.check_field_value(:status, "where.terms", valid_terms)).to eq(nil)
+            expect(described_class.new.check_field_value(:status, "where.terms", invalid_terms)).to eq(
                 "where.terms は 1024 文字以内で指定してください",
             )
 
@@ -345,8 +379,8 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
             valid_range = { gte: "a" * (256 - range_base_length), lte: "b" }
             invalid_range = { gte: "a" * (257 - range_base_length), lte: "b" }
 
-            expect(described_class.check_field_value(:status, "where.range", valid_range)).to eq(nil)
-            expect(described_class.check_field_value(:status, "where.range", invalid_range)).to eq(
+            expect(described_class.new.check_field_value(:status, "where.range", valid_range)).to eq(nil)
+            expect(described_class.new.check_field_value(:status, "where.range", invalid_range)).to eq(
                 "where.range は 256 文字以内で指定してください",
             )
         end
@@ -397,7 +431,7 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
         end
     end
 
-    describe ".validate!" do
+    describe "#validate!" do
         it "query_string、suggest.text、whereの不正文字を拒否する" do
             invalid_options = [
                 {
@@ -425,14 +459,14 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
 
             invalid_options.each do |options|
                 expect do
-                    described_class.validate!(**options)
+                    described_class.new.validate!(**options)
                 end.to raise_error(AreSearch::InvalidSearchOption, /不正な文字/)
             end
         end
 
         it "query_stringは2048文字まで許可して2049文字を拒否する" do
             expect do
-                described_class.validate!(
+                described_class.new.validate!(
                     queries: [
                         {
                             query_string: "a" * 2048,
@@ -442,7 +476,7 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
             end.not_to raise_error
 
             expect do
-                described_class.validate!(
+                described_class.new.validate!(
                     queries: [
                         {
                             query_string: "a" * 2049,
@@ -454,7 +488,7 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
 
         it "suggestの名前配下のtextは128文字まで許可して129文字を拒否する" do
             expect do
-                described_class.validate!(
+                described_class.new.validate!(
                     suggest: {
                         title_spell: {
                             text: "a" * 128,
@@ -464,7 +498,7 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
             end.not_to raise_error
 
             expect do
-                described_class.validate!(
+                described_class.new.validate!(
                     suggest: {
                         title_spell: {
                             text: "a" * 129,
@@ -491,7 +525,7 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
 
             valid_conditions.each do |condition|
                 expect do
-                    described_class.validate!(
+                    described_class.new.validate!(
                         where: {
                             filter: [condition],
                         },
@@ -501,7 +535,7 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
 
             invalid_conditions.each do |condition|
                 expect do
-                    described_class.validate!(
+                    described_class.new.validate!(
                         where: {
                             filter: [condition],
                         },
@@ -512,7 +546,7 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
 
         it "ネストbool内でもwhereの文字数制限を適用する" do
             expect do
-                described_class.validate!(
+                described_class.new.validate!(
                     where: {
                         should: [
                             {
@@ -531,7 +565,7 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
 
         it "nilのオプションがあっても後続の検索値を検査する" do
             expect do
-                described_class.validate!(
+                described_class.new.validate!(
                     queries: nil,
                     where: {
                         filter: [
@@ -542,7 +576,7 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
             end.to raise_error(AreSearch::InvalidSearchOption)
 
             expect do
-                described_class.validate!(
+                described_class.new.validate!(
                     suggest: nil,
                     where: {
                         filter: [
@@ -968,18 +1002,19 @@ RSpec.describe AreSearch::SearchOptionValidator do
             ).to eq(2)
         end
 
-        it "search_param_policyはSearchParamPolicyの継承クラスだけを許可する" do
-            policy_class = Class.new(AreSearch::SearchParamPolicy)
+        it "search_param_policyはSearchParamPolicyの継承クラスのインスタンスだけを許可する" do
+            policy = Class.new(AreSearch::SearchParamPolicy).new
 
             expect(
                 validate_node(
-                    policy_class,
+                    policy,
                     scalar_definition("search_param_policy"),
                 ),
-            ).to equal(policy_class)
+            ).to equal(policy)
 
             [
                 AreSearch::SearchParamPolicy,
+                AreSearch::SearchParamPolicy.new,
                 Class.new,
                 Object.new,
             ].each do |invalid_value|
@@ -990,7 +1025,35 @@ RSpec.describe AreSearch::SearchOptionValidator do
                     )
                 end.to raise_error(
                     ArgumentError,
-                    /AreSearch::SearchParamPolicy の継承クラス/,
+                    /AreSearch::SearchParamPolicy の継承クラスのインスタンス/,
+                )
+            end
+        end
+
+        it "search_body_policyはSearchBodyPolicyの継承クラスのインスタンスだけを許可する" do
+            policy = Class.new(AreSearch::SearchBodyPolicy).new
+
+            expect(
+                validate_node(
+                    policy,
+                    scalar_definition("search_body_policy"),
+                ),
+            ).to equal(policy)
+
+            [
+                AreSearch::SearchBodyPolicy,
+                AreSearch::SearchBodyPolicy.new,
+                Class.new,
+                Object.new,
+            ].each do |invalid_value|
+                expect do
+                    validate_node(
+                        invalid_value,
+                        scalar_definition("search_body_policy"),
+                    )
+                end.to raise_error(
+                    ArgumentError,
+                    /AreSearch::SearchBodyPolicy の継承クラスのインスタンス/,
                 )
             end
         end

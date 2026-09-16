@@ -87,6 +87,7 @@ module AreSearch
             per_page_opts        = search_options.delete(:per_page)
 
             enable_runtime_mappings_opts = search_options.delete(:enable_runtime_mappings)
+            search_body_policy           = search_options.delete(:search_body_policy)
             dump_body_opts               = search_options.delete(:dump_body)
 
             # 未使用のオプションがあるか
@@ -113,7 +114,8 @@ module AreSearch
             body_for_policy.delete(:runtime_mappings)
             body_for_policy.delete("runtime_mappings")
 
-            if AreSearch.search_body_policy.valid?(body_for_policy) != true
+            search_body_policy = AreSearch.search_body_policy if search_body_policy.nil?
+            if search_body_policy.valid?(body_for_policy) != true
                 return search_failure_result(
                     status: SearchResult::STATUS_PARAMS_INVALID,
                     error_class: AreSearch::InvalidSearchBody,

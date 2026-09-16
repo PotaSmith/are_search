@@ -291,6 +291,8 @@ module AreSearch
                     parse_index_target(value, path)
                 when "search_param_policy"
                     parse_search_param_policy(value, path)
+                when "search_body_policy"
+                    parse_search_body_policy(value, path)
                 else
                     raise ArgumentError, "未知の type です: #{type.inspect}"
                 end
@@ -506,16 +508,21 @@ module AreSearch
                 raise ArgumentError, "#{path} は AreSearch::IndexTarget で指定してください: #{value.inspect}"
             end
 
-            # SearchParamPolicyの継承クラスだけを許可する。
+            # SearchParamPolicyの継承クラスのインスタンスだけを許可する。
             def parse_search_param_policy(value, path)
-                valid_policy_class = value.instance_of?(Class)
-
-                if valid_policy_class == true
-                    valid_policy_class = value < AreSearch::SearchParamPolicy
+                if (value.class < AreSearch::SearchParamPolicy) != true
+                    message = "#{path} は AreSearch::SearchParamPolicy の継承クラスのインスタンスで指定してください: #{value.inspect}"
+                    raise ArgumentError, message
                 end
 
-                if valid_policy_class != true
-                    raise ArgumentError, "#{path} は AreSearch::SearchParamPolicy の継承クラスで指定してください: #{value.inspect}"
+                value
+            end
+
+            # SearchBodyPolicyの継承クラスのインスタンスだけを許可する。
+            def parse_search_body_policy(value, path)
+                if (value.class < AreSearch::SearchBodyPolicy) != true
+                    message = "#{path} は AreSearch::SearchBodyPolicy の継承クラスのインスタンスで指定してください: #{value.inspect}"
+                    raise ArgumentError, message
                 end
 
                 value

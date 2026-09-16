@@ -24,8 +24,8 @@ Elasticsearch client と index_prefix は AreSearch.setup で指定する。
     AreSearch.after_commit_mode              = :direct
     AreSearch.batch_size                     = 500
     AreSearch.search_failure_mode            = :empty_result
-    AreSearch.search_body_policy             = AreSearch::ScriptDenySearchBodyPolicy
-    AreSearch.search_param_policy            = AreSearch::SearchParamLengthPolicy
+    AreSearch.search_body_policy             = AreSearch::ScriptDenySearchBodyPolicy.new
+    AreSearch.search_param_policy            = AreSearch::SearchParamLengthPolicy.new
     AreSearch.analyzer_settings              = AreSearch.analyzer_settings
     AreSearch.logger                         = Rails.logger
     AreSearch.database_specific              = AreSearch::PostgreSQLDatabaseSpecific
@@ -215,6 +215,8 @@ analyzer_settings は :analysis を持つ Hash で指定する。
 ## 1-14. search_body_policy
 ----------------------------------------------------------------
 
+検索時のsearch_body_policyオプションのデフォルト policy を指定する。
+
 Elasticsearchへ送信する検索bodyと mapping のフィールド名を検査する policy。
 ただし、runtime_mappings は対象外。
 
@@ -225,16 +227,16 @@ Elasticsearchへ送信する検索bodyと mapping のフィールド名を検査
 差し替える場合は AreSearch::SearchBodyPolicy を継承する。
 
     class ApplicationSearchBodyPolicy < AreSearch::SearchBodyPolicy
-        def self.valid?(es_params)
+        def valid?(es_params)
             true
         end
 
-        def self.invalid_key?(key_name)
+        def invalid_key?(key_name)
             false
         end
     end
 
-    AreSearch.search_body_policy = ApplicationSearchBodyPolicy
+    AreSearch.search_body_policy = ApplicationSearchBodyPolicy.new
 
 valid? は検索body全体、invalid_key? は mapping のフィールド名を検査する。
 
@@ -271,17 +273,27 @@ valid? は検索body全体、invalid_key? は mapping のフィールド名を�
         where の range の Hash 全体
             256文字
 
+文字数を変更する場合は生成時に指定可能。
+
+    AreSearch.search_param_policy = AreSearch::SearchParamLengthPolicy.new(
+        query_string_max_length: 4096,
+        suggest_text_max_length: 256,
+        where_term_max_length: 256,
+        where_terms_max_length: 2048,
+        where_range_max_length: 512,
+    )
+
 差し替える場合は AreSearch::SearchParamPolicy を継承する。
 
     class ApplicationSearchParamPolicy < AreSearch::SearchParamPolicy
-        def self.check_text(name, value)
+        def check_text(name, value)
             if value.to_s.length > 4096
                 "検索値は 4096 文字以内で指定してください"
             else
                 nil
             end
         end
-        def self.check_field_value(field_name, name, value)
+        def check_field_value(field_name, name, value)
             if field_name == :many_option_param_name
                 if value.to_s.length > 4096
                     "検索値は 4096 文字以内で指定してください"
@@ -298,7 +310,7 @@ valid? は検索body全体、invalid_key? は mapping のフィールド名を�
         end
     end
 
-    AreSearch.search_param_policy = ApplicationSearchParamPolicy
+    AreSearch.search_param_policy = ApplicationSearchParamPolicy.new
 
 check_text と check_field_value は、問題がある場合はエラーメッセージ、
 問題がない場合は nil を返す。
