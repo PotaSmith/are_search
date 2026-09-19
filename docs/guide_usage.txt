@@ -809,14 +809,14 @@ Elasticsearchの動作上、suggest には where の条件は適用されない�
                 size: 5,
                 collate: {
                     query: {
-                        "source": {
-                            "bool": {
-                                "filter": [
-                                    { "term": { "user_id": 123 } },
-                                    { "match": { "title": "{{suggestion}}" } }
-                                ]
-                            }
-                        }
+                        source: {
+                            bool: {
+                                filter: [
+                                    { term: { user_id: 123 } },
+                                    { match: { title: "{{suggestion}}" } },
+                                ],
+                            },
+                        },
                     },
                 },
             },
