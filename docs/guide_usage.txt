@@ -797,6 +797,32 @@ field 以外は Elasticsearch の suggest オプションとして指定する�
         puts "もしかして #{suggest_words.join(' ')}"
     end
 
+※ 注意
+Elasticsearchの動作上、suggest には where の条件は適用されない。
+条件を設定したい場合は term ではなく、phrase の collate を使用して、collate.query に条件を指定する。
+
+    suggest: {
+        title_spell: {
+            text: "cofee",
+            phrase: {
+                field: :title,
+                size: 5,
+                collate: {
+                    query: {
+                        "source": {
+                            "bool": {
+                                "filter": [
+                                    { "term": { "user_id": 123 } },
+                                    { "match": { "title": "{{suggestion}}" } }
+                                ]
+                            }
+                        }
+                    },
+                },
+            },
+        },
+    }
+
 
 # 16. search_param_policy
 ================================================================
