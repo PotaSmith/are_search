@@ -77,29 +77,13 @@ module AreSearch
                 clauses
             end
 
-            # condition内の field 条件またはネストしたbool条件をquery句へ追加する。
+            # condition内の Elasticsearch query句を追加し、bool条件だけ再帰的に組み立てる。
             def build_condition_clause(clauses, condition_opt)
                 condition_opt.each do |condition_name, condition_value|
                     if condition_name == :bool
                         clauses << { bool: build_bool_clause(condition_value) }
                     else
-                        build_field_clauses(clauses, condition_name, condition_value)
-                    end
-                end
-            end
-
-            # field内の term / terms / range 条件を Elasticsearch query句へ追加する。
-            def build_field_clauses(clauses, field, condition_opt)
-                condition_opt.each do |condition_type, value|
-                    case condition_type
-                    when :term
-                        clauses << { term: { field => value } }
-                    when :terms
-                        clauses << { terms: { field => value } }
-                    when :range
-                        clauses << { range: { field => value } }
-                    else
-                        raise ArgumentError, "未知の条件種別です: #{condition_type.inspect}"
+                        clauses << { condition_name => condition_value }
                     end
                 end
             end

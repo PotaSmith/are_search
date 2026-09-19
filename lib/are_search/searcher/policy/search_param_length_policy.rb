@@ -40,7 +40,7 @@ module AreSearch
         end
 
         # where系の検索パラメーターの値の検査
-        def check_field_value(field_name, name, value)
+        def check_field_value(name, field_name, value)
             if self.class.valid_value?(value) == false
                 return "#{name} は 不正な文字が含まれています。"
             end

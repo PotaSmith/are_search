@@ -829,15 +829,15 @@ RSpec.describe AreSearch::Searcher, "filters" do
             ],
             where: {
                 must: [
-                    { retry_count: { term: 0 } },
+                    { term: { retry_count: 0 } },
                 ],
                 filter: [
-                    { index_target_name: { terms: ["default", "archive"] } },
+                    { terms: { index_target_name: ["default", "archive"] } },
                 ],
                 should: [
                     {
-                        score: {
-                            range: {
+                        range: {
+                            score: {
                                 gte: 1.0,
                                 lt:  2.0,
                             },
@@ -845,7 +845,7 @@ RSpec.describe AreSearch::Searcher, "filters" do
                     },
                 ],
                 must_not: [
-                    { ar_model_class_name: { term: "Blocked" } },
+                    { term: { ar_model_class_name: "Blocked" } },
                 ],
                 minimum_should_match: 1,
             },
@@ -892,14 +892,14 @@ RSpec.describe AreSearch::Searcher, "filters" do
                     {
                         bool: {
                             filter: [
-                                { retry_count: { term: 0 } },
-                                { index_target_name: { term: "default" } },
+                                { term: { retry_count: 0 } },
+                                { term: { index_target_name: "default" } },
                             ],
                         },
                     },
                     {
-                        retry_count: {
-                            range: {
+                        range: {
+                            retry_count: {
                                 gte: 1,
                                 lt:  10,
                             },
@@ -948,7 +948,7 @@ RSpec.describe AreSearch::Searcher, "filters" do
                 ],
                 where: {
                     filter: [
-                        { retry_count: { term: value } },
+                        { term: { retry_count: value } },
                     ],
                 },
                 dump_body: true,
@@ -976,7 +976,7 @@ RSpec.describe AreSearch::Searcher, "filters" do
                 ],
                 where: {
                     filter: [
-                        { index_target_name: { terms: value } },
+                        { terms: { index_target_name: value } },
                     ],
                 },
                 dump_body: true,
@@ -998,7 +998,7 @@ RSpec.describe AreSearch::Searcher, "filters" do
             ],
             where: {
                 filter: [
-                    { index_target_name: { terms: [] } },
+                    { terms: { index_target_name: [] } },
                 ],
             },
             dump_body: true,
@@ -1024,11 +1024,11 @@ RSpec.describe AreSearch::Searcher, "filters" do
             ],
             where: {
                 filter: [
-                    { score: { term: 1.5 } },
-                    { score: { terms: [1.5, 2.5] } },
+                    { term: { score: 1.5 } },
+                    { terms: { score: [1.5, 2.5] } },
                     {
-                        score: {
-                            range: {
+                        range: {
+                            score: {
                                 gte: 1.5,
                                 lt:  2.5,
                             },
@@ -1069,7 +1069,7 @@ RSpec.describe AreSearch::Searcher, "filters" do
                 ],
                 where: {
                     filter: [
-                        { retry_count: { range: value } },
+                        { range: { retry_count: value } },
                     ],
                 },
                 dump_body: true,
@@ -1080,7 +1080,7 @@ RSpec.describe AreSearch::Searcher, "filters" do
         end
     end
 
-    it "whereの旧Array形式とfieldの旧省略形式を拒否する" do
+    it "whereの旧Array形式とquery種別の省略形式を拒否する" do
         allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
 
         expect do
@@ -1093,7 +1093,7 @@ RSpec.describe AreSearch::Searcher, "filters" do
                     },
                 ],
                 where: [
-                    { retry_count: { term: 0 } },
+                    { term: { retry_count: 0 } },
                 ],
                 dump_body: true,
             )
@@ -1118,7 +1118,7 @@ RSpec.describe AreSearch::Searcher, "filters" do
         end.to raise_error(ArgumentError)
     end
 
-    it "各fieldにterm、terms、rangeのいずれか1つだけを要求する" do
+    it "term、terms、rangeだけを許可し各queryにfieldを1件だけ要求する" do
         allow(AreSearch).to receive(:search_failure_mode).and_return(:raise)
 
         expect do
@@ -1132,7 +1132,7 @@ RSpec.describe AreSearch::Searcher, "filters" do
                 ],
                 where: {
                     filter: [
-                        { retry_count: { match: 0 } },
+                        { match: { retry_count: 0 } },
                     ],
                 },
                 dump_body: true,
@@ -1151,9 +1151,9 @@ RSpec.describe AreSearch::Searcher, "filters" do
                 where: {
                     filter: [
                         {
-                            retry_count: {
-                                term: 0,
-                                terms: [0, 1],
+                            term: {
+                                retry_count:      0,
+                                index_target_name: "default",
                             },
                         },
                     ],
@@ -1177,14 +1177,14 @@ RSpec.describe AreSearch::Searcher, "filters" do
                 ],
                 where: {
                     filter: [
-                        { search_text: { term: "Rails" } },
+                        { term: { search_text: "Rails" } },
                     ],
                 },
                 dump_body: true,
             )
         end.to raise_error(
             ArgumentError,
-            /opts\[:where\]\[filter\]\[0\] に未知のキーがあります: :search_text/,
+            /opts\[:where\]\[filter\]\[0\]\[term\] に未知のキーがあります: :search_text/,
         )
     end
 end

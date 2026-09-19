@@ -567,8 +567,8 @@ RSpec.describe AreSearch::SearchOptionValidator do
     # 指定数のboolをfilterでネストし、末端にfield条件を置く。
     def nested_bool_condition(depth)
         condition = {
-            status: {
-                term: "published",
+            term: {
+                status: "published",
             },
         }
 
@@ -788,8 +788,8 @@ RSpec.describe AreSearch::SearchOptionValidator do
             where = {
                 must: [
                     {
-                        status: {
-                            term: "published",
+                        term: {
+                            status: "published",
                         },
                     },
                 ],
@@ -798,8 +798,8 @@ RSpec.describe AreSearch::SearchOptionValidator do
                         bool: {
                             must: [
                                 {
-                                    retry_count: {
-                                        range: {
+                                    range: {
+                                        retry_count: {
                                             gte: 1,
                                         },
                                     },
@@ -807,22 +807,22 @@ RSpec.describe AreSearch::SearchOptionValidator do
                             ],
                             filter: [
                                 {
-                                    status: {
-                                        terms: ["published", "draft"],
+                                    terms: {
+                                        status: ["published", "draft"],
                                     },
                                 },
                             ],
                             should: [
                                 {
-                                    status: {
-                                        term: "featured",
+                                    term: {
+                                        status: "featured",
                                     },
                                 },
                             ],
                             must_not: [
                                 {
-                                    status: {
-                                        term: "deleted",
+                                    term: {
+                                        status: "deleted",
                                     },
                                 },
                             ],
@@ -848,8 +848,8 @@ RSpec.describe AreSearch::SearchOptionValidator do
                     {
                         where: [
                             {
-                                status: {
-                                    term: "published",
+                                term: {
+                                    status: "published",
                                 },
                             },
                         ],
@@ -860,15 +860,15 @@ RSpec.describe AreSearch::SearchOptionValidator do
             end.to raise_error(ArgumentError, /node_type :array は定義されていません/)
         end
 
-        it "conditionはfield条件またはbool条件の1件だけを受け付ける" do
+        it "conditionはquery条件またはbool条件の1件だけを受け付ける" do
             expect do
                 described_class.validate!(
                     {
                         where: {
                             filter: [
                                 {
-                                    status: { term: "published" },
-                                    retry_count: { term: 1 },
+                                    term: { status: "published" },
+                                    terms: { retry_count: [1] },
                                 },
                             ],
                         },

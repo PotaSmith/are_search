@@ -848,13 +848,13 @@ RSpec.describe AreSearch::IndexTarget do
                 },
                 where: {
                     filter: [
-                        { id: { term: 1 } },
+                        { term: { id: 1 } },
                     ],
                     must_not: [
-                        { id: { term: 2 } },
+                        { term: { id: 2 } },
                     ],
                     should: [
-                        { id: { terms: [3, 4] } },
+                        { terms: { id: [3, 4] } },
                     ],
                     minimum_should_match: 1,
                 },

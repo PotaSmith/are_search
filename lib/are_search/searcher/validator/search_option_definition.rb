@@ -393,17 +393,17 @@ module AreSearch
 
             # where: {
             #     must: [
-            #         { status: { term: "published" }},
-            #         { user_id: { terms: [1, 2, 3] }},
-            #         { price: {
-            #                 range: {
-            #                     gte: 1_000,
-            #                     lte: 5_000,
-            #                 },
+            #         { term: { status: "published" }},
+            #         { terms: { user_id: [1, 2, 3] }},
+            #         { range: {
+            #             price: {
+            #                 gte: 1_000,
+            #                 lte: 5_000,
+            #             },
             #         }},
             #         { bool: {
             #             filter: [
-            #                 { status: { ..... }},
+            #                 { term: { status: "published" }},
             #             ]
             #         }},
             #     ]
@@ -868,11 +868,11 @@ module AreSearch
         # bool 条件として許可する最大ネスト数。where 自体はネスト数に含めない。
         CONDITION_BOOL_MAX_DEPTH = 4
 
-        # where系オプションの1フィールド分を検査するHash key_value定義。
+        # where系オプションの term / terms / range を Elasticsearch query 形式で検査する。
         CONDITION_FIELD_KEY_VALUES = [
             {
                 key: {
-                    type: "any_non_text_without_text_field",
+                    key_name: :term,
                 },
                 value: {
                     hash: {
@@ -880,7 +880,7 @@ module AreSearch
                         key_values: [
                             {
                                 key: {
-                                    key_name: :term,
+                                    type: "any_non_text_without_text_field",
                                 },
                                 value: {
                                     error_class: AreSearch::InvalidSearchOption,
@@ -889,9 +889,21 @@ module AreSearch
                                     },
                                 },
                             },
+                        ],
+                    },
+                },
+            },
+            {
+                key: {
+                    key_name: :terms,
+                },
+                value: {
+                    hash: {
+                        item_count: 1,
+                        key_values: [
                             {
                                 key: {
-                                    key_name: :terms,
+                                    type: "any_non_text_without_text_field",
                                 },
                                 value: {
                                     error_class: AreSearch::InvalidSearchOption,
@@ -905,9 +917,21 @@ module AreSearch
                                     },
                                 },
                             },
+                        ],
+                    },
+                },
+            },
+            {
+                key: {
+                    key_name: :range,
+                },
+                value: {
+                    hash: {
+                        item_count: 1,
+                        key_values: [
                             {
                                 key: {
-                                    key_name: :range,
+                                    type: "any_non_text_without_text_field",
                                 },
                                 value: {
                                     error_class: AreSearch::InvalidSearchOption,

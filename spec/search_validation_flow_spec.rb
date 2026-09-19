@@ -385,13 +385,13 @@ RSpec.describe AreSearch::SearchParamValidator do
                     max_result_window,
                     where: {
                         filter: [
-                            { status: { term: "published" } },
+                            { term: { status: "published" } },
                         ],
                     },
                 )
             end.to raise_error(
                 ArgumentError,
-                /opts\[:where\]\[filter\]\[0\] に未知のキーがあります: :status/,
+                /opts\[:where\]\[filter\]\[0\]\[term\] に未知のキーがあります: :status/,
             )
         end
     end
@@ -779,18 +779,18 @@ RSpec.describe "search option flow" do
             where: {
                 filter: [
                     {
-                        count: {
-                            range: {
+                        range: {
+                            count: {
                                 gte: 0,
                             },
                         },
                     },
                 ],
                 should: [
-                    { status: { term: "published" } },
+                    { term: { status: "published" } },
                 ],
                 must_not: [
-                    { status: { terms: ["deleted"] } },
+                    { terms: { status: ["deleted"] } },
                 ],
                 minimum_should_match: 1,
             },
@@ -916,7 +916,7 @@ RSpec.describe "search option flow" do
             ],
             where: {
                 should: [
-                    { status: { term: "published" } },
+                    { term: { status: "published" } },
                 ],
                 minimum_should_match: 1,
             },
@@ -933,7 +933,7 @@ RSpec.describe "search option flow" do
             },
             where: {
                 should: [
-                    { status: { term: "published" } },
+                    { term: { status: "published" } },
                 ],
                 minimum_should_match: 1,
             },
@@ -1286,7 +1286,7 @@ RSpec.describe "search option flow" do
             },
             where: {
                 should: [
-                    { status: { term: "published" } },
+                    { term: { status: "published" } },
                 ],
                 minimum_should_match: 1,
             },

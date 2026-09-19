@@ -359,7 +359,7 @@ response.source、response.fields、response.stored_fields、response.docvalue_f
         ],
         where: {
             filter: [
-                { runtime_status: { term: "published" } },
+                { term: { runtime_status: "published" } },
             ]
         },
         response: {
@@ -477,7 +477,7 @@ where系の term / terms / range は文字列化した長さが、それぞれ�
         ],
         where: {
             filter: [
-                { status: { term: params[:filter_value].to_s } },
+                { term: { status: params[:filter_value].to_s } },
             ]
         },
     )
@@ -503,26 +503,26 @@ where系の term / terms / range は文字列化した長さが、それぞれ�
 
     where: {
         filter: [
-            { status: { term: "published" } },
-            { user_id: { terms: [1, 2, 3] } },
-            { price: { range: { gte: 1_000, lte: 5_000 } } },
+            { term:  { status: "published" } },
+            { terms: { user_id: [1, 2, 3] } },
+            { range: { price: { gte: 1_000, lte: 5_000 } } },
         ],
     }
 
 同じ field の条件を複数指定する場合は Array を使用する。
 
     must: [
-        { price: { range: { gte: 1_000 } } },
-        { price: { range: { lte: 5_000 } } },
+        { range: { price: { gte: 1_000 } } },
+        { range: { price: { lte: 5_000 } } },
     ],
 
     must_not: [
-        { status: { terms: ["draft", "deleted"] } },
+        { terms: { status: ["draft", "deleted"] } },
     ],
 
     should: [
-        { status: { term: "featured" } },
-        { user_id: { terms: [1, 2, 3] } },
+        { term:  { status: "featured" } },
+        { terms: { user_id: [1, 2, 3] } },
     ],
     minimum_should_match: 1,
 
@@ -537,11 +537,11 @@ terms は Array、range は1件以上の Hash で指定する。terms には空A
 must / filter / must_not / should の下には boolを4階層まで追加できる
 
     must: [
-        { status: { terms: ["draft", "deleted"] } },
+        { terms: { status: ["draft", "deleted"] } },
         { bool: {
             should: [
-                { status: { term: "featured" } },
-                { user_id: { terms: [1, 2, 3] } },
+                { term:  { status: "featured" } },
+                { terms: { user_id: [1, 2, 3] } },
             ],
             minimum_should_match: 1,
         }},
@@ -867,7 +867,7 @@ AreSearch::SearchBodyPolicy の継承クラスのインスタンスを指定す�
         ],
         where: {
             filter: [
-                { status: { term: "published" } },
+                { term: { status: "published" } },
             ],
         },
         dump_body: true,

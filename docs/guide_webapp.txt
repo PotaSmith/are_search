@@ -61,7 +61,7 @@ current_user のデータのみを検索する場合
 
     where_clause = {
 		filter: [
-	        { user_id: { term: current_user.id } },
+	        { term: { user_id: current_user.id } },
 		]
     }
 
@@ -164,7 +164,7 @@ where_clause = {
 	# 実際の動作は Elasticsearch のドキュメントを確認すること
 
 	filter: [
-        { user_id: { term: current_user.id } },
+        { term: { user_id: current_user.id } },
 	]
 }
 
@@ -274,7 +274,7 @@ where_filter = []
 where_clause = { filter: where_filter }
 if params[:data_type].present?
 	# 絞り込み検索を行う
-	where_filter << { data_type: { term: params[:data_type].to_s } }
+	where_filter << { term: { data_type: params[:data_type].to_s } }
 end
 
 search_target = Document.are_search_index_target_alias(:default)

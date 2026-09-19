@@ -508,8 +508,8 @@ RSpec.describe "search runtime mappings" do
             where: {
                 filter: [
                     {
-                        :"runtime.score" => {
-                            range: {
+                        range: {
+                            :"runtime.score" => {
                                 gte: 0,
                             },
                         },
@@ -568,7 +568,7 @@ RSpec.describe "search runtime mappings" do
             enable_runtime_mappings: true,
             where: {
                 filter: [
-                    { title: { term: "runtime" } },
+                    { term: { title: "runtime" } },
                 ],
             },
             sort: {
@@ -675,10 +675,10 @@ RSpec.describe "search runtime mappings" do
             enable_runtime_mappings: true,
             where: {
                 filter: [
-                    { runtime_status: { term: "published" } },
+                    { term: { runtime_status: "published" } },
                     {
-                        runtime_score: {
-                            range: {
+                        range: {
+                            runtime_score: {
                                 gte: 0,
                             },
                         },

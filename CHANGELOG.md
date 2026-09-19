@@ -6,6 +6,8 @@
 
 ## [0.9.4] - 2026-09-17
 
+- `SearchParamPolicy` の `check_field_value` の引数の順序を入れ替え。
+- 検索の `where` オプションの typeとfieldの順序を入れ替え。
 - 検索オプションに `search_param_policy` `search_body_policy` を追加とpolicyのインスタンス化
 - 検索時に index target 毎にモデルの条件を生成するように変更
 - `indexable_method` を `exclude_index_method` に変更

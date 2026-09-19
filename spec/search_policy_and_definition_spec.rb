@@ -221,7 +221,7 @@ RSpec.describe AreSearch::SearchParamPolicy do
     describe "#check_field_value" do
         it "基底policyは継承先でcheck_field_valueを実装するよう要求する" do
             expect do
-                described_class.new.check_field_value(:status, "where.term", "value")
+                described_class.new.check_field_value("where.term", :status, "value")
             end.to raise_error(
                 NotImplementedError,
                 "AreSearch::SearchParamPolicy#check_field_value を実装してください",
@@ -237,14 +237,14 @@ RSpec.describe AreSearch::SearchParamPolicy do
             policy.validate!(
                 where: {
                     filter: [
-                        { status: { term: "published" } },
+                        { term: { status: "published" } },
                     ],
                 },
             )
 
             expect(policy).to have_received(:check_field_value).with(
-                :status,
                 "where.term",
+                :status,
                 "published",
             )
         end
@@ -259,7 +259,7 @@ RSpec.describe AreSearch::SearchParamPolicy do
                         {
                             bool: {
                                 filter: [
-                                    { status: { term: "published" } },
+                                    { term: { status: "published" } },
                                 ],
                             },
                         },
@@ -269,8 +269,8 @@ RSpec.describe AreSearch::SearchParamPolicy do
             )
 
             expect(policy).to have_received(:check_field_value).once.with(
-                :status,
                 "where.term",
+                :status,
                 "published",
             )
         end
@@ -337,32 +337,32 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
                 where_range_max_length: 30,
             )
 
-            expect(policy.check_field_value(:status, "where.term", "a" * 11)).to eq(
+            expect(policy.check_field_value("where.term", :status, "a" * 11)).to eq(
                 "where.term は 10 文字以内で指定してください",
             )
-            expect(policy.check_field_value(:status, "where.terms", "a" * 21)).to eq(
+            expect(policy.check_field_value("where.terms", :status, "a" * 21)).to eq(
                 "where.terms は 20 文字以内で指定してください",
             )
-            expect(policy.check_field_value(:status, "where.range", "a" * 31)).to eq(
+            expect(policy.check_field_value("where.range", :status, "a" * 31)).to eq(
                 "where.range は 30 文字以内で指定してください",
             )
         end
 
         it "whereのArrayとHash内部にある不正文字を拒否する" do
-            expect(described_class.new.check_field_value(:status, "where.term", "published\u200B")).to eq(
+            expect(described_class.new.check_field_value("where.term", :status, "published\u200B")).to eq(
                 "where.term は 不正な文字が含まれています。",
             )
-            expect(described_class.new.check_field_value(:status, "where.terms", ["published", "draft\n"])).to eq(
+            expect(described_class.new.check_field_value("where.terms", :status, ["published", "draft\n"])).to eq(
                 "where.terms は 不正な文字が含まれています。",
             )
-            expect(described_class.new.check_field_value(:status, "where.range", { gte: "a", lte: "z\t" })).to eq(
+            expect(described_class.new.check_field_value("where.range", :status, { gte: "a", lte: "z\t" })).to eq(
                 "where.range は 不正な文字が含まれています。",
             )
         end
 
         it "whereのterm値、terms全体、range全体の文字数境界を検査する" do
-            expect(described_class.new.check_field_value(:status, "where.term", "a" * 128)).to eq(nil)
-            expect(described_class.new.check_field_value(:status, "where.term", "a" * 129)).to eq(
+            expect(described_class.new.check_field_value("where.term", :status, "a" * 128)).to eq(nil)
+            expect(described_class.new.check_field_value("where.term", :status, "a" * 129)).to eq(
                 "where.term は 128 文字以内で指定してください",
             )
 
@@ -370,8 +370,8 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
             valid_terms = ["a" * (1024 - terms_base_length), "b"]
             invalid_terms = ["a" * (1025 - terms_base_length), "b"]
 
-            expect(described_class.new.check_field_value(:status, "where.terms", valid_terms)).to eq(nil)
-            expect(described_class.new.check_field_value(:status, "where.terms", invalid_terms)).to eq(
+            expect(described_class.new.check_field_value("where.terms", :status, valid_terms)).to eq(nil)
+            expect(described_class.new.check_field_value("where.terms", :status, invalid_terms)).to eq(
                 "where.terms は 1024 文字以内で指定してください",
             )
 
@@ -379,8 +379,8 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
             valid_range = { gte: "a" * (256 - range_base_length), lte: "b" }
             invalid_range = { gte: "a" * (257 - range_base_length), lte: "b" }
 
-            expect(described_class.new.check_field_value(:status, "where.range", valid_range)).to eq(nil)
-            expect(described_class.new.check_field_value(:status, "where.range", invalid_range)).to eq(
+            expect(described_class.new.check_field_value("where.range", :status, valid_range)).to eq(nil)
+            expect(described_class.new.check_field_value("where.range", :status, invalid_range)).to eq(
                 "where.range は 256 文字以内で指定してください",
             )
         end
@@ -451,7 +451,7 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
                 {
                     where: {
                         filter: [
-                            { status: { terms: ["published", "draft\t"] } },
+                            { terms: { status: ["published", "draft\t"] } },
                         ],
                     },
                 },
@@ -513,14 +513,14 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
             range_base_length = { gte: "", lte: "b" }.to_s.length
 
             valid_conditions = [
-                { status: { term: "a" * 128 } },
-                { status: { terms: ["a" * (1024 - terms_base_length), "b"] } },
-                { status: { range: { gte: "a" * (256 - range_base_length), lte: "b" } } },
+                { term: { status: "a" * 128 } },
+                { terms: { status: ["a" * (1024 - terms_base_length), "b"] } },
+                { range: { status: { gte: "a" * (256 - range_base_length), lte: "b" } } },
             ]
             invalid_conditions = [
-                { status: { term: "a" * 129 } },
-                { status: { terms: ["a" * (1025 - terms_base_length), "b"] } },
-                { status: { range: { gte: "a" * (257 - range_base_length), lte: "b" } } },
+                { term: { status: "a" * 129 } },
+                { terms: { status: ["a" * (1025 - terms_base_length), "b"] } },
+                { range: { status: { gte: "a" * (257 - range_base_length), lte: "b" } } },
             ]
 
             valid_conditions.each do |condition|
@@ -552,7 +552,7 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
                             {
                                 bool: {
                                     filter: [
-                                        { status: { term: "a" * 129 } },
+                                        { term: { status: "a" * 129 } },
                                     ],
                                 },
                             },
@@ -569,7 +569,7 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
                     queries: nil,
                     where: {
                         filter: [
-                            { status: { term: "a" * 129 } },
+                            { term: { status: "a" * 129 } },
                         ],
                     },
                 )
@@ -580,7 +580,7 @@ RSpec.describe AreSearch::SearchParamLengthPolicy do
                     suggest: nil,
                     where: {
                         filter: [
-                            { status: { term: "a" * 129 } },
+                            { term: { status: "a" * 129 } },
                         ],
                     },
                 )

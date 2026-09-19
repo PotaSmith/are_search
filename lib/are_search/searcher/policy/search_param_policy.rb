@@ -8,7 +8,7 @@ module AreSearch
             raise NotImplementedError, "#{self.class.name}#check_text を実装してください"
         end
 
-        def check_field_value(field_name, name, value)
+        def check_field_value(name, field_name, value)
             raise NotImplementedError, "#{self.class.name}#check_field_value を実装してください"
         end
 
@@ -58,24 +58,22 @@ module AreSearch
             end
         end
 
-        # condition内のfield条件を検査し、bool条件なら再帰する。
+        # condition内のquery条件を検査し、bool条件なら再帰する。
         def validate_where_condition(condition_value)
-            condition_value.each do |field_name, field_param|
-                if field_name == :bool
-                    validate_where_values(field_param)
+            condition_value.each do |condition_type, condition_param|
+                if condition_type == :bool
+                    validate_where_values(condition_param)
                     next
                 end
 
-                validate_where_field_value(field_name, field_param)
+                validate_where_field_values(condition_type, condition_param)
             end
         end
 
-        # fieldのterm / terms / range値をpolicyへ渡す。
-        def validate_where_field_value(field_name, field_param)
-            return if field_param.nil?
-
-            field_param.each do |param_type, param_value|
-                message = check_field_value(field_name, "where.#{param_type}", param_value)
+        # term / terms / range 内のfield値をpolicyへ渡す。
+        def validate_where_field_values(condition_type, field_params)
+            field_params.each do |field_name, param_value|
+                message = check_field_value("where.#{condition_type}", field_name, param_value)
                 if message != nil
                     raise AreSearch::InvalidSearchOption, message
                 end

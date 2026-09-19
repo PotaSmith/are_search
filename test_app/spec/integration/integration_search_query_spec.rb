@@ -889,14 +889,14 @@ RSpec.describe "AreSearch search DSL integration", type: :model do
                     {
                         bool: {
                             filter: [
-                                { status: { term: "published" } },
-                                { user_id: { terms: [1] } },
+                                { term: { status: "published" } },
+                                { terms: { user_id: [1] } },
                             ],
                         },
                     },
                     {
-                        user_id: {
-                            range: {
+                        range: {
+                            user_id: {
                                 gte: 3,
                                 lte: 3,
                             },

@@ -129,8 +129,8 @@ RSpec.describe AreSearch::SearchParamValidator do
                 where: {
                     filter: [
                         {
-                            status: {
-                                term: "published",
+                            term: {
+                                status: "published",
                             },
                         },
                     ],
@@ -141,8 +141,8 @@ RSpec.describe AreSearch::SearchParamValidator do
             expect(result[:where]).to eq(
                 filter: [
                     {
-                        status: {
-                            term: "published",
+                        term: {
+                            status: "published",
                         },
                     },
                 ],
@@ -492,11 +492,11 @@ RSpec.describe AreSearch::SearchParamValidator do
                 ],
                 where: {
                     filter: [
-                        { status: { term: "published" } },
-                        { count: { terms: [1, 2] } },
+                        { term: { status: "published" } },
+                        { terms: { count: [1, 2] } },
                         {
-                            published_at: {
-                                range: {
+                            range: {
+                                published_at: {
                                     gte: "2026-01-01",
                                     lte: "2026-12-31",
                                 },
@@ -508,11 +508,11 @@ RSpec.describe AreSearch::SearchParamValidator do
 
             expect(result[:where]).to eq(
                 filter: [
-                    { status: { term: "published" } },
-                    { count: { terms: [1, 2] } },
+                    { term: { status: "published" } },
+                    { terms: { count: [1, 2] } },
                     {
-                        published_at: {
-                            range: {
+                        range: {
+                            published_at: {
                                 gte: "2026-01-01",
                                 lte: "2026-12-31",
                             },
@@ -534,13 +534,13 @@ RSpec.describe AreSearch::SearchParamValidator do
                     ],
                     where: {
                         filter: [
-                            { title: { term: "Rails" } },
+                            { term: { title: "Rails" } },
                         ],
                     },
                 )
             end.to raise_error(
                 ArgumentError,
-                /opts\[:where\]\[filter\]\[0\] に未知のキーがあります: :title/,
+                /opts\[:where\]\[filter\]\[0\]\[term\] に未知のキーがあります: :title/,
             )
 
             expect do
@@ -575,11 +575,11 @@ RSpec.describe AreSearch::SearchParamValidator do
                 ],
                 where: {
                     filter: [
-                        { score: { term: 1.5 } },
-                        { score: { terms: [1.5, 2.5] } },
+                        { term: { score: 1.5 } },
+                        { terms: { score: [1.5, 2.5] } },
                         {
-                            score: {
-                                range: {
+                            range: {
+                                score: {
                                     gte: 1.5,
                                     lte: 2.5,
                                 },
@@ -591,11 +591,11 @@ RSpec.describe AreSearch::SearchParamValidator do
 
             expect(result[:where]).to eq(
                 filter: [
-                    { score: { term: 1.5 } },
-                    { score: { terms: [1.5, 2.5] } },
+                    { term: { score: 1.5 } },
+                    { terms: { score: [1.5, 2.5] } },
                     {
-                        score: {
-                            range: {
+                        range: {
+                            score: {
                                 gte: 1.5,
                                 lte: 2.5,
                             },
@@ -624,7 +624,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                     ],
                     where: {
                         filter: [
-                            { status: { term: [] } },
+                            { term: { status: [] } },
                         ],
                     },
                 },
@@ -637,7 +637,7 @@ RSpec.describe AreSearch::SearchParamValidator do
                     ],
                     where: {
                         filter: [
-                            { status: { terms: ["published", {}] } },
+                            { terms: { status: ["published", {}] } },
                         ],
                     },
                 },
@@ -651,8 +651,8 @@ RSpec.describe AreSearch::SearchParamValidator do
                     where: {
                         filter: [
                             {
-                                count: {
-                                    range: {
+                                range: {
+                                    count: {
                                         gte: 1..2,
                                     },
                                 },
