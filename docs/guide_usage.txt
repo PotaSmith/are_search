@@ -584,7 +584,7 @@ must / filter / must_not / should の下には boolを4階層まで追加でき�
             .includes(:user, :tags),
     )
 
-Relation の条件に合わない結果と、DB に存在しない結果は除外される。
+Relation の条件に合わない場合、DB に存在しない場合はデータが復元されない。
 includes、joins なども Relation に指定できる。
 
 
