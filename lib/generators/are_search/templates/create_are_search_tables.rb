@@ -33,6 +33,8 @@ class <%= migration_class_name %> < ActiveRecord::Migration[<%= ActiveRecord::Mi
             t.datetime :last_force_try_at
             t.integer  :force_try_count,     null: false, default: 0
 
+            t.boolean  :boundary_attempted,  null: false, default: false
+
             t.text     :last_error
             t.datetime :last_error_at
 

@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+- このバージョンは、DBの作り直しが必要だが、バージョンが1.0.0以下なので移行手順は用意しない
+- Boundary回収開始後に要求世代が境界を超えたSyncRequestも、同期完了まで回収対象に残すよう変更。
+
 ## [0.9.5] - 2026-09-19
 
 - `SearchParamPolicy` の `check_field_value` の引数の順序を入れ替え。

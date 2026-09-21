@@ -723,7 +723,7 @@ RSpec.describe "are_search sync request boundary task" do
                 .and_return("y\n")
 
             expect(AreSearch::SyncRequestRunner)
-                .to receive(:run) do |models:, normal_scope:, force_scope:, processing_token:, lock_file_path:|
+                .to receive(:run) do |models:, normal_scope:, force_scope:, processing_token:, lock_file_path:, on_boundary:|
                     expect(models).to eq([model_class])
                     expect(normal_scope.order(:id).pluck(:id)).to eq([before_boundary.id])
                     expect(normal_scope.exists?(after_boundary.id)).to eq(false)
@@ -732,6 +732,7 @@ RSpec.describe "are_search sync request boundary task" do
                     expect(lock_file_path).to eq(
                         File.join(AreSearch.sync_runner_lock_dir_path, "my_boundary_task.lock"),
                     )
+                    expect(on_boundary).to eq(true)
 
                     {
                         normal_count: 1,

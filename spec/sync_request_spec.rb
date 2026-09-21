@@ -512,7 +512,7 @@ RSpec.describe AreSearch::SyncRequest do
 
                 allow(sync)
                     .to receive(:acquire_sync_request_processing_with_sequence)
-                    .with(processing_token)
+                    .with(processing_token, on_boundary: false)
                     .and_raise(RuntimeError, "processing acquire failed")
 
                 expect(model).not_to receive(:find_by)
@@ -674,6 +674,35 @@ RSpec.describe AreSearch::SyncRequest do
                 expect(reloaded.sync_try_count).to eq(0)
                 expect(reloaded.callback_try_count).to eq(0)
                 expect(reloaded.last_completed_at).not_to eq(nil)
+                expect(reloaded.processing_token).to eq(nil)
+            end
+
+            it "Boundary同期中にrequest_sequenceが更新された場合は回収開始済みの新世代要求を残す" do
+                sync_request = create_sync_request(request_sequence: 10)
+
+                allow(model)
+                    .to receive(:find_by)
+                    .with(id: ar_instance_key)
+                    .and_return(record)
+
+                expect(record)
+                    .to receive(:are_search_index_or_delete!) do
+                        reloaded = AreSearch::SyncRequest.find(sync_request.id)
+                        expect(reloaded.boundary_attempted).to eq(true)
+
+                        AreSearch::SyncRequest.where(id: sync_request.id).update_all(request_sequence: 11)
+                    end
+
+                result = sync_request.are_search_try_sync(
+                    processing_token,
+                    on_rake: true,
+                    on_boundary: true,
+                )
+
+                reloaded = AreSearch::SyncRequest.find(sync_request.id)
+                expect(result).to eq(true)
+                expect(reloaded.request_sequence).to eq(11)
+                expect(reloaded.boundary_attempted).to eq(true)
                 expect(reloaded.processing_token).to eq(nil)
             end
 

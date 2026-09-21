@@ -93,8 +93,8 @@ module AreSearch
             sync_request.are_search_try_sync(processing_token, on_rake: false, reraise: reraise)
         end
 
-        def are_search_try_sync(processing_token, on_rake: true, reraise: false)
-            AreSearch::SyncRequest::Sync.new(self).try_sync(processing_token, on_rake: on_rake, reraise: reraise)
+        def are_search_try_sync(processing_token, on_rake: true, reraise: false, on_boundary: false)
+            AreSearch::SyncRequest::Sync.new(self).try_sync(processing_token, on_rake: on_rake, reraise: reraise, on_boundary: on_boundary)
         end
 
         def are_search_try_force_sync
@@ -212,6 +212,11 @@ end
 # processing_at
 #     processing_tokenを設定して通常同期を開始した時刻。
 #     処理中のまま古くなった要求をforce対象として検出するために使用する。
+#
+# boundary_attempted
+#     Boundary回収でprocessingを取得した要求であることを表す。
+#     世代更新やprocessing解除では戻さず、境界を超えても回収対象に残す。
+#     同期完了時に世代が一致していれば、要求とともに削除される。
 #
 # sync_try_count
 #     Elasticsearchへの同期処理を開始した回数。

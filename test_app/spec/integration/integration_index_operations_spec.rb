@@ -891,12 +891,67 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
         expect(after_boundary_request).not_to eq(nil)
         expect(after_boundary_request.request_sequence).to be > boundary_target.sequence_limit
 
-        # 11-6: 今回の境界までを同期し、bulk中の古いdataを最新状態へ戻す。
+        # 11-6: Boundary同期が古いdataを生成した直後に通常更新を割り込ませる。
+        updated_during_boundary = false
+
+        allow_any_instance_of(DocumentFirst)
+            .to receive(:are_search_index_data_for_index!)
+            .and_wrap_original do |original_method, index_target, sync_stage_name|
+                record = original_method.receiver
+                data = original_method.call(index_target, sync_stage_name)
+
+                if updated_during_boundary == false &&
+                        record.id == second.id &&
+                        index_target.index_target_name == :default &&
+                        sync_stage_name == "huge_data_for_reindex"
+                    updated_during_boundary = true
+
+                    DocumentFirst.find(second.id).update!(
+                        title: "boundaryboundarynewtoken",
+                    )
+                end
+
+                data
+            end
+
         allow($stdin)
             .to receive(:gets)
             .and_return("y\n")
 
         boundary_run_task = Rake::Task["are_search:my_boundary_task_run_sync_request_before_boundary"]
+
+        expect do
+            boundary_run_task.invoke
+        end.to output(
+            /Boundary同期対象 実行前 1件.*Boundary同期対象 実行後 1件/m,
+        ).to_stdout
+
+        expect(updated_during_boundary).to eq(true)
+
+        retried_request = sync_request_for(
+            second,
+            :default,
+            "huge_data_for_reindex",
+        )
+        expect(retried_request).not_to eq(nil)
+        expect(retried_request.boundary_attempted).to eq(true)
+        expect(retried_request.request_sequence).to be > boundary_target.sequence_limit
+
+        refresh_index_target(default_index_target)
+
+        stale_after_boundary = search_document_first(
+            "boundarybulkduringtoken",
+            index_target: default_index_target,
+        )
+        latest_after_boundary = search_document_first(
+            "boundaryboundarynewtoken",
+            index_target: default_index_target,
+        )
+        expect(stale_after_boundary.records.map(&:id)).to eq([second.id])
+        expect(latest_after_boundary.records).to eq([])
+
+        # 11-7: 回収開始済み要求は境界後の世代へ進んでも再回収し、最新状態へ戻す。
+        boundary_run_task.reenable
 
         expect do
             boundary_run_task.invoke
@@ -919,10 +974,16 @@ RSpec.describe "AreSearch large reindex migration integration", type: :model do
 
         refresh_index_target(default_index_target)
         recovered_result = search_document_first(
-            "boundarybulkduringtoken",
+            "boundaryboundarynewtoken",
             index_target: default_index_target,
         )
         expect(recovered_result.records.map(&:id)).to eq([second.id])
+
+        stale_recovered_result = search_document_first(
+            "boundarybulkduringtoken",
+            index_target: default_index_target,
+        )
+        expect(stale_recovered_result.records).to eq([])
 
         # 境界対象が0件なら再実行しても同期を開始しない。
         boundary_run_task.reenable

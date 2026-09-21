@@ -53,6 +53,7 @@ ActiveRecord::Schema.define do
 
         t.string   :processing_token
         t.datetime :processing_at
+        t.boolean  :boundary_attempted, null: false, default: false
 
         t.integer  :sync_try_count,   null: false, default: 0
         t.datetime :last_sync_try_at

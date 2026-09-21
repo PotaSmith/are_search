@@ -72,8 +72,8 @@ RSpec.describe AreSearch::SyncRequestRunner do
         force_calls = []
 
         allow_any_instance_of(AreSearch::SyncRequest)
-            .to receive(:are_search_try_sync) do |sync_request, token, on_rake:|
-                normal_calls << [sync_request.id, token, on_rake]
+            .to receive(:are_search_try_sync) do |sync_request, token, on_rake:, on_boundary:|
+                normal_calls << [sync_request.id, token, on_rake, on_boundary]
             end
 
         allow_any_instance_of(AreSearch::SyncRequest)
@@ -94,8 +94,8 @@ RSpec.describe AreSearch::SyncRequestRunner do
             force_count:  1,
         )
         expect(normal_calls).to eq([
-            [normal_request.id, "runner-token", true],
-            [interrupted_request.id, "runner-token", true],
+            [normal_request.id, "runner-token", true, false],
+            [interrupted_request.id, "runner-token", true, false],
         ])
         expect(force_calls).to eq([force_request.id])
     end
@@ -120,8 +120,8 @@ RSpec.describe AreSearch::SyncRequestRunner do
         force_calls = []
 
         allow_any_instance_of(AreSearch::SyncRequest)
-            .to receive(:are_search_try_sync) do |sync_request, token, on_rake:|
-                normal_calls << [sync_request.id, token, on_rake]
+            .to receive(:are_search_try_sync) do |sync_request, token, on_rake:, on_boundary:|
+                normal_calls << [sync_request.id, token, on_rake, on_boundary]
             end
 
         allow_any_instance_of(AreSearch::SyncRequest)
@@ -142,9 +142,31 @@ RSpec.describe AreSearch::SyncRequestRunner do
             force_count:  1,
         )
         expect(normal_calls).to eq([
-            [normal_request.id, "runner-token", true],
+            [normal_request.id, "runner-token", true, false],
         ])
         expect(force_calls).to eq([force_request.id])
+    end
+
+    it "on_boundaryを通常同期へ渡す" do
+        normal_request = create_sync_request
+
+        expect_any_instance_of(AreSearch::SyncRequest)
+            .to receive(:are_search_try_sync)
+            .with("runner-token", on_rake: true, on_boundary: true)
+
+        result = described_class.run(
+            models:           [article_model],
+            normal_scope:     AreSearch::SyncRequest.where(id: normal_request.id),
+            force_scope:      AreSearch::SyncRequest.none,
+            processing_token: "runner-token",
+            lock_file_path:   @lock_file_path,
+            on_boundary:      true,
+        )
+
+        expect(result).to eq(
+            normal_count: 1,
+            force_count:  0,
+        )
     end
 
     it "lockを取得できない場合は処理せずnilを返す" do

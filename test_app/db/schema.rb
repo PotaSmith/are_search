@@ -47,6 +47,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_18_072743) do
   create_table "are_search_sync_requests", force: :cascade do |t|
     t.string "ar_instance_key", null: false
     t.string "ar_model_class_name", null: false
+    t.boolean "boundary_attempted", default: false, null: false
     t.integer "callback_try_count", default: 0, null: false
     t.datetime "created_at", null: false
     t.boolean "force_attempted", default: false, null: false

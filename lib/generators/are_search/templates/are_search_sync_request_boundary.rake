@@ -75,7 +75,7 @@ module AreSearchSyncRequestBoundaryChangeYourTaskNameTask
         puts "#{Time.zone.now.strftime('%Y-%m-%d %H:%M:%S')} [AreSearch] BoundaryTargetをクリアしました。"
     end
 
-    # request_sequenceがBoundaryTargetのsequence_limit以下のSyncRequestだけを同期する。
+    # 境界以前のSyncRequestと、Boundary回収を開始済みのSyncRequestを同期する。
     def run_sync_requests!
         AreSearch.validate_rake_operation_enabled!
 
@@ -118,6 +118,7 @@ module AreSearchSyncRequestBoundaryChangeYourTaskNameTask
             force_scope:      AreSearch::SyncRequest.none,
             processing_token: AreSearch::SyncRequest::RAKE_PROCESSING_TOKEN,
             lock_file_path:   lock_file_path,
+            on_boundary:      true,
         )
 
         boundary_target.update_columns(last_sync_ended_at: Time.zone.now)
@@ -131,7 +132,7 @@ module AreSearchSyncRequestBoundaryChangeYourTaskNameTask
         puts "#{Time.zone.now.strftime('%Y-%m-%d %H:%M:%S')} [AreSearch] Boundary同期対象 実行後 #{after_count}件"
     end
 
-    # request_sequence が BoundaryTarget の sequence_limit より後の 処理中以外の SyncRequest を削除する。
+    # 境界より後の、Boundary回収未開始かつ処理中でないSyncRequestを削除する。
     def delete_sync_requests_after_boundary_target!
         AreSearch.validate_rake_operation_enabled!
 
@@ -171,20 +172,26 @@ module AreSearchSyncRequestBoundaryChangeYourTaskNameTask
         )
     end
 
-    # request_sequenceが境界以下のSyncRequestを返す。
+    # 境界以下、またはBoundary回収を開始済みのSyncRequestを返す。
     # commitの前後関係は判定せず、同期対象を安全側に広く取る。
     #
     # 同期用
     def boundary_maybe_before_sync_request_scope(boundary_target)
-        sync_request_scope.where("request_sequence <= ?", boundary_target.sequence_limit)
+        sync_request_scope.where(
+            "request_sequence <= ? OR boundary_attempted = ?",
+            boundary_target.sequence_limit,
+            true,
+        )
     end
 
-    # request_sequenceが境界より後のSyncRequestを返す。
-    # commitの前後関係は判定せず、境界以下のSyncRequestは削除対象から除外する。
+    # 境界より後で、Boundary回収を開始していないSyncRequestを返す。
+    # 境界以下の要求と回収開始済みの要求は削除対象から除外する。
     #
     # 削除や除外用
     def boundary_after_sync_request_scope(boundary_target)
-        sync_request_scope.where.not("request_sequence <= ?", boundary_target.sequence_limit)
+        sync_request_scope
+            .where.not("request_sequence <= ?", boundary_target.sequence_limit)
+            .where(boundary_attempted: false)
     end
 end
 
