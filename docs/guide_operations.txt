@@ -438,7 +438,7 @@ AreSearch.index_operation_enabled = true のプロセスでのみ実行する。
 ================================================================
 
 run_sync_requests_XXXX の強制同期後も processing_token が残り続ける場合の最終手段。
-Job が再開しないことを確認してから行う。
+元の同期処理が再開しないことを確認してから行う。
 
 対象を確認する。
 
@@ -450,7 +450,7 @@ Job が再開しないことを確認してから行う。
     sync_request.force_attempted が true
     sync_request.force_try_count が 1 以上
     processing_at が十分古い
-    対象 Job が存在しない、または Job worker を停止済み
+    対象 Job が存在しない、Job worker を停止済み、または direct の実行元を停止・終了済み
 
 解除する。
 
@@ -461,6 +461,7 @@ Job が再開しないことを確認してから行う。
         .update_all(
             processing_token: nil,
             processing_at:    nil,
+            sync_try_count:   0,
         )
 
     puts updated_count
