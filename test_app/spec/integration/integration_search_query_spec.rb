@@ -504,6 +504,7 @@ RSpec.describe "AreSearch search features integration", type: :model do
             current_page: 2,
             per_page:     10,
             remote:       false,
+            data:         {},
         ).and_return(paginator)
 
         expect(

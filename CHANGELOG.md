@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+- イニシャライザでの接続パラメーターからssl: { verify: false }を削除
+- test_appの使用gemバージョン更新。elastic-transportのバージョンを指定
 - このバージョンは、DBの作り直しが必要だが、バージョンが1.0.0以下なので移行手順は用意しない
 - Boundary回収開始後に要求世代が境界を超えたSyncRequestも、同期完了まで回収対象に残すよう変更。
 

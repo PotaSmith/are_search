@@ -456,9 +456,6 @@ RSpec.describe AreSearch do
                         open_timeout: 2,
                         timeout:      10,
                     },
-                    ssl: {
-                        verify: false,
-                    },
                 },
             )
 

@@ -31,7 +31,6 @@ AreSearch.setup(
                 open_timeout: 2,
                 timeout:      10,
             },
-            ssl: { verify: false },
         },
         ca_fingerprint: ConfVars.get(:are_search, :ca_fingerprint),
         log: Rails.env.development?,
