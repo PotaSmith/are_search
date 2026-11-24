@@ -336,6 +336,21 @@ RSpec.describe AreSearch, "configuration" do
         expect(described_class.lock_dir).to eq("/tmp/are_search_spec")
     end
 
+    it "reindex_max_bulk_bytesは正のIntegerだけを受け付ける" do
+        original_value = described_class.reindex_max_bulk_bytes
+        expect(original_value).to eq(20 * 1024 * 1024)
+        described_class.reindex_max_bulk_bytes = 1024
+        expect(described_class.reindex_max_bulk_bytes).to eq(1024)
+
+        [0, -1, nil, "1024", 1.5].each do |value|
+            expect do
+                described_class.reindex_max_bulk_bytes = value
+            end.to raise_error(ArgumentError, "reindex_max_bulk_bytes は正の Integer を指定してください")
+        end
+    ensure
+        described_class.reindex_max_bulk_bytes = original_value
+    end
+
     it "analyzer_settings は analysis Hash 必須" do
         expect do
             described_class.analyzer_settings = { analyzer: {} }

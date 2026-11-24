@@ -8,7 +8,7 @@ module AreSearch
                 @sync_request = sync_request
             end
 
-            def try_sync(processing_token, on_rake:, reraise:, on_boundary: false)
+            def try_sync(processing_token, on_rake:, reraise:)
                 # 同期開始条件の確認と processing の取得。
                 # 条件不一致による false は同期対象外として扱い、*_count は増やさない。
                 # このブロック内で例外が発生した場合は、取得したSyncRequestと同じ行が残っていれば、
@@ -24,7 +24,7 @@ module AreSearch
                     # processing_token が無い処理は、同一 sync request の処理主体を示せないため同期しない。
                     return false if processing_token.blank?
                     return false if check_index_target_ready?(index_target) == false
-                    return false if acquire_sync_request_processing_with_sequence(processing_token, on_boundary: on_boundary) != true
+                    return false if acquire_sync_request_processing_with_sequence(processing_token) != true
                 rescue StandardError => e
                     update_sync_request_error_no_sequence(e.message)
 
@@ -173,12 +173,11 @@ module AreSearch
             end
 
             # 処理中フラグを立てる
-            def acquire_sync_request_processing_with_sequence(processing_token, on_boundary:)
+            def acquire_sync_request_processing_with_sequence(processing_token)
                 attributes = {
                     processing_token: processing_token,
                     processing_at:    Time.zone.now,
                 }
-                attributes[:boundary_attempted] = true if on_boundary == true
 
                 updated_count = sync_request_relation_with_sequence
                     .where("processing_token IS NULL OR processing_token = ?", processing_token)

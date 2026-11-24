@@ -48,7 +48,8 @@ reindex 中の検索は切り替え前の alias を使用する。
 失敗時に作成された物理 index が残った場合は、原因確認後に clean up または手動削除する。
 
 mappings、analyzer、settings の変更を反映するには reindex が必要。
-AreSearch.batch_size の詳細は guide_reference.txt を参照する。
+AreSearch.batch_size と AreSearch.reindex_max_bulk_bytes の詳細は guide_reference.txt を参照する。
+1件分のbulk dataが容量上限を超える場合は例外を送出し、aliasを切り替えない。
 
 
 ## 2-1. 全 index target の reindex
@@ -234,90 +235,7 @@ SyncRequest の状態項目は guide_reference.txt の「SyncRequest の状態�
     bundle exec rake 'are_search:sync_limit_alert[default]'
 
 
-# 7. SyncRequest Boundary
-================================================================
-
-稼働中の index でこの機能を使用する場合、整合性を取るためには
-必ず2系統の sync stage が必要。
-Boundary で使用する sync stage を専用で用意しない場合、不整合が
-発生する可能性がある。
-
-BulkIndexer 実行中の差分回収など、特定の時点までに発生した SyncRequest だけを後から同期する場合に使用する。
-SampleGenerator で生成した専用 rake task のサンプルを利用側アプリケーションへコピーする。
-
-    cp tmp/are_search/sample/are_search_sync_request_boundary.rake.sample \
-        lib/tasks/are_search_sync_request_boundary.rake
-
-コピーした rake ファイル先頭の対象を変更する。
-
-    # 他と重複しないように
-    module AreSearchSyncRequestBoundaryDocumentBulkTask
-
-    # 他と重複しないように
-    TASK_NAME_PREFIX = "document_bulk"
-
-    INDEX_TARGET_MODEL_CLASS_NAME = "Document" # クラス名に合わせる
-    INDEX_TARGET_NAME = "default"
-    SYNC_STAGE_NAME = "bulk"
-
-rake ファイル内の AreSearchSyncRequestBoundaryChangeYourTaskNameTask は
-全て書き換えた AreSearchSyncRequestBoundaryDocumentBulkTask に置換する。
-
-以後の説明では、タスク名の TASK_NAME_PREFIX 部分を省略して記載する。
-
-タスクを実行する環境では AreSearch.rake_operation_enabled を有効にする。
-
-
-## 7-1. bulk開始前のSyncRequestを削除する
-----------------------------------------------------------------
-
-対象stageに現在溜まっている処理中以外のSyncRequestを削除する。
-
-    bundle exec rake are_search:delete_sync_stage_all_sync_requests
-
-削除後に作成されたSyncRequestは再び蓄積される。
-
-
-## 7-2. bulk完了時点を境界として保存する
-----------------------------------------------------------------
-
-bulkと必要なrecoverが完了した後に実行する。
-
-    bundle exec rake are_search:set_sync_request_boundary
-
-実行時点のrequest sequenceをBoundaryTargetへ保存する。
-
-
-## 7-3. 境界までのSyncRequestを同期する
-----------------------------------------------------------------
-
-保存した境界以前に作成されたSyncRequestと、Boundary回収を開始済みのSyncRequestを同期対象にする。
-Boundary回収開始後に要求世代が境界を超えた場合も、同期が完了するまで回収対象に残る。
-コミット時期は問わないため多めに拾う可能性がある。
-実行前に対象件数を表示し、対象が存在する場合は確認後に同期する。
-
-    bundle exec rake are_search:run_sync_request_before_boundary
-
-実行前には確認メッセージが表示される。
-
-    同期を実行しますか？ [y/N]:
-
-実行後にも対象件数を表示する。
-
-対象全ての同期が成功するとは限らないため処理後の件数の確認が必要。
-
-
-## 7-4. 差分回収後に境界を削除する
-----------------------------------------------------------------
-
-対象件数が0件になった後、今回保存したBoundaryTargetを削除する。
-
-    bundle exec rake are_search:clear_sync_request_boundary
-
-Boundary操作をBulkIndexerと組み合わせる具体的な手順は guide_bulk_import.txt を参照する。
-
-
-# 8. モデル設定を確認する
+# 7. モデル設定を確認する
 ================================================================
 
     bundle exec rake are_search:check_all_models
@@ -329,7 +247,7 @@ Boundary操作をBulkIndexerと組み合わせる具体的な手順は guide_bul
 デプロイ後や mappings / stage 定義を変更した後の確認に使用する。
 
 
-# 9. コールバックを通らないDB更新
+# 8. コールバックを通らないDB更新
 ================================================================
 
 update_columns、update_all、delete_all、insert_all、upsert_all、SQL直接実行は ActiveRecord コールバックを通らない。
@@ -340,11 +258,11 @@ update_columns、update_all、delete_all、insert_all、upsert_all、SQL直接�
     index_target.are_search_reindex(stage_position: :first)
 
 
-# 10. 障害時の確認順序
+# 9. 障害時の確認順序
 ================================================================
 
 
-## 10-1. 検索結果が古い
+## 9-1. 検索結果が古い
 ----------------------------------------------------------------
 
     1. bundle exec rake are_search:check_sync_request_status を実行する
@@ -353,7 +271,7 @@ update_columns、update_all、delete_all、insert_all、upsert_all、SQL直接�
     4. 対象stageの after_commit 設定に応じて run_sync_requests_primary または run_sync_requests_fallback を実行する
 
 
-## 10-2. reindex または sync が動かない
+## 9-2. reindex または sync が動かない
 ----------------------------------------------------------------
 
     1. bundle exec rake are_search:check_index_status を実行する
@@ -361,17 +279,17 @@ update_columns、update_all、delete_all、insert_all、upsert_all、SQL直接�
     3. alias と物理 index の状態を確認する
 
 
-## 10-3. 古い物理 index が増えている
+## 9-3. 古い物理 index が増えている
 ----------------------------------------------------------------
 
     Article.are_search_index_target(:default).are_search_clean_up
 
 
-# 11. sync lock
+# 10. sync lock
 ================================================================
 
 
-## 11-1. block形式でsync stage sync lockを使う
+## 10-1. block形式でsync stage sync lockを使う
 ----------------------------------------------------------------
 
 処理中だけ特定stageで新しい同期処理を開始させない場合は are_search_with_sync_stage_lock を使用する。
@@ -396,7 +314,7 @@ lock取得前にprocessingへ入ったSyncRequestはそのまま処理を継続�
 既存processingの終了待ちが必要な場合は、# 5 の manual sync lock を使用する。
 
 
-## 11-2. sync lock を手動解除する
+## 10-2. sync lock を手動解除する
 ----------------------------------------------------------------
 
 異常終了で sync lock が残った場合は、先に check_index_status または check_sync_request_status で状態を確認する。
@@ -418,7 +336,7 @@ IndexTarget全体の sync lock を強制解除する。
 AreSearch.index_operation_enabled = true のプロセスでのみ実行する。
 
 
-# 12. 物理 index を手動削除する
+# 11. 物理 index を手動削除する
 ================================================================
 
 物理 index 名を確認する。
@@ -434,7 +352,7 @@ AreSearch.index_operation_enabled = true のプロセスでのみ実行する。
 手動削除APIの詳細は guide_reference.txt を参照する。
 
 
-# 13. processing_token を手動解除する
+# 12. processing_token を手動解除する
 ================================================================
 
 run_sync_requests_XXXX の強制同期後も processing_token が残り続ける場合の最終手段。

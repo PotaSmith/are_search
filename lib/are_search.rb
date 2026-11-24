@@ -23,7 +23,6 @@ require_relative "are_search/postgresql_database_specific"
 require_relative "are_search/searchable"
 require_relative "are_search/sync_request"
 require_relative "are_search/sync_request/sync"
-require_relative "are_search/sync_request_boundary_target"
 require_relative "are_search/sync_request_runner"
 require_relative "are_search/sync_job"
 
@@ -112,6 +111,7 @@ module AreSearch
     @index_operation_enabled = false
     @rake_operation_enabled = false
     @batch_size = 500
+    @reindex_max_bulk_bytes = 20 * 1024 * 1024
 
     @sync_request_process_hang_wait = 1800
     @max_force_try_count = 5
@@ -301,6 +301,20 @@ module AreSearch
 
     def self.batch_size=(value)
         @batch_size = value
+    end
+
+    # reindexで1回のbulk送信に使用する最大byte数を返す。
+    def self.reindex_max_bulk_bytes
+        @reindex_max_bulk_bytes
+    end
+
+    # reindexのbulk送信容量上限を設定する。
+    def self.reindex_max_bulk_bytes=(value)
+        if value.instance_of?(Integer) == false || value <= 0
+            raise ArgumentError, "reindex_max_bulk_bytes は正の Integer を指定してください"
+        end
+
+        @reindex_max_bulk_bytes = value
     end
 
     def self.sync_request_process_hang_wait

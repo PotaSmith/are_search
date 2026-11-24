@@ -23,6 +23,7 @@ Elasticsearch client と index_prefix は AreSearch.setup で指定する。
     AreSearch.rake_operation_enabled         = false
     AreSearch.after_commit_mode              = :direct
     AreSearch.batch_size                     = 500
+    AreSearch.reindex_max_bulk_bytes         = 20 * 1024 * 1024
     AreSearch.search_failure_mode            = :empty_result
     AreSearch.search_body_policy             = AreSearch::ScriptDenySearchBodyPolicy.new
     AreSearch.search_param_policy            = AreSearch::SearchParamLengthPolicy.new
@@ -112,7 +113,7 @@ index操作を行う実行環境だけ true にする。
 ## 1-8. rake_operation_enabled
 ----------------------------------------------------------------
 
-run_sync_requests_XXXX の 同期 rake や Boundary操作用 などの
+run_sync_requests_XXXX の 同期 rake などの
 SyncRequestを操作するrake処理の実行を許可する。
 
 デフォルトは false。
@@ -164,8 +165,17 @@ reindex 時に DB から一度に読み込む件数。
 
     AreSearch.batch_size = 500
 
-小さくすると1回のメモリ使用量と bulk body が減り、DB取得回数とbulk回数が増える。
+小さくするとDBから一度に読み込む件数が減り、DB取得回数が増える。
 この設定は reindex にだけ使われる。
+
+reindex_max_bulk_bytes
+
+    AreSearch.reindex_max_bulk_bytes = 20 * 1024 * 1024
+
+reindex時の1回のbulk送信の最大byte数。デフォルトは20MiB。
+正のIntegerを指定する。
+DBから取得したbatchを、action・data・改行を含むNDJSONのbyte数で分割する。
+1件分だけで上限を超える場合は例外を送出し、aliasを切り替えない。
 
 
 ## 1-12. analyzer_settings

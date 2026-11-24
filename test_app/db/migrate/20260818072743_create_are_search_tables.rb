@@ -33,8 +33,6 @@ class CreateAreSearchTables < ActiveRecord::Migration[8.1]
             t.datetime :last_force_try_at
             t.integer  :force_try_count,     null: false, default: 0
 
-            t.boolean  :boundary_attempted,  null: false, default: false
-
             t.text     :last_error
             t.datetime :last_error_at
 
@@ -70,21 +68,5 @@ class CreateAreSearchTables < ActiveRecord::Migration[8.1]
         end
 
         add_index :are_search_sync_locks, [:index_alias_name, :sync_stage_name], unique: true
-
-
-        create_table :are_search_sync_request_boundary_targets, id: :bigserial do |t|
-            t.string   :index_alias_name,      null: false
-            t.string   :sync_stage_name,       null: false
-
-            t.bigint   :sequence_limit,        null: false
-
-            t.datetime :last_sync_started_at
-            t.datetime :last_sync_ended_at
-            t.text     :message
-
-            t.timestamps
-        end
-
-        add_index :are_search_sync_request_boundary_targets, [:index_alias_name, :sync_stage_name], unique: true
     end
 end

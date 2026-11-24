@@ -54,6 +54,7 @@ module AreSearch
     module Reindexer
         extend self
 
+        # 対象の物理indexを作成し、全件投入に成功した場合だけaliasを切り替える。
         def reindex_index_target(index_target, sync_stage_name)
             validate_arguments!(index_target, sync_stage_name)
 
@@ -96,6 +97,7 @@ module AreSearch
             end
         end
 
+        # DBからbatch単位で読み込み、容量上限内のbulkに分割して投入する。
         def bulk_index_target(index_target, sync_stage_name, physical_index_name, result)
             total      = index_target.model_class.unscoped.count
             bar        = nil
@@ -105,16 +107,17 @@ module AreSearch
                 bar = ::ProgressBar.new(total) if ::ProgressBar.respond_to?(:new)
             end
 
+            max_bulk_bytes = AreSearch.reindex_max_bulk_bytes
+
             index_target.model_class.unscoped.find_in_batches(batch_size: AreSearch.batch_size) do |batch|
-                body, ids = build_bulk_body(index_target, sync_stage_name, batch, physical_index_name)
+                each_bulk_body(index_target, sync_stage_name, batch, physical_index_name, max_bulk_bytes) do |body, ids|
+                    response = AreSearch::EsAdapter.no_validation_bulk(body: body)
+
+                    validate_bulk_response!(response, ids)
+                    collect_bulk_errors(response, ids, failed_ids)
+                end
+
                 bar.increment!(batch.size) if bar.respond_to?(:increment!)
-
-                next if body.empty?
-
-                response = AreSearch::EsAdapter.no_validation_bulk(body: body)
-
-                validate_bulk_response!(response, ids)
-                collect_bulk_errors(response, ids, failed_ids)
             end
 
             if failed_ids.empty?
@@ -125,19 +128,35 @@ module AreSearch
             end
         end
 
-        def build_bulk_body(index_target, sync_stage_name, batch, physical_index_name)
-            body = []
+        # 1件分のactionとdataをNDJSON化し、容量上限を超える前に送信対象を渡す。
+        def each_bulk_body(index_target, sync_stage_name, batch, physical_index_name, max_bulk_bytes)
+            body = String.new(encoding: Encoding::UTF_8)
             ids = []
 
             batch.each do |record|
                 next if index_target.are_search_exclude_index?(record) == true
 
-                body << { index: { _index: physical_index_name, _id: record.id.to_s } }
-                body << record.are_search_index_data_for_index!(index_target, sync_stage_name)
+                action = { index: { _index: physical_index_name, _id: record.id.to_s } }
+                data = record.are_search_index_data_for_index!(index_target, sync_stage_name)
+                record_body = Elasticsearch::API.serializer.dump(action) + "\n" + Elasticsearch::API.serializer.dump(data) + "\n"
+                record_bytes = record_body.bytesize
+
+                if record_bytes > max_bulk_bytes
+                    message = "reindex_max_bulk_bytes を超えるデータがあります: id #{record.id} size #{record_bytes} / #{max_bulk_bytes}"
+                    raise AreSearch::Error, message
+                end
+
+                if body.bytesize + record_bytes > max_bulk_bytes
+                    yield body, ids
+                    body = String.new(encoding: Encoding::UTF_8)
+                    ids = []
+                end
+
+                body << record_body
                 ids << record.id
             end
 
-            [body, ids]
+            yield body, ids if ids.empty? == false
         end
 
         # bulk responseが送信したIDと1対1で対応していることを確認する。
@@ -171,6 +190,7 @@ module AreSearch
             end
         end
 
+        # bulk responseに含まれる失敗IDを元のID型で記録する。
         def collect_bulk_errors(response, ids, failed_ids)
             return if response["errors"] == false
 

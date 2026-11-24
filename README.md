@@ -45,14 +45,14 @@ AreSearch uses PostgreSQL as its standard database, but database-specific proces
 
 AreSearch avoids designs that periodically reindex a running production index.
 If a reindex finishes in 10 minutes, that may be acceptable, but if it takes three days or a week, reindexing is no longer practical.
-AreSearch allows index data to be updated without relying on reindexing by running multiple indexes in parallel and combining bulk indexing with boundary-based synchronization.
+AreSearch allows index data to be updated without relying on reindexing by running multiple indexes in parallel and combining bulk indexing with sync locks.
 
 ## Installation
 
 Add this to your Gemfile.
 
 ```ruby
-gem "are_search", git: "https://github.com/PotaSmith/are_search.git", tag: "v0.9.6"
+gem "are_search", git: "https://github.com/PotaSmith/are_search.git", tag: "v0.9.7"
 ```
 
 To use the latest development version directly, specify `branch: "main"`.

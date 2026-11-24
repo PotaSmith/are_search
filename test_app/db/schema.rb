@@ -32,22 +32,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_18_072743) do
     t.index ["index_alias_name", "sync_stage_name"], name: "idx_on_index_alias_name_sync_stage_name_a4b5260f78", unique: true
   end
 
-  create_table "are_search_sync_request_boundary_targets", force: :cascade do |t|
-    t.datetime "created_at", null: false
-    t.string "index_alias_name", null: false
-    t.datetime "last_sync_ended_at"
-    t.datetime "last_sync_started_at"
-    t.text "message"
-    t.bigint "sequence_limit", null: false
-    t.string "sync_stage_name", null: false
-    t.datetime "updated_at", null: false
-    t.index ["index_alias_name", "sync_stage_name"], name: "idx_on_index_alias_name_sync_stage_name_fea505b9a7", unique: true
-  end
-
   create_table "are_search_sync_requests", force: :cascade do |t|
     t.string "ar_instance_key", null: false
     t.string "ar_model_class_name", null: false
-    t.boolean "boundary_attempted", default: false, null: false
     t.integer "callback_try_count", default: 0, null: false
     t.datetime "created_at", null: false
     t.boolean "force_attempted", default: false, null: false

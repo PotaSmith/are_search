@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [0.9.7] - 2026-11-24
+
+- Boundary機能を削除。
+- reindexのbulk送信を容量上限で分割する `AreSearch.reindex_max_bulk_bytes` を追加。1件分が上限を超える場合は例外。
+- DBの作り直しが必要。
+
 ## [0.9.6] - 2026-11-13
 
 - イニシャライザでの接続パラメーターからssl: { verify: false }を削除

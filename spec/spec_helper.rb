@@ -53,7 +53,6 @@ ActiveRecord::Schema.define do
 
         t.string   :processing_token
         t.datetime :processing_at
-        t.boolean  :boundary_attempted, null: false, default: false
 
         t.integer  :sync_try_count,   null: false, default: 0
         t.datetime :last_sync_try_at
@@ -103,22 +102,6 @@ ActiveRecord::Schema.define do
     add_index :are_search_sync_locks,
         [:index_alias_name, :sync_stage_name],
         unique: true
-
-
-    create_table :are_search_sync_request_boundary_targets, id: :integer, force: true do |t|
-        t.string   :index_alias_name,      null: false
-        t.string   :sync_stage_name,       null: false
-        t.bigint   :sequence_limit,        null: false
-        t.datetime :last_sync_started_at
-        t.datetime :last_sync_ended_at
-        t.text     :message
-
-        t.timestamps
-    end
-
-    add_index :are_search_sync_request_boundary_targets,
-        [:index_alias_name, :sync_stage_name],
-        unique: true
 end
 
 RSpec.configure do |config|
@@ -135,6 +118,5 @@ RSpec.configure do |config|
     config.after(:each) do
         AreSearch::SyncRequest.delete_all
         AreSearch::SyncLock.delete_all
-        AreSearch::SyncRequestBoundaryTarget.delete_all
     end
 end

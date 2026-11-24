@@ -47,7 +47,7 @@ AreSearch は、標準のDBとしてPostgreSQLを使用しますが、DB固有�
 
 AreSearch は、動いている本番 index に定期的に reindex をかける設計を避けます。
 reindex が 10分で終わるならいいですが、3日、一週間かかるような場合、reindex は現実的ではありません。
-AreSearch では複数の index の同時稼働、境界設定による bulk 投入により reindex 無しでのデータ更新を可能にしています。
+AreSearch では複数の index の同時稼働、sync lock を使用した bulk 投入により reindex 無しでのデータ更新を可能にしています。
 
 
 ## Installation
@@ -55,7 +55,7 @@ AreSearch では複数の index の同時稼働、境界設定による bulk 投
 Gemfile に追加します。
 
 ```ruby
-gem "are_search", git: "https://github.com/PotaSmith/are_search.git", tag: "v0.9.6"
+gem "are_search", git: "https://github.com/PotaSmith/are_search.git", tag: "v0.9.7"
 ```
 
 開発中の最新版を直接使う場合は `branch: "main"` を指定できます。

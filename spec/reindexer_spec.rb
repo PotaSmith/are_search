@@ -88,6 +88,11 @@ RSpec.describe AreSearch::Reindexer do
         end
     end
 
+    # 期待するbulk bodyをNDJSON文字列として生成する。
+    def ndjson(*values)
+        values.map { |value| Elasticsearch::API.serializer.dump(value) + "\n" }.join
+    end
+
     def run_index_manager_block(result, physical_index_name, &block)
         result[:stop_phase] = :index_to_new_index
 
@@ -229,7 +234,7 @@ RSpec.describe AreSearch::Reindexer do
 
                 expect(client)
                     .to receive(:bulk)
-                    .with(body: expected_body)
+                    .with(body: ndjson(*expected_body))
                     .and_return(
                         "errors" => false,
                         "items"  => [
@@ -256,6 +261,64 @@ RSpec.describe AreSearch::Reindexer do
                                 :switch_alias,
                     ],
                 )
+            end
+        end
+
+        context "when bulk size is limited" do
+            let(:record_count) { 3 }
+            let(:physical_index_name) { "test_articles__20240101120000" }
+            let(:data) { { title: "日本語" } }
+
+            # 指定IDに対して送信される1件分のNDJSONを返す。
+            def record_body(id)
+                ndjson({ index: { _index: physical_index_name, _id: id.to_s } }, data)
+            end
+
+            before do
+                records = [1, 2, 3].map { |id| instance_double("Article", id: id, are_search_index_data_for_index!: data) }
+                allow(model).to receive(:find_in_batches).and_yield(records)
+                allow(AreSearch::IndexManager)
+                    .to receive(:reindex) do |_alias, _settings, _mappings, _operation, result, &block|
+                        run_index_manager_block(result, physical_index_name, &block)
+                    end
+            end
+
+            it "byte上限と一致するbulkを許容し、残りを別のbulkへ送信する" do
+                first_body = record_body(1) + record_body(2)
+                allow(AreSearch).to receive(:reindex_max_bulk_bytes).and_return(first_body.bytesize)
+
+                expect(client).to receive(:bulk).with(body: first_body).ordered.and_return(
+                    "errors" => false, "items" => [{ "index" => { "_id" => "1" } }, { "index" => { "_id" => "2" } }],
+                )
+                expect(client).to receive(:bulk).with(body: record_body(3)).ordered.and_return(
+                    "errors" => false, "items" => [{ "index" => { "_id" => "3" } }],
+                )
+
+                result = described_class.reindex_index_target(index_target, sync_stage_name)
+                expect(result[:result]).to eq(:success)
+            end
+
+            it "1件分のNDJSONがbyte上限と一致する場合は1件ずつ送信する" do
+                allow(AreSearch).to receive(:reindex_max_bulk_bytes).and_return(record_body(1).bytesize)
+
+                [1, 2, 3].each do |id|
+                    expect(client).to receive(:bulk).with(body: record_body(id)).ordered.and_return(
+                        "errors" => false, "items" => [{ "index" => { "_id" => id.to_s } }],
+                    )
+                end
+
+                result = described_class.reindex_index_target(index_target, sync_stage_name)
+                expect(result[:result]).to eq(:success)
+            end
+
+            it "1件分のNDJSONがbyte上限を超える場合は送信せず例外にする" do
+                max_bulk_bytes = record_body(1).bytesize - 1
+                allow(AreSearch).to receive(:reindex_max_bulk_bytes).and_return(max_bulk_bytes)
+                expect(client).not_to receive(:bulk)
+
+                expect do
+                    described_class.reindex_index_target(index_target, sync_stage_name)
+                end.to raise_error(AreSearch::Error, /reindex_max_bulk_bytes を超えるデータがあります: id 1/)
             end
         end
 
@@ -408,10 +471,10 @@ RSpec.describe AreSearch::Reindexer do
                 expect(client)
                     .to receive(:bulk)
                     .with(
-                        body: [
+                        body: ndjson(
                             { index: { _index: "test_articles__20240101120000", _id: "1" } },
                             { id: 1, title: "first" },
-                        ],
+                        ),
                     )
                     .and_return(
                         "errors" => false,
@@ -470,12 +533,12 @@ RSpec.describe AreSearch::Reindexer do
                 expect(client)
                     .to receive(:bulk)
                     .with(
-                        body: [
+                        body: ndjson(
                             { index: { _index: "test_articles__20240101120000", _id: "1" } },
                             { id: 1, title: "first" },
                             { index: { _index: "test_articles__20240101120000", _id: "2" } },
                             { id: 2, title: "second" },
-                        ],
+                        ),
                     )
                     .and_return(
                         "errors" => false,
@@ -488,10 +551,10 @@ RSpec.describe AreSearch::Reindexer do
                 expect(client)
                     .to receive(:bulk)
                     .with(
-                        body: [
+                        body: ndjson(
                             { index: { _index: "test_articles__20240101120000", _id: "3" } },
                             { id: 3, title: "third" },
-                        ],
+                        ),
                     )
                     .and_return(
                         "errors" => false,

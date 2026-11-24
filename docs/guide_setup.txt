@@ -243,9 +243,6 @@ stage の選択方法は guide_index_targets_and_stages.txt を参照する。
     tmp/are_search/sample/are_search_sync_limit_alert.rake.sample
         SyncRequest の同期停止候補をメール通知する rake task のサンプル。
 
-    tmp/are_search/sample/are_search_sync_request_boundary.rake.sample
-        BoundaryTarget を使用した 同期処理のrakeのサンプル。
-
     tmp/are_search/sample/are_search_bulk_index.rb.sample
         BulkIndexer を実行する Ruby ファイルのサンプル。
 
